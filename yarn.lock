@@ -3873,6 +3873,7 @@ __metadata:
     "@tarojs/plugin-platform-weapp": "npm:4.1.7"
     "@tarojs/react": "npm:4.1.7"
     "@tarojs/runtime": "npm:4.1.7"
+    "@tarojs/service": "npm:4.1.7"
     "@tarojs/shared": "npm:4.1.7"
     "@tarojs/taro": "npm:4.1.7"
     "@tarojs/taro-loader": "npm:4.1.7"
@@ -3891,6 +3892,7 @@ __metadata:
     react: "npm:^18.0.0"
     react-dom: "npm:^18.0.0"
     react-refresh: "npm:^0.11.0"
+    sass: "npm:^1.77.0"
     sr-sdk-h5: "npm:^1.3.1"
     sr-sdk-wxapp: "npm:^1.3.6"
     stylelint: "npm:^14.4.0"
@@ -12247,7 +12249,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sass@npm:^1.23.7":
+"sass@npm:^1.23.7, sass@npm:^1.77.0":
   version: 1.93.2
   resolution: "sass@npm:1.93.2"
   dependencies:
