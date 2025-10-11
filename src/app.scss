@@ -1,4 +1,19 @@
+html,
+body {
+  height: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+#app {
+  min-height: 100%;
+}
+
 page {
   width: 100%;
+  min-height: 100%;
   overflow-x: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
 }
