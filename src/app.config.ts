@@ -18,15 +18,21 @@ export default {
     list: [
       {
         pagePath: 'pages/home/index',
-        text: '打卡'
+        text: '打卡',
+        iconPath: 'assets/images/home.png',
+        selectedIconPath: 'assets/images/home-active.png'
       },
       {
         pagePath: 'pages/friends/index',
-        text: '好友'
+        text: '好友',
+        iconPath: 'assets/images/friends.png',
+        selectedIconPath: 'assets/images/friends-active.png'
       },
       {
         pagePath: 'pages/profile/index',
-        text: '我的'
+        text: '我的',
+        iconPath: 'assets/images/profile.png',
+        selectedIconPath: 'assets/images/profile-active.png'
       }
     ]
   }
