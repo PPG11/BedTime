@@ -170,8 +170,14 @@ function computeCompletionRate(records: CheckInMap, today: Date): number {
   return Math.max(0, Math.min(100, rate))
 }
 
-function formatWindowHint(minutesNow: number, targetMinutes: number): string {
-  if (minutesNow < CHECK_IN_START_MINUTE) {
+function formatWindowHint(
+  currentTime: Date,
+  targetTime: Date,
+  isWindowOpen: boolean,
+  targetMinutes: number
+): string {
+  if (!isWindowOpen) {
+    const minutesNow = getMinutesSinceMidnight(currentTime)
     const diffMinutes = CHECK_IN_START_MINUTE - minutesNow
     const hours = Math.floor(diffMinutes / 60)
     const minutes = diffMinutes % 60
@@ -180,10 +186,26 @@ function formatWindowHint(minutesNow: number, targetMinutes: number): string {
     }
     return `打卡将在 ${hours} 小时 ${minutes} 分钟后开启`
   }
-  if (minutesNow < targetMinutes) {
+
+  if (targetTime.getTime() > currentTime.getTime()) {
     return `建议在 ${formatMinutesToTime(targetMinutes)} 前完成打卡`
   }
+
   return '已经超过目标入睡时间，尽快休息哦'
+}
+
+function computeRecommendedBedTime(currentTime: Date, targetMinutes: number): Date {
+  const target = new Date(currentTime)
+  const hours = Math.floor(targetMinutes / 60)
+  const minutes = targetMinutes % 60
+  target.setHours(hours, minutes, 0, 0)
+
+  const minutesNow = getMinutesSinceMidnight(currentTime)
+  if (targetMinutes < CHECK_IN_START_MINUTE && minutesNow >= CHECK_IN_START_MINUTE) {
+    target.setTime(target.getTime() + ONE_DAY_MS)
+  }
+
+  return target
 }
 
 export default function Index() {
@@ -197,21 +219,34 @@ export default function Index() {
 
   const todayKey = useMemo(() => formatDateKey(currentTime), [currentTime])
   const minutesNow = useMemo(() => getMinutesSinceMidnight(currentTime), [currentTime])
-  const isWindowOpen = minutesNow >= CHECK_IN_START_MINUTE
+  const isWindowOpen = useMemo(() => {
+    if (settings.targetSleepMinute < CHECK_IN_START_MINUTE) {
+      return true
+    }
+    return minutesNow >= CHECK_IN_START_MINUTE
+  }, [minutesNow, settings.targetSleepMinute])
   const hasCheckedInToday = Boolean(records[todayKey])
 
-  const recommendedBedTime = useMemo(() => {
-    const target = new Date(currentTime)
-    const hours = Math.floor(settings.targetSleepMinute / 60)
-    const minutes = settings.targetSleepMinute % 60
-    target.setHours(hours, minutes, 0, 0)
-    return target
-  }, [currentTime, settings.targetSleepMinute])
+  const recommendedBedTime = useMemo(
+    () => computeRecommendedBedTime(currentTime, settings.targetSleepMinute),
+    [currentTime, settings.targetSleepMinute]
+  )
 
   const countdownText = useMemo(() => {
     const diff = recommendedBedTime.getTime() - currentTime.getTime()
     return formatCountdown(diff)
   }, [currentTime, recommendedBedTime])
+
+  const windowHint = useMemo(
+    () =>
+      formatWindowHint(
+        currentTime,
+        recommendedBedTime,
+        isWindowOpen,
+        settings.targetSleepMinute
+      ),
+    [currentTime, isWindowOpen, recommendedBedTime, settings.targetSleepMinute]
+  )
 
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),
@@ -247,8 +282,17 @@ export default function Index() {
     if (!timestamp) {
       return false
     }
-    return timestamp > recommendedBedTime.getTime()
-  }, [records, recommendedBedTime, todayKey])
+    const targetForRecord = computeRecommendedBedTime(
+      new Date(timestamp),
+      settings.targetSleepMinute
+    )
+    return timestamp > targetForRecord.getTime()
+  }, [records, settings.targetSleepMinute, todayKey])
+
+  const isLateNow = useMemo(
+    () => currentTime.getTime() > recommendedBedTime.getTime(),
+    [currentTime, recommendedBedTime]
+  )
 
   const hydrateRecords = useCallback(() => {
     try {
@@ -412,12 +456,8 @@ export default function Index() {
 
       <View className='checkin-card'>
         <Text className='checkin-card__title'>今日早睡打卡</Text>
-        <Text
-          className={`checkin-card__status ${
-            minutesNow >= settings.targetSleepMinute ? 'checkin-card__status--late' : ''
-          }`}
-        >
-          {formatWindowHint(minutesNow, settings.targetSleepMinute)}
+        <Text className={`checkin-card__status ${isLateNow ? 'checkin-card__status--late' : ''}`}>
+          {windowHint}
         </Text>
         {lastCheckInTime ? (
           <Text
