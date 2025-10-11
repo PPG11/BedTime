@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Picker, Text, View } from '@tarojs/components'
+import { View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import {
   DEFAULT_SLEEP_MINUTE,
@@ -10,7 +10,15 @@ import {
   saveSettings
 } from '../../utils/storage'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../../utils/time'
+import { ProfileUidCard } from '../../components/profile/ProfileUidCard'
+import { ProfilePreferencesCard } from '../../components/profile/ProfilePreferencesCard'
+import { ProfileTips } from '../../components/profile/ProfileTips'
 import './index.scss'
+
+const profileTips = [
+  'UID 会自动生成并永久保存到本地，用于后续与好友互相关注。',
+  '个人偏好会影响打卡提醒与目标时间，请保持与你的作息一致。'
+]
 
 export default function Profile() {
   const [settings, setSettings] = useState<UserSettings>({
@@ -37,13 +45,10 @@ export default function Profile() {
     hydrate()
   })
 
-  const persistSettings = useCallback(
-    (next: UserSettings) => {
-      setSettings(next)
-      saveSettings(next)
-    },
-    []
-  )
+  const persistSettings = useCallback((next: UserSettings) => {
+    setSettings(next)
+    saveSettings(next)
+  }, [])
 
   const handleNameInput = useCallback(
     (event: { detail: { value: string } }) => {
@@ -90,40 +95,14 @@ export default function Profile() {
 
   return (
     <View className='profile'>
-      <View className='profile__card'>
-        <Text className='profile__title'>我的账号</Text>
-        <Text className='profile__uid'>{uid || '正在生成 UID...'}</Text>
-        <Text className='profile__uid-hint'>将 UID 分享给好友，他们就能关注你的早睡打卡啦。</Text>
-        <Button className='profile__copy' size='mini' onClick={handleCopyUid}>
-          复制 UID
-        </Button>
-      </View>
-
-      <View className='profile__card'>
-        <Text className='profile__title'>个人偏好</Text>
-        <View className='profile__field'>
-          <Text className='profile__label'>称呼</Text>
-          <Input
-            className='profile__input'
-            value={settings.name}
-            placeholder='输入你的称呼'
-            onInput={handleNameInput}
-            maxLength={20}
-          />
-        </View>
-        <View className='profile__field'>
-          <Text className='profile__label'>目标入睡时间</Text>
-          <Picker mode='time' value={targetTimeText} onChange={handleTargetTimeChange}>
-            <View className='profile__picker'>{targetTimeText}</View>
-          </Picker>
-        </View>
-      </View>
-
-      <View className='profile__tips'>
-        <Text className='profile__tips-title'>功能说明</Text>
-        <Text className='profile__tips-item'>UID 会自动生成并永久保存到本地，用于后续与好友互相关注。</Text>
-        <Text className='profile__tips-item'>个人偏好会影响打卡提醒与目标时间，请保持与你的作息一致。</Text>
-      </View>
+      <ProfileUidCard uid={uid} onCopy={handleCopyUid} />
+      <ProfilePreferencesCard
+        name={settings.name}
+        targetTimeText={targetTimeText}
+        onNameInput={handleNameInput}
+        onTargetTimeChange={handleTargetTimeChange}
+      />
+      <ProfileTips tips={profileTips} />
     </View>
   )
 }
