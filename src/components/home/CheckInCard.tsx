@@ -24,6 +24,7 @@ export function CheckInCard({
   return (
     <View className='checkin-card'>
       <Text className='checkin-card__title'>今日早睡打卡</Text>
+      <Text className='checkin-card__note'>💤 柔柔提醒：睡前给自己温柔拥抱</Text>
       <Text className={`checkin-card__status ${isLateNow ? 'checkin-card__status--late' : ''}`}>
         {windowHint}
       </Text>
