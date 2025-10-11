@@ -9,6 +9,7 @@
   gap: 28px;
   font-size: 26px;
   line-height: 1.5;
+  overscroll-behavior-y: contain;
 
   &__card {
     background: rgba(255, 255, 255, 0.96);
@@ -84,11 +85,20 @@
   &__submit {
     width: 100%;
     height: 88px;
+    line-height: 1;
     border-radius: 22px;
     background: linear-gradient(135deg, #5c6cff 0%, #8e5fff 100%);
     color: #ffffff;
     font-size: 30px;
     font-weight: 600;
+    font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &::after {
+      display: none;
+    }
   }
 
   &__list {
@@ -116,6 +126,11 @@
   &__item-actions {
     display: flex;
     gap: 12px;
+
+    button {
+      font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
+      font-weight: 500;
+    }
   }
 
   &__remove {

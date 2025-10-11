@@ -9,6 +9,7 @@
   gap: 28px;
   font-size: 26px;
   line-height: 1.5;
+  overscroll-behavior-y: contain;
 
   &__card {
     background: rgba(255, 255, 255, 0.96);
@@ -41,13 +42,23 @@
 
   &__copy {
     align-self: flex-start;
-    padding: 0 28px;
+    padding: 0 28px !important;
     height: 64px;
-    line-height: 64px;
+    line-height: 1 !important;
     border-radius: 18px;
     background: linear-gradient(135deg, #5c6cff 0%, #8e5fff 100%);
     color: #ffffff;
     font-size: 26px;
+    font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    font-weight: 500;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    border: none;
+
+    &::after {
+      display: none;
+    }
   }
 
   &__field {

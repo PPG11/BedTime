@@ -11,6 +11,7 @@
   line-height: 1.5;
   position: relative;
   overflow: hidden;
+  overscroll-behavior-y: contain;
   font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
 }
 
@@ -220,6 +221,7 @@
   box-shadow: 0 12px 32px rgba(255, 164, 211, 0.35);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   white-space: nowrap;
+  font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
   z-index: 1;
 }
 
