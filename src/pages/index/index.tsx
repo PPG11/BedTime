@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Text, View } from '@tarojs/components'
+import { Button, Input, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro'
 import './index.scss'
 
@@ -11,10 +11,16 @@ type RecentDay = {
   checked: boolean
 }
 
+type UserSettings = {
+  name: string
+  targetSleepMinute: number
+}
+
 const STORAGE_KEY = 'bedtime-checkins'
+const SETTINGS_STORAGE_KEY = 'bedtime-user-settings'
 const CHECK_IN_START_MINUTE = 20 * 60 // 20:00
-const CHECK_IN_END_MINUTE = 23 * 60 + 59 // 23:59
-const RECOMMENDED_SLEEP_MINUTE = 22 * 60 + 30 // 22:30
+const DEFAULT_SLEEP_MINUTE = 22 * 60 + 30 // 22:30
+const DEFAULT_USER_NAME = '七月博士'
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -35,6 +41,25 @@ function formatTime(date: Date): string {
   const hours = `${date.getHours()}`.padStart(2, '0')
   const minutes = `${date.getMinutes()}`.padStart(2, '0')
   return `${hours}:${minutes}`
+}
+
+function formatMinutesToTime(totalMinutes: number): string {
+  const normalized = Math.max(0, Math.min(24 * 60 - 1, totalMinutes))
+  const hours = `${Math.floor(normalized / 60)}`.padStart(2, '0')
+  const minutes = `${normalized % 60}`.padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+function parseTimeStringToMinutes(value: string): number {
+  const [hoursText = '0', minutesText = '0'] = value.split(':')
+  const hours = Number(hoursText)
+  const minutes = Number(minutesText)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return DEFAULT_SLEEP_MINUTE
+  }
+  const normalizedHours = Math.max(0, Math.min(23, hours))
+  const normalizedMinutes = Math.max(0, Math.min(59, minutes))
+  return normalizedHours * 60 + normalizedMinutes
 }
 
 function getMinutesSinceMidnight(date: Date): number {
@@ -145,7 +170,7 @@ function computeCompletionRate(records: CheckInMap, today: Date): number {
   return Math.max(0, Math.min(100, rate))
 }
 
-function formatWindowHint(minutesNow: number): string {
+function formatWindowHint(minutesNow: number, targetMinutes: number): string {
   if (minutesNow < CHECK_IN_START_MINUTE) {
     const diffMinutes = CHECK_IN_START_MINUTE - minutesNow
     const hours = Math.floor(diffMinutes / 60)
@@ -155,34 +180,43 @@ function formatWindowHint(minutesNow: number): string {
     }
     return `打卡将在 ${hours} 小时 ${minutes} 分钟后开启`
   }
-  if (minutesNow > CHECK_IN_END_MINUTE) {
-    return '今日打卡已关闭'
+  if (minutesNow < targetMinutes) {
+    return `建议在 ${formatMinutesToTime(targetMinutes)} 前完成打卡`
   }
-  return '打卡进行中，准备早点入睡吧'
+  return '已经超过目标入睡时间，尽快休息哦'
 }
 
 export default function Index() {
   const [records, setRecords] = useState<CheckInMap>({})
   const [currentTime, setCurrentTime] = useState<Date>(new Date())
+  const [settings, setSettings] = useState<UserSettings>({
+    name: DEFAULT_USER_NAME,
+    targetSleepMinute: DEFAULT_SLEEP_MINUTE
+  })
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const todayKey = useMemo(() => formatDateKey(currentTime), [currentTime])
   const minutesNow = useMemo(() => getMinutesSinceMidnight(currentTime), [currentTime])
-  const isWindowOpen = minutesNow >= CHECK_IN_START_MINUTE && minutesNow <= CHECK_IN_END_MINUTE
+  const isWindowOpen = minutesNow >= CHECK_IN_START_MINUTE
   const hasCheckedInToday = Boolean(records[todayKey])
 
   const recommendedBedTime = useMemo(() => {
     const target = new Date(currentTime)
-    const hours = Math.floor(RECOMMENDED_SLEEP_MINUTE / 60)
-    const minutes = RECOMMENDED_SLEEP_MINUTE % 60
+    const hours = Math.floor(settings.targetSleepMinute / 60)
+    const minutes = settings.targetSleepMinute % 60
     target.setHours(hours, minutes, 0, 0)
     return target
-  }, [currentTime])
+  }, [currentTime, settings.targetSleepMinute])
 
   const countdownText = useMemo(() => {
     const diff = recommendedBedTime.getTime() - currentTime.getTime()
     return formatCountdown(diff)
   }, [currentTime, recommendedBedTime])
+
+  const targetTimeText = useMemo(
+    () => formatMinutesToTime(settings.targetSleepMinute),
+    [settings.targetSleepMinute]
+  )
 
   const stats = useMemo(() => {
     const today = new Date(currentTime)
@@ -208,6 +242,14 @@ export default function Index() {
     return formatTime(new Date(timestamp))
   }, [records, todayKey])
 
+  const isLateCheckIn = useMemo(() => {
+    const timestamp = records[todayKey]
+    if (!timestamp) {
+      return false
+    }
+    return timestamp > recommendedBedTime.getTime()
+  }, [records, recommendedBedTime, todayKey])
+
   const hydrateRecords = useCallback(() => {
     try {
       const stored = Taro.getStorageSync(STORAGE_KEY) as CheckInMap | undefined
@@ -219,6 +261,25 @@ export default function Index() {
     }
   }, [])
 
+  const hydrateSettings = useCallback(() => {
+    try {
+      const stored = Taro.getStorageSync(SETTINGS_STORAGE_KEY) as Partial<UserSettings> | undefined
+      if (stored && typeof stored === 'object') {
+        setSettings({
+          name:
+            typeof stored.name === 'string' && stored.name.length
+              ? stored.name
+              : DEFAULT_USER_NAME,
+          targetSleepMinute: typeof stored.targetSleepMinute === 'number'
+            ? stored.targetSleepMinute
+            : DEFAULT_SLEEP_MINUTE
+        })
+      }
+    } catch (error) {
+      console.warn('读取用户设置信息失败', error)
+    }
+  }, [])
+
   const persistRecords = useCallback((next: CheckInMap) => {
     setRecords(next)
     try {
@@ -227,6 +288,43 @@ export default function Index() {
       console.warn('保存早睡打卡数据失败', error)
     }
   }, [])
+
+  const persistSettings = useCallback((next: UserSettings) => {
+    setSettings(next)
+    try {
+      Taro.setStorageSync(SETTINGS_STORAGE_KEY, next)
+    } catch (error) {
+      console.warn('保存用户设置信息失败', error)
+    }
+  }, [])
+
+  const handleNameInput = useCallback(
+    (event: { detail: { value: string } }) => {
+      const value = event.detail.value
+      if (value === settings.name) {
+        return
+      }
+      persistSettings({
+        ...settings,
+        name: value
+      })
+    },
+    [persistSettings, settings]
+  )
+
+  const handleTargetTimeChange = useCallback(
+    (event: { detail: { value: string } }) => {
+      const nextMinutes = parseTimeStringToMinutes(event.detail.value)
+      if (nextMinutes === settings.targetSleepMinute) {
+        return
+      }
+      persistSettings({
+        ...settings,
+        targetSleepMinute: nextMinutes
+      })
+    },
+    [persistSettings, settings]
+  )
 
   const handleCheckIn = useCallback(() => {
     if (hasCheckedInToday) {
@@ -248,10 +346,12 @@ export default function Index() {
 
   useLoad(() => {
     hydrateRecords()
+    hydrateSettings()
   })
 
   useDidShow(() => {
     hydrateRecords()
+    hydrateSettings()
     if (!timerRef.current) {
       timerRef.current = setInterval(() => {
         setCurrentTime(new Date())
@@ -280,6 +380,7 @@ export default function Index() {
     <View className='index'>
       <View className='hero'>
         <View>
+          <Text className='hero__greeting'>你好，{settings.name || DEFAULT_USER_NAME}</Text>
           <Text className='hero__subtitle'>{weekdayLabels[currentTime.getDay()]}</Text>
           <Text className='hero__title'>{todayKey}</Text>
         </View>
@@ -289,13 +390,45 @@ export default function Index() {
         </View>
       </View>
 
+      <View className='profile-card'>
+        <Text className='profile-card__title'>个人信息与偏好</Text>
+        <View className='profile-card__field'>
+          <Text className='profile-card__label'>称呼</Text>
+          <Input
+            className='profile-card__input'
+            value={settings.name}
+            placeholder='输入你的称呼'
+            onInput={handleNameInput}
+            maxLength={20}
+          />
+        </View>
+        <View className='profile-card__field'>
+          <Text className='profile-card__label'>目标入睡时间</Text>
+          <Picker mode='time' value={targetTimeText} onChange={handleTargetTimeChange}>
+            <View className='profile-card__picker'>{targetTimeText}</View>
+          </Picker>
+        </View>
+      </View>
+
       <View className='checkin-card'>
         <Text className='checkin-card__title'>今日早睡打卡</Text>
-        <Text className='checkin-card__status'>{formatWindowHint(minutesNow)}</Text>
+        <Text
+          className={`checkin-card__status ${
+            minutesNow >= settings.targetSleepMinute ? 'checkin-card__status--late' : ''
+          }`}
+        >
+          {formatWindowHint(minutesNow, settings.targetSleepMinute)}
+        </Text>
         {lastCheckInTime ? (
-          <Text className='checkin-card__timestamp'>已在 {lastCheckInTime} 完成打卡</Text>
+          <Text
+            className={`checkin-card__timestamp ${
+              isLateCheckIn ? 'checkin-card__timestamp--late' : ''
+            }`}
+          >
+            已在 {lastCheckInTime} 完成打卡{isLateCheckIn ? '（晚于目标时间）' : ''}
+          </Text>
         ) : (
-          <Text className='checkin-card__timestamp'>推荐入睡时间 22:30 之前完成打卡</Text>
+          <Text className='checkin-card__timestamp'>目标入睡时间 {targetTimeText} 之前完成打卡</Text>
         )}
         <Button
           className='checkin-card__button'
