@@ -22,7 +22,7 @@
   height: 420px;
   border-radius: 50%;
   filter: blur(80px);
-  z-index: 0;
+  z-index: -1;
   opacity: 0.5;
 }
 
@@ -38,10 +38,6 @@
   left: -140px;
 }
 
-.index > * {
-  position: relative;
-  z-index: 1;
-}
 
 .hero {
   position: relative;
