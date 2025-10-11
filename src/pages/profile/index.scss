@@ -1,0 +1,111 @@
+.profile {
+  min-height: 100vh;
+  padding: 44px 28px 72px;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, #f6f4ff 0%, #ffffff 55%);
+  color: #1f244d;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  font-size: 26px;
+  line-height: 1.5;
+
+  &__card {
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 30px;
+    padding: 32px;
+    box-shadow: 0 12px 34px rgba(68, 57, 169, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  &__title {
+    font-size: 30px;
+    font-weight: 600;
+    color: #1a1b3c;
+  }
+
+  &__uid {
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #3141ff;
+  }
+
+  &__uid-hint {
+    font-size: 24px;
+    color: #6a71a3;
+    line-height: 1.6;
+  }
+
+  &__copy {
+    align-self: flex-start;
+    padding: 0 28px;
+    height: 64px;
+    line-height: 64px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #5c6cff 0%, #8e5fff 100%);
+    color: #ffffff;
+    font-size: 26px;
+  }
+
+  &__field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  &__label {
+    flex: 0 0 220px;
+    font-size: 24px;
+    color: #6a71a3;
+    white-space: nowrap;
+  }
+
+  &__input {
+    flex: 1;
+    height: 64px;
+    border-radius: 20px;
+    background: #f3f4ff;
+    padding: 0 22px;
+    box-sizing: border-box;
+    color: #1f244d;
+    display: flex;
+    align-items: center;
+  }
+
+  &__picker {
+    flex: 1;
+    height: 64px;
+    border-radius: 20px;
+    background: #f3f4ff;
+    padding: 0 22px;
+    color: #1f244d;
+    display: flex;
+    align-items: center;
+  }
+
+  &__tips {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 28px;
+    padding: 30px;
+    box-shadow: 0 10px 30px rgba(57, 70, 167, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  &__tips-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #1a1b3c;
+  }
+
+  &__tips-item {
+    font-size: 24px;
+    color: #5a6194;
+    line-height: 1.6;
+  }
+}

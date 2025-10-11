@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Input, Picker, Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro'
+import {
+  CheckInMap,
+  DEFAULT_SLEEP_MINUTE,
+  DEFAULT_USER_NAME,
+  UserSettings,
+  ensureUserUid,
+  readCheckIns,
+  readSettings,
+  saveCheckIns
+} from '../../utils/storage'
+import { formatMinutesToTime, formatTime } from '../../utils/time'
 import './index.scss'
 
-type CheckInMap = Record<string, number>
 type RecentDay = {
   key: string
   label: string
@@ -11,16 +21,7 @@ type RecentDay = {
   checked: boolean
 }
 
-type UserSettings = {
-  name: string
-  targetSleepMinute: number
-}
-
-const STORAGE_KEY = 'bedtime-checkins'
-const SETTINGS_STORAGE_KEY = 'bedtime-user-settings'
 const CHECK_IN_START_MINUTE = 20 * 60 // 20:00
-const DEFAULT_SLEEP_MINUTE = 22 * 60 + 30 // 22:30
-const DEFAULT_USER_NAME = '七月博士'
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -35,31 +36,6 @@ function formatDateKey(date: Date): string {
 function parseDateKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
   return new Date(year, month - 1, day)
-}
-
-function formatTime(date: Date): string {
-  const hours = `${date.getHours()}`.padStart(2, '0')
-  const minutes = `${date.getMinutes()}`.padStart(2, '0')
-  return `${hours}:${minutes}`
-}
-
-function formatMinutesToTime(totalMinutes: number): string {
-  const normalized = Math.max(0, Math.min(24 * 60 - 1, totalMinutes))
-  const hours = `${Math.floor(normalized / 60)}`.padStart(2, '0')
-  const minutes = `${normalized % 60}`.padStart(2, '0')
-  return `${hours}:${minutes}`
-}
-
-function parseTimeStringToMinutes(value: string): number {
-  const [hoursText = '0', minutesText = '0'] = value.split(':')
-  const hours = Number(hoursText)
-  const minutes = Number(minutesText)
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
-    return DEFAULT_SLEEP_MINUTE
-  }
-  const normalizedHours = Math.max(0, Math.min(23, hours))
-  const normalizedMinutes = Math.max(0, Math.min(59, minutes))
-  return normalizedHours * 60 + normalizedMinutes
 }
 
 function getMinutesSinceMidnight(date: Date): number {
@@ -295,80 +271,17 @@ export default function Index() {
   )
 
   const hydrateRecords = useCallback(() => {
-    try {
-      const stored = Taro.getStorageSync(STORAGE_KEY) as CheckInMap | undefined
-      if (stored && typeof stored === 'object') {
-        setRecords(stored)
-      }
-    } catch (error) {
-      console.warn('读取早睡打卡数据失败', error)
-    }
+    setRecords(readCheckIns())
   }, [])
 
   const hydrateSettings = useCallback(() => {
-    try {
-      const stored = Taro.getStorageSync(SETTINGS_STORAGE_KEY) as Partial<UserSettings> | undefined
-      if (stored && typeof stored === 'object') {
-        setSettings({
-          name:
-            typeof stored.name === 'string' && stored.name.length
-              ? stored.name
-              : DEFAULT_USER_NAME,
-          targetSleepMinute: typeof stored.targetSleepMinute === 'number'
-            ? stored.targetSleepMinute
-            : DEFAULT_SLEEP_MINUTE
-        })
-      }
-    } catch (error) {
-      console.warn('读取用户设置信息失败', error)
-    }
+    setSettings(readSettings())
   }, [])
 
   const persistRecords = useCallback((next: CheckInMap) => {
     setRecords(next)
-    try {
-      Taro.setStorageSync(STORAGE_KEY, next)
-    } catch (error) {
-      console.warn('保存早睡打卡数据失败', error)
-    }
+    saveCheckIns(next)
   }, [])
-
-  const persistSettings = useCallback((next: UserSettings) => {
-    setSettings(next)
-    try {
-      Taro.setStorageSync(SETTINGS_STORAGE_KEY, next)
-    } catch (error) {
-      console.warn('保存用户设置信息失败', error)
-    }
-  }, [])
-
-  const handleNameInput = useCallback(
-    (event: { detail: { value: string } }) => {
-      const value = event.detail.value
-      if (value === settings.name) {
-        return
-      }
-      persistSettings({
-        ...settings,
-        name: value
-      })
-    },
-    [persistSettings, settings]
-  )
-
-  const handleTargetTimeChange = useCallback(
-    (event: { detail: { value: string } }) => {
-      const nextMinutes = parseTimeStringToMinutes(event.detail.value)
-      if (nextMinutes === settings.targetSleepMinute) {
-        return
-      }
-      persistSettings({
-        ...settings,
-        targetSleepMinute: nextMinutes
-      })
-    },
-    [persistSettings, settings]
-  )
 
   const handleCheckIn = useCallback(() => {
     if (hasCheckedInToday) {
@@ -389,6 +302,7 @@ export default function Index() {
   }, [hasCheckedInToday, isWindowOpen, persistRecords, records])
 
   useLoad(() => {
+    ensureUserUid()
     hydrateRecords()
     hydrateSettings()
   })
@@ -431,26 +345,6 @@ export default function Index() {
         <View className='hero__countdown'>
           <Text className='hero__countdown-label'>距离推荐入睡</Text>
           <Text className='hero__countdown-time'>{countdownText}</Text>
-        </View>
-      </View>
-
-      <View className='profile-card'>
-        <Text className='profile-card__title'>个人信息与偏好</Text>
-        <View className='profile-card__field'>
-          <Text className='profile-card__label'>称呼</Text>
-          <Input
-            className='profile-card__input'
-            value={settings.name}
-            placeholder='输入你的称呼'
-            onInput={handleNameInput}
-            maxLength={20}
-          />
-        </View>
-        <View className='profile-card__field'>
-          <Text className='profile-card__label'>目标入睡时间</Text>
-          <Picker mode='time' value={targetTimeText} onChange={handleTargetTimeChange}>
-            <View className='profile-card__picker'>{targetTimeText}</View>
-          </Picker>
         </View>
       </View>
 
