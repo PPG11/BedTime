@@ -1,5 +1,12 @@
 import Taro from '@tarojs/taro'
-import { CLOUD_ENV_ID, COLLECTIONS, UID_LENGTH, UID_MAX_RETRY } from '../config/cloud'
+import {
+  CLOUD_ENV_CONFIGURED,
+  CLOUD_ENV_ID,
+  CLOUD_SHOULD_ENABLE,
+  COLLECTIONS,
+  UID_LENGTH,
+  UID_MAX_RETRY
+} from '../config/cloud'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../utils/time'
 import { formatDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
 
@@ -63,6 +70,9 @@ let databaseCache: CloudDatabase | null = null
 let openIdCache: string | null = null
 
 export function supportsCloud(): boolean {
+  if (!CLOUD_SHOULD_ENABLE) {
+    return false
+  }
   const env = Taro.getEnv?.()
   if (!env || env !== Taro.ENV_TYPE.WEAPP) {
     return false
@@ -71,6 +81,9 @@ export function supportsCloud(): boolean {
 }
 
 export async function ensureCloud(): Promise<CloudDatabase> {
+  if (!CLOUD_SHOULD_ENABLE) {
+    throw new Error('未配置云开发环境，当前运行在本地模式')
+  }
   if (!supportsCloud()) {
     throw new Error('当前运行环境不支持微信云开发，请在小程序端使用。')
   }
@@ -97,6 +110,8 @@ export async function ensureCloud(): Promise<CloudDatabase> {
         traceUser: true
       })
     }
+  } else if (CLOUD_ENV_CONFIGURED) {
+    console.warn('云开发环境 ID 为空字符串，已跳过自定义环境初始化')
   }
 
   databaseCache = cloud.database()
