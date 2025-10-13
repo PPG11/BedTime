@@ -144,6 +144,12 @@
     color: #3941a0;
   }
 
+  &__item-remark {
+    margin-top: 6px;
+    font-size: 22px;
+    color: #8a91c9;
+  }
+
   &__item-uid {
     font-size: 22px;
     color: #7a80b1;
@@ -175,8 +181,29 @@
   }
 
   &__item-status {
+    display: flex;
+  }
+
+  &__status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 18px;
+    border-radius: 999px;
     font-size: 24px;
-    color: #5a6194;
+    font-weight: 500;
+    background: rgba(92, 108, 255, 0.12);
+    color: #4f5bff;
+
+    &--miss {
+      background: rgba(255, 165, 0, 0.18);
+      color: #e07a00;
+    }
+
+    &--pending {
+      background: rgba(102, 115, 255, 0.12);
+      color: #6a71a3;
+    }
   }
 
   &__empty {

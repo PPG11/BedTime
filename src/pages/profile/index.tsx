@@ -13,6 +13,7 @@ import { formatMinutesToTime, parseTimeStringToMinutes } from '../../utils/time'
 import { ProfileUidCard } from '../../components/profile/ProfileUidCard'
 import { ProfilePreferencesCard } from '../../components/profile/ProfilePreferencesCard'
 import { ProfileTips } from '../../components/profile/ProfileTips'
+import { UserDocument, ensureCurrentUser, supportsCloud, updateCurrentUser } from '../../services/database'
 import './index.scss'
 
 const profileTips = [
@@ -26,56 +27,119 @@ export default function Profile() {
     targetSleepMinute: DEFAULT_SLEEP_MINUTE
   })
   const [uid, setUid] = useState<string>('')
+  const [userDoc, setUserDoc] = useState<UserDocument | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [canUseCloud] = useState(() => supportsCloud())
 
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),
     [settings.targetSleepMinute]
   )
 
-  const hydrate = useCallback(() => {
+  const hydrate = useCallback(async () => {
+    if (canUseCloud) {
+      setIsSyncing(true)
+      try {
+        const user = await ensureCurrentUser()
+        setUserDoc(user)
+        setSettings({
+          name: user.nickname || DEFAULT_USER_NAME,
+          targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
+        })
+        setUid(user.uid)
+      } catch (error) {
+        console.error('同步云端资料失败，使用本地数据', error)
+        Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
+        // 回退到本地模式
+        setUserDoc(null)
+        setSettings(readSettings())
+        setUid(readUserUid())
+      } finally {
+        setIsSyncing(false)
+      }
+      return
+    }
+    setUserDoc(null)
     setSettings(readSettings())
     setUid(readUserUid())
-  }, [])
+  }, [canUseCloud])
 
   useEffect(() => {
-    hydrate()
+    void hydrate()
   }, [hydrate])
 
   useDidShow(() => {
-    hydrate()
+    void hydrate()
   })
 
-  const persistSettings = useCallback((next: UserSettings) => {
+  const persistLocalSettings = useCallback((next: UserSettings) => {
     setSettings(next)
     saveSettings(next)
   }, [])
 
   const handleNameInput = useCallback(
-    (event: { detail: { value: string } }) => {
+    async (event: { detail: { value: string } }) => {
       const value = event.detail.value
-      if (value === settings.name) {
+      if (value === settings.name || isSyncing) {
         return
       }
-      persistSettings({
+      if (canUseCloud && userDoc) {
+        setIsSyncing(true)
+        try {
+          const updated = await updateCurrentUser({ nickname: value })
+          setUserDoc(updated)
+          setSettings({
+            name: updated.nickname || DEFAULT_USER_NAME,
+            targetSleepMinute: parseTimeStringToMinutes(updated.targetHM, DEFAULT_SLEEP_MINUTE)
+          })
+        } catch (error) {
+          console.error('更新昵称失败', error)
+          Taro.showToast({ title: '更新昵称失败', icon: 'none' })
+          await hydrate()
+        } finally {
+          setIsSyncing(false)
+        }
+        return
+      }
+      persistLocalSettings({
         ...settings,
         name: value
       })
     },
-    [persistSettings, settings]
+    [canUseCloud, hydrate, isSyncing, persistLocalSettings, settings, userDoc]
   )
 
   const handleTargetTimeChange = useCallback(
-    (event: { detail: { value: string } }) => {
+    async (event: { detail: { value: string } }) => {
       const nextMinutes = parseTimeStringToMinutes(event.detail.value, DEFAULT_SLEEP_MINUTE)
-      if (nextMinutes === settings.targetSleepMinute) {
+      if (nextMinutes === settings.targetSleepMinute || isSyncing) {
         return
       }
-      persistSettings({
+      const targetHM = formatMinutesToTime(nextMinutes)
+      if (canUseCloud && userDoc) {
+        setIsSyncing(true)
+        try {
+          const updated = await updateCurrentUser({ targetHM })
+          setUserDoc(updated)
+          setSettings({
+            name: updated.nickname || DEFAULT_USER_NAME,
+            targetSleepMinute: parseTimeStringToMinutes(updated.targetHM, DEFAULT_SLEEP_MINUTE)
+          })
+        } catch (error) {
+          console.error('更新目标就寝时间失败', error)
+          Taro.showToast({ title: '更新时间失败', icon: 'none' })
+          await hydrate()
+        } finally {
+          setIsSyncing(false)
+        }
+        return
+      }
+      persistLocalSettings({
         ...settings,
         targetSleepMinute: nextMinutes
       })
     },
-    [persistSettings, settings]
+    [canUseCloud, hydrate, isSyncing, persistLocalSettings, settings, userDoc]
   )
 
   const handleCopyUid = useCallback(() => {

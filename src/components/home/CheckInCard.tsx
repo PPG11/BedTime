@@ -9,6 +9,7 @@ type CheckInCardProps = {
   hasCheckedInToday: boolean
   isLateNow: boolean
   onCheckIn: () => void
+  disabled?: boolean
 }
 
 export function CheckInCard({
@@ -19,7 +20,8 @@ export function CheckInCard({
   isWindowOpen,
   hasCheckedInToday,
   isLateNow,
-  onCheckIn
+  onCheckIn,
+  disabled = false
 }: CheckInCardProps) {
   return (
     <View className='checkin-card'>
@@ -42,7 +44,7 @@ export function CheckInCard({
       <Button
         className='checkin-card__button'
         type='primary'
-        disabled={!isWindowOpen || hasCheckedInToday}
+        disabled={!isWindowOpen || hasCheckedInToday || disabled}
         onClick={onCheckIn}
       >
         {hasCheckedInToday ? '今日已完成' : isWindowOpen ? '立即打卡' : '等待打卡'}

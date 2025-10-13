@@ -76,11 +76,6 @@ export function saveSettings(next: UserSettings): void {
 
 export type FriendProfile = {
   uid: string
-  nickname: string
-  streak: number
-  total: number
-  completion: number
-  lastCheckInLabel: string
   remark?: string
 }
 
@@ -89,7 +84,7 @@ function isFriendProfile(value: unknown): value is FriendProfile {
     return false
   }
   const record = value as Partial<FriendProfile>
-  return typeof record.uid === 'string' && typeof record.nickname === 'string'
+  return typeof record.uid === 'string'
 }
 
 export function readFriends(): FriendProfile[] {

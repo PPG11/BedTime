@@ -20,17 +20,25 @@ import {
   DEFAULT_SLEEP_MINUTE,
   DEFAULT_USER_NAME,
   UserSettings,
-  ensureUserUid,
   readCheckIns,
   readSettings,
   saveCheckIns
 } from '../../utils/storage'
-import { formatMinutesToTime, formatTime } from '../../utils/time'
+import { formatMinutesToTime, formatTime, parseTimeStringToMinutes } from '../../utils/time'
 import { HomeHero } from '../../components/home/HomeHero'
 import { CheckInCard } from '../../components/home/CheckInCard'
 import { StatsOverview } from '../../components/home/StatsOverview'
 import { RecentCheckIns } from '../../components/home/RecentCheckIns'
 import { TipsSection } from '../../components/home/TipsSection'
+import {
+  CheckinDocument,
+  UserDocument,
+  ensureCurrentUser,
+  fetchCheckins,
+  refreshPublicProfile,
+  supportsCloud,
+  upsertCheckin
+} from '../../services/database'
 import './index.scss'
 
 const sleepTips = [
@@ -38,6 +46,24 @@ const sleepTips = [
   '保持卧室安静、昏暗和舒适，营造入睡氛围。',
   '建立固定的睡前仪式，例如阅读或轻度伸展。'
 ]
+
+function mapCheckinsToRecord(list: CheckinDocument[]): CheckInMap {
+  return list.reduce<CheckInMap>((acc, item) => {
+    if (item.status === 'hit') {
+      const ts = item.ts instanceof Date ? item.ts.getTime() : new Date(item.ts).getTime()
+      acc[item.date] = ts
+    }
+    return acc
+  }, {})
+}
+
+function withLatestSettings(user: UserDocument, settings: UserSettings): UserDocument {
+  return {
+    ...user,
+    nickname: settings.name,
+    targetHM: formatMinutesToTime(settings.targetSleepMinute)
+  }
+}
 
 type HomeStats = {
   streak: number
@@ -67,6 +93,9 @@ export default function Index() {
     name: DEFAULT_USER_NAME,
     targetSleepMinute: DEFAULT_SLEEP_MINUTE
   })
+  const [userDoc, setUserDoc] = useState<UserDocument | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [canUseCloud] = useState(() => supportsCloud())
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const todayKey = useMemo(() => formatDateKey(currentTime), [currentTime])
@@ -132,18 +161,47 @@ export default function Index() {
     [currentTime, recommendedBedTime]
   )
 
-  const hydrateAll = useCallback(() => {
+  const hydrateAll = useCallback(async () => {
+    if (canUseCloud) {
+      setIsSyncing(true)
+      try {
+        const user = await ensureCurrentUser()
+        setUserDoc(user)
+        setSettings({
+          name: user.nickname || DEFAULT_USER_NAME,
+          targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
+        })
+        const checkins = await fetchCheckins(user.uid, 365)
+        setRecords(mapCheckinsToRecord(checkins))
+      } catch (error) {
+        console.error('同步云端数据失败，使用本地数据', error)
+        Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
+        // 回退到本地模式
+        setUserDoc(null)
+        setRecords(readCheckIns())
+        setSettings(readSettings())
+      } finally {
+        setIsSyncing(false)
+      }
+      return
+    }
+    setUserDoc(null)
     setRecords(readCheckIns())
     setSettings(readSettings())
-  }, [])
+  }, [canUseCloud])
 
-  const persistRecords = useCallback((next: CheckInMap) => {
-    setRecords(next)
-    saveCheckIns(next)
-  }, [])
+  const persistRecords = useCallback(
+    (next: CheckInMap) => {
+      setRecords(next)
+      if (!canUseCloud) {
+        saveCheckIns(next)
+      }
+    },
+    [canUseCloud]
+  )
 
-  const handleCheckIn = useCallback(() => {
-    if (hasCheckedInToday) {
+  const handleCheckIn = useCallback(async () => {
+    if (hasCheckedInToday || isSyncing) {
       Taro.showToast({ title: '今天已经打过卡了', icon: 'none' })
       return
     }
@@ -153,20 +211,60 @@ export default function Index() {
       return
     }
 
+    if (canUseCloud && userDoc) {
+      try {
+        setIsSyncing(true)
+        const latestUser = withLatestSettings(userDoc, settings)
+        const tzOffset = typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
+        const created = await upsertCheckin({
+          uid: latestUser.uid,
+          date: todayKey,
+          status: 'hit',
+          tzOffset
+        })
+        const timestamp = created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
+        persistRecords({ ...records, [todayKey]: timestamp })
+        setUserDoc(latestUser)
+        await refreshPublicProfile(
+          {
+            ...latestUser,
+            tzOffset
+          },
+          todayKey
+        )
+        Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+      } catch (error) {
+        console.error('云端打卡失败', error)
+        Taro.showToast({ title: '云端打卡失败，请稍后重试', icon: 'none' })
+      } finally {
+        setIsSyncing(false)
+      }
+      return
+    }
+
     const now = new Date()
     const key = formatDateKey(now)
     const updated = { ...records, [key]: now.getTime() }
     persistRecords(updated)
     Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
-  }, [hasCheckedInToday, isWindowOpen, persistRecords, records])
+  }, [
+    canUseCloud,
+    hasCheckedInToday,
+    isSyncing,
+    isWindowOpen,
+    persistRecords,
+    records,
+    settings,
+    todayKey,
+    userDoc
+  ])
 
   useLoad(() => {
-    ensureUserUid()
-    hydrateAll()
+    void hydrateAll()
   })
 
   useDidShow(() => {
-    hydrateAll()
+    void hydrateAll()
     if (!timerRef.current) {
       timerRef.current = setInterval(() => {
         setCurrentTime(new Date())
@@ -209,6 +307,7 @@ export default function Index() {
         isWindowOpen={isWindowOpen}
         hasCheckedInToday={hasCheckedInToday}
         isLateNow={isLateNow}
+        disabled={isSyncing}
         onCheckIn={handleCheckIn}
       />
       <StatsOverview stats={stats} />

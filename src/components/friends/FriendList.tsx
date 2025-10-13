@@ -1,8 +1,20 @@
 import { Button, Text, View } from '@tarojs/components'
-import { FriendProfile } from '../../utils/storage'
+import { CheckinStatus } from '../../services/database'
+
+export type FriendListItem = {
+  uid: string
+  nickname: string
+  displayName: string
+  remark?: string
+  streak: number
+  todayStatus: CheckinStatus
+  todayStatusLabel: string
+  sleeptime: string
+  updatedAtLabel: string
+}
 
 type FriendListProps = {
-  friends: FriendProfile[]
+  friends: FriendListItem[]
   onRefresh: (uid: string) => void
   onRemove: (uid: string) => void
 }
@@ -19,7 +31,10 @@ export function FriendList({ friends, onRefresh, onRemove }: FriendListProps) {
             <View key={friend.uid} className='friends__item'>
               <View className='friends__item-header'>
                 <View>
-                  <Text className='friends__item-name'>{friend.nickname}</Text>
+                  <Text className='friends__item-name'>{friend.displayName}</Text>
+                  {friend.remark && friend.remark !== friend.nickname && (
+                    <Text className='friends__item-remark'>原昵称：{friend.nickname}</Text>
+                  )}
                   <Text className='friends__item-uid'>UID：{friend.uid}</Text>
                 </View>
                 <View className='friends__item-actions'>
@@ -31,21 +46,25 @@ export function FriendList({ friends, onRefresh, onRemove }: FriendListProps) {
                   </Button>
                 </View>
               </View>
+              <View className='friends__item-status'>
+                <Text className={`friends__status friends__status--${friend.todayStatus}`}>
+                  {friend.todayStatusLabel}
+                </Text>
+              </View>
               <View className='friends__item-stats'>
                 <View className='friends__stat'>
                   <Text className='friends__stat-value'>{friend.streak}</Text>
-                  <Text className='friends__stat-label'>连续天数</Text>
+                  <Text className='friends__stat-label'>当前连胜</Text>
                 </View>
                 <View className='friends__stat'>
-                  <Text className='friends__stat-value'>{friend.total}</Text>
-                  <Text className='friends__stat-label'>累计打卡</Text>
+                  <Text className='friends__stat-value'>{friend.sleeptime}</Text>
+                  <Text className='friends__stat-label'>目标就寝</Text>
                 </View>
                 <View className='friends__stat'>
-                  <Text className='friends__stat-value'>{friend.completion}%</Text>
-                  <Text className='friends__stat-label'>完成率</Text>
+                  <Text className='friends__stat-value'>{friend.updatedAtLabel}</Text>
+                  <Text className='friends__stat-label'>最近同步</Text>
                 </View>
               </View>
-              <Text className='friends__item-status'>{friend.lastCheckInLabel}</Text>
             </View>
           ))}
         </View>
