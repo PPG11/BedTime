@@ -47,13 +47,12 @@ type HomeStats = {
 }
 
 function createHomeStats(records: CheckInMap, currentTime: Date): HomeStats {
-  const today = new Date(currentTime)
-  today.setHours(0, 0, 0, 0)
+  const now = new Date(currentTime)
   return {
     total: Object.keys(records).length,
-    streak: computeCurrentStreak(records, today),
+    streak: computeCurrentStreak(records, now),
     best: computeBestStreak(records),
-    completion: computeCompletionRate(records, new Date(today))
+    completion: computeCompletionRate(records, now)
   }
 }
 
