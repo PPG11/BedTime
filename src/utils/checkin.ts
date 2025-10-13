@@ -9,20 +9,36 @@ export type RecentDay = {
 }
 
 export const CHECK_IN_START_MINUTE = 20 * 60 // 20:00
+export const CHECK_IN_RESET_MINUTE = 4 * 60 // 04:00
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+const CHECK_IN_RESET_MS = CHECK_IN_RESET_MINUTE * 60 * 1000
+
+function shiftByReset(date: Date): Date {
+  return new Date(date.getTime() - CHECK_IN_RESET_MS)
+}
+
+export function getCheckInDayStart(date: Date): Date {
+  const shifted = shiftByReset(date)
+  shifted.setHours(0, 0, 0, 0)
+  return new Date(shifted.getTime() + CHECK_IN_RESET_MS)
+}
 
 export const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
 
 export function formatDateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
+  const shifted = shiftByReset(date)
+  const year = shifted.getFullYear()
+  const month = `${shifted.getMonth() + 1}`.padStart(2, '0')
+  const day = `${shifted.getDate()}`.padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 export function parseDateKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number)
-  return new Date(year, month - 1, day)
+  const date = new Date(year, month - 1, day)
+  date.setHours(0, 0, 0, 0)
+  return new Date(date.getTime() + CHECK_IN_RESET_MS)
 }
 
 export function getMinutesSinceMidnight(date: Date): number {
@@ -50,8 +66,7 @@ export function formatCountdown(durationMs: number): string {
 
 export function computeCurrentStreak(records: CheckInMap, today: Date): number {
   let streak = 0
-  const cursor = new Date(today)
-  cursor.setHours(0, 0, 0, 0)
+  const cursor = getCheckInDayStart(today)
 
   while (true) {
     const key = formatDateKey(cursor)
@@ -95,16 +110,15 @@ export function computeBestStreak(records: CheckInMap): number {
 
 export function getRecentDays(records: CheckInMap, current: Date, length: number): RecentDay[] {
   const items: RecentDay[] = []
-  const cursor = new Date(current)
-  cursor.setHours(0, 0, 0, 0)
+  const cursor = getCheckInDayStart(current)
 
   for (let i = length - 1; i >= 0; i -= 1) {
-    const day = new Date(cursor.getTime() - i * ONE_DAY_MS)
-    const key = formatDateKey(day)
+    const dayStart = new Date(cursor.getTime() - i * ONE_DAY_MS)
+    const key = formatDateKey(dayStart)
     items.push({
       key,
-      label: `${day.getMonth() + 1}.${day.getDate()}`,
-      weekday: weekdayLabels[day.getDay()],
+      label: `${dayStart.getMonth() + 1}.${dayStart.getDate()}`,
+      weekday: weekdayLabels[dayStart.getDay()],
       checked: Boolean(records[key])
     })
   }
@@ -123,9 +137,8 @@ export function computeCompletionRate(records: CheckInMap, today: Date): number 
     .sort((a, b) => a.getTime() - b.getTime())
 
   const first = sorted[0]
-  const todayMidnight = new Date(today)
-  todayMidnight.setHours(0, 0, 0, 0)
-  const spanDays = Math.floor((todayMidnight.getTime() - first.getTime()) / ONE_DAY_MS) + 1
+  const todayStart = getCheckInDayStart(today)
+  const spanDays = Math.floor((todayStart.getTime() - first.getTime()) / ONE_DAY_MS) + 1
   if (spanDays <= 0) {
     return 100
   }
@@ -158,13 +171,13 @@ export function formatWindowHint(
 }
 
 export function computeRecommendedBedTime(currentTime: Date, targetMinutes: number): Date {
-  const target = new Date(currentTime)
+  const dayStart = getCheckInDayStart(currentTime)
+  const target = new Date(dayStart)
   const hours = Math.floor(targetMinutes / 60)
   const minutes = targetMinutes % 60
   target.setHours(hours, minutes, 0, 0)
 
-  const minutesNow = getMinutesSinceMidnight(currentTime)
-  if (targetMinutes < CHECK_IN_START_MINUTE && minutesNow >= CHECK_IN_START_MINUTE) {
+  if (target.getTime() < dayStart.getTime()) {
     target.setTime(target.getTime() + ONE_DAY_MS)
   }
 
@@ -175,5 +188,5 @@ export function isCheckInWindowOpen(minutesNow: number, targetSleepMinute: numbe
   if (targetSleepMinute < CHECK_IN_START_MINUTE) {
     return true
   }
-  return minutesNow >= CHECK_IN_START_MINUTE
+  return minutesNow >= CHECK_IN_START_MINUTE || minutesNow < CHECK_IN_RESET_MINUTE
 }
