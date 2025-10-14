@@ -1,6 +1,7 @@
 import Taro from '@tarojs/taro'
 import sr from 'sr-sdk-wxapp'
 import { CLOUD_ENV_ID, CLOUD_SHOULD_ENABLE } from './config/cloud'
+import { env } from './config/env'
 import { ANALYTICS_DEBUG, ENABLE_ANALYTICS } from './config/featureFlags'
 
 /**
@@ -13,12 +14,12 @@ if (ENABLE_ANALYTICS) {
       /**
        * 有数 - ka‘接入测试用’ 分配的 app_id，对应的业务接口人负责
        */
-      token: process.env.TARO_APP_ANALYTICS_TOKEN ?? 'bi6cdbda95ae2640ec',
+      token: env.TARO_APP_ANALYTICS_TOKEN ?? 'bi6cdbda95ae2640ec',
 
       /**
        * 微信小程序appID，以wx开头
        */
-      appid: process.env.TARO_APP_ANALYTICS_APPID ?? 'touristappid',
+      appid: env.TARO_APP_ANALYTICS_APPID ?? 'touristappid',
 
       /**
        * 如果使用了小程序插件，需要设置为 true
