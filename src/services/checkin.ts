@@ -1,6 +1,11 @@
 import { COLLECTIONS } from '../config/cloud'
 import { formatDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
-import { ensureCloud, type CloudDatabase, type DbCollection } from './cloud'
+import {
+  ensureCloud,
+  getCurrentOpenId,
+  type CloudDatabase,
+  type DbCollection
+} from './cloud'
 
 export type CheckinStatus = 'hit' | 'miss' | 'pending'
 
@@ -63,15 +68,18 @@ export async function upsertCheckin(
 
 export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
+  const openid = await getCurrentOpenId()
   const capped = Math.max(1, Math.min(1000, limit))
 
   const result = await getCheckinsCollection(db)
-    .where({ uid })
+    .where({ _openid: openid })
     .orderBy('date', 'desc')
     .limit(capped)
     .get()
 
-  return (result.data ?? []).map(mapCheckinDocument)
+  return (result.data ?? [])
+    .map(mapCheckinDocument)
+    .filter((item) => item.uid === uid)
 }
 
 export async function fetchCheckinsInRange(
@@ -80,15 +88,19 @@ export async function fetchCheckinsInRange(
   endDate: string
 ): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
-  const command = db.command
+  const openid = await getCurrentOpenId()
+
   const result = await getCheckinsCollection(db)
     .where({
-      uid,
-      date: command.gte(startDate).and(command.lte(endDate))
+      _openid: openid
     })
     .orderBy('date', 'asc')
+    .limit(1000)
     .get()
-  return (result.data ?? []).map(mapCheckinDocument)
+
+  return (result.data ?? [])
+    .map(mapCheckinDocument)
+    .filter((item) => item.uid === uid && item.date >= startDate && item.date <= endDate)
 }
 
 export function computeHitStreak(records: CheckinDocument[], todayKey: string): number {
