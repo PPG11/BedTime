@@ -3,7 +3,7 @@
 // 如果留空，应用会自动使用本地模式
 import { env } from './env'
 
-export const CLOUD_ENV_ID = ''
+export const CLOUD_ENV_ID = 'cloud1-0gw1plhs593190e1'
 
 const trimmedEnvId = CLOUD_ENV_ID.trim()
 

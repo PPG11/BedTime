@@ -2,7 +2,8 @@
   "miniprogramRoot": "./dist",
   "projectname": "BedTime",
   "description": "Doctor July's Bed Time",
-  "appid": "touristappid",
+  "appid": "wxd489f0523662b0ea",
+  "cloudfunctionRoot": "cloudfunctions/",
   "setting": {
     "urlCheck": true,
     "es6": true,
