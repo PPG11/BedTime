@@ -101,7 +101,15 @@ async function fetchUserByOpenId(
     }
     return mapUserDocument(snapshot.data)
   } catch (error) {
-    if ((error as { errCode?: number }).errCode === 11) {
+    const errCode = (error as { errCode?: number }).errCode
+    // 错误码 11: 文档不存在 (Document not found)
+    // 错误码 -1: 系统错误，文档不存在的另一种情况
+    if (errCode === 11 || errCode === -1) {
+      return null
+    }
+    const errMsg = (error as { errMsg?: string }).errMsg || ''
+    // 如果错误信息包含 "cannot find document"，也视为文档不存在
+    if (errMsg.includes('cannot find document')) {
       return null
     }
     console.error('读取用户信息失败', error)

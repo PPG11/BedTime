@@ -171,6 +171,12 @@ export default function Index() {
           name: user.nickname || DEFAULT_USER_NAME,
           targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
         })
+        // Ensure public profile exists/updates on first entry
+        try {
+          await refreshPublicProfile(user, todayKey)
+        } catch (e) {
+          console.warn('刷新公开资料失败（将稍后重试）', e)
+        }
         const checkins = await fetchCheckins(user.uid, 365)
         setRecords(mapCheckinsToRecord(checkins))
       } catch (error) {
