@@ -2524,7 +2524,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/cli@npm:4.1.7":
+"@tarojs/cli@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/cli@npm:4.1.7"
   dependencies:
@@ -2569,7 +2569,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/components@npm:4.1.7":
+"@tarojs/components@npm:4.1.7, @tarojs/components@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/components@npm:4.1.7"
   dependencies:
@@ -2592,7 +2592,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/helper@npm:4.1.7":
+"@tarojs/helper@npm:4.1.7, @tarojs/helper@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/helper@npm:4.1.7"
   dependencies:
@@ -2732,7 +2732,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-framework-react@npm:4.1.7":
+"@tarojs/plugin-framework-react@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-framework-react@npm:4.1.7"
   dependencies:
@@ -2773,7 +2773,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-alipay@npm:4.1.7":
+"@tarojs/plugin-platform-alipay@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-alipay@npm:4.1.7"
   peerDependencies:
@@ -2783,7 +2783,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-h5@npm:4.1.7":
+"@tarojs/plugin-platform-h5@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-h5@npm:4.1.7"
   dependencies:
@@ -2803,7 +2803,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-jd@npm:4.1.7":
+"@tarojs/plugin-platform-jd@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-jd@npm:4.1.7"
   peerDependencies:
@@ -2813,7 +2813,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-qq@npm:4.1.7":
+"@tarojs/plugin-platform-qq@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-qq@npm:4.1.7"
   dependencies:
@@ -2825,7 +2825,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-swan@npm:4.1.7":
+"@tarojs/plugin-platform-swan@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-swan@npm:4.1.7"
   peerDependencies:
@@ -2835,7 +2835,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-tt@npm:4.1.7":
+"@tarojs/plugin-platform-tt@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-tt@npm:4.1.7"
   dependencies:
@@ -2847,7 +2847,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/plugin-platform-weapp@npm:4.1.7":
+"@tarojs/plugin-platform-weapp@npm:4.1.7, @tarojs/plugin-platform-weapp@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/plugin-platform-weapp@npm:4.1.7"
   peerDependencies:
@@ -2857,7 +2857,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/react@npm:4.1.7":
+"@tarojs/react@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/react@npm:4.1.7"
   dependencies:
@@ -2899,7 +2899,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/runtime@npm:4.1.7":
+"@tarojs/runtime@npm:4.1.7, @tarojs/runtime@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/runtime@npm:4.1.7"
   dependencies:
@@ -2909,7 +2909,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/service@npm:4.1.7":
+"@tarojs/service@npm:4.1.7, @tarojs/service@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/service@npm:4.1.7"
   dependencies:
@@ -2926,7 +2926,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/shared@npm:4.1.7":
+"@tarojs/shared@npm:4.1.7, @tarojs/shared@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/shared@npm:4.1.7"
   checksum: 10c0/ee7c3456507502b27b224c5736e2745c730747288aa649776476a6bbdb4ce5f7da34490932691d7423ab61c58c59d1d88739f357969aa6fb5b424532f73d9d78
@@ -2958,7 +2958,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/taro-loader@npm:4.1.7":
+"@tarojs/taro-loader@npm:4.1.7, @tarojs/taro-loader@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/taro-loader@npm:4.1.7"
   dependencies:
@@ -2970,7 +2970,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/taro@npm:4.1.7":
+"@tarojs/taro@npm:4.1.7, @tarojs/taro@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/taro@npm:4.1.7"
   dependencies:
@@ -3024,7 +3024,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tarojs/webpack5-runner@npm:4.1.7":
+"@tarojs/webpack5-runner@npm:^4.1.7":
   version: 4.1.7
   resolution: "@tarojs/webpack5-runner@npm:4.1.7"
   dependencies:
@@ -3860,24 +3860,24 @@ __metadata:
     "@babel/preset-react": "npm:^7.24.1"
     "@babel/runtime": "npm:^7.21.5"
     "@pmmmwh/react-refresh-webpack-plugin": "npm:^0.5.5"
-    "@tarojs/cli": "npm:4.1.7"
-    "@tarojs/components": "npm:4.1.7"
-    "@tarojs/helper": "npm:4.1.7"
-    "@tarojs/plugin-framework-react": "npm:4.1.7"
-    "@tarojs/plugin-platform-alipay": "npm:4.1.7"
-    "@tarojs/plugin-platform-h5": "npm:4.1.7"
-    "@tarojs/plugin-platform-jd": "npm:4.1.7"
-    "@tarojs/plugin-platform-qq": "npm:4.1.7"
-    "@tarojs/plugin-platform-swan": "npm:4.1.7"
-    "@tarojs/plugin-platform-tt": "npm:4.1.7"
-    "@tarojs/plugin-platform-weapp": "npm:4.1.7"
-    "@tarojs/react": "npm:4.1.7"
-    "@tarojs/runtime": "npm:4.1.7"
-    "@tarojs/service": "npm:4.1.7"
-    "@tarojs/shared": "npm:4.1.7"
-    "@tarojs/taro": "npm:4.1.7"
-    "@tarojs/taro-loader": "npm:4.1.7"
-    "@tarojs/webpack5-runner": "npm:4.1.7"
+    "@tarojs/cli": "npm:^4.1.7"
+    "@tarojs/components": "npm:^4.1.7"
+    "@tarojs/helper": "npm:^4.1.7"
+    "@tarojs/plugin-framework-react": "npm:^4.1.7"
+    "@tarojs/plugin-platform-alipay": "npm:^4.1.7"
+    "@tarojs/plugin-platform-h5": "npm:^4.1.7"
+    "@tarojs/plugin-platform-jd": "npm:^4.1.7"
+    "@tarojs/plugin-platform-qq": "npm:^4.1.7"
+    "@tarojs/plugin-platform-swan": "npm:^4.1.7"
+    "@tarojs/plugin-platform-tt": "npm:^4.1.7"
+    "@tarojs/plugin-platform-weapp": "npm:^4.1.7"
+    "@tarojs/react": "npm:^4.1.7"
+    "@tarojs/runtime": "npm:^4.1.7"
+    "@tarojs/service": "npm:^4.1.7"
+    "@tarojs/shared": "npm:^4.1.7"
+    "@tarojs/taro": "npm:^4.1.7"
+    "@tarojs/taro-loader": "npm:^4.1.7"
+    "@tarojs/webpack5-runner": "npm:^4.1.7"
     "@types/react": "npm:^18.0.0"
     "@types/webpack-env": "npm:^1.13.6"
     "@typescript-eslint/eslint-plugin": "npm:^6.2.0"
@@ -3894,7 +3894,7 @@ __metadata:
     react-refresh: "npm:^0.11.0"
     sass: "npm:^1.77.0"
     sr-sdk-h5: "npm:^1.3.1"
-    sr-sdk-wxapp: "npm:^1.3.6"
+    sr-sdk-wxapp: "npm:^2.1.1"
     stylelint: "npm:^14.4.0"
     tsconfig-paths-webpack-plugin: "npm:^4.0.1"
     typescript: "npm:^5.1.0"
@@ -12843,10 +12843,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sr-sdk-wxapp@npm:^1.3.6":
-  version: 1.10.1
-  resolution: "sr-sdk-wxapp@npm:1.10.1"
-  checksum: 10c0/ad2c2089be5c65e0087788f0bd7b3c1113a4925eab201a42f36b05f77a604a8d5f6f35760c48c1fdb7d5343add93cba7432d3cdac9158d6cc30bec57eda5fa91
+"sr-sdk-wxapp@npm:^2.1.1":
+  version: 2.1.1
+  resolution: "sr-sdk-wxapp@npm:2.1.1"
+  checksum: 10c0/bf66c829c87094c51a5c5fd3e3affa9be0a74485a67f7162d6190d4685ca1f95b23b28708f49983bfc173eb1cc02ffd5d48e6586b2ddf143e836ad52ca777334
   languageName: node
   linkType: hard
 
