@@ -17,7 +17,7 @@ export function FriendForm({
 }: FriendFormProps) {
   return (
     <View className='friends__card'>
-      <Text className='friends__title'>关注好友</Text>
+      <Text className='friends__title'>添加好友</Text>
       <View className='friends__form'>
         <View className='friends__form-field'>
           <Text className='friends__label'>好友 UID</Text>
@@ -40,7 +40,7 @@ export function FriendForm({
           />
         </View>
         <Button className='friends__submit' type='primary' onClick={onSubmit}>
-          关注好友
+          发送邀请
         </Button>
       </View>
     </View>
