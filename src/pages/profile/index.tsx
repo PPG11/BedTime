@@ -13,7 +13,7 @@ import { formatMinutesToTime, parseTimeStringToMinutes } from '../../utils/time'
 import { ProfileUidCard } from '../../components/profile/ProfileUidCard'
 import { ProfilePreferencesCard } from '../../components/profile/ProfilePreferencesCard'
 import { ProfileTips } from '../../components/profile/ProfileTips'
-import { UserDocument, ensureCurrentUser, supportsCloud, updateCurrentUser } from '../../services/database'
+import { UserDocument, ensureCurrentUser, supportsCloud, updateCurrentUser } from '../../services'
 import './index.scss'
 
 const profileTips = [

@@ -38,7 +38,7 @@ import {
   refreshPublicProfile,
   supportsCloud,
   upsertCheckin
-} from '../../services/database'
+} from '../../services'
 import './index.scss'
 
 const sleepTips = [

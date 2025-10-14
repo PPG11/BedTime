@@ -1,5 +1,5 @@
 import { Button, Text, View } from '@tarojs/components'
-import { CheckinStatus } from '../../services/database'
+import { CheckinStatus } from '../../services'
 
 export type FriendListItem = {
   uid: string

@@ -14,7 +14,7 @@ import {
   fetchPublicProfiles,
   supportsCloud,
   updateCurrentUser
-} from '../../services/database'
+} from '../../services'
 import './index.scss'
 
 const statusLabels: Record<CheckinStatus, string> = {
