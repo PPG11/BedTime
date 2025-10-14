@@ -14,6 +14,8 @@ export type UserDocument = {
   targetHM: string
   buddyConsent: boolean
   buddyList: string[]
+  incomingRequests: string[]
+  outgoingRequests: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -26,6 +28,8 @@ export type UserUpsertPayload = Partial<
   buddyConsent?: boolean
   buddyList?: string[]
   tzOffset?: number
+  incomingRequests?: string[]
+  outgoingRequests?: string[]
 }
 
 type PublicProfileDocument = {
@@ -87,7 +91,13 @@ function ensureUserDocument(data: Partial<UserDocument>, openid: string, uid: st
     tzOffset: data.tzOffset ?? getDefaultTzOffset(),
     targetHM: data.targetHM ?? DEFAULT_TARGET_HM,
     buddyConsent: data.buddyConsent ?? DEFAULT_BUDDY_CONSENT,
-    buddyList: Array.isArray(data.buddyList) ? data.buddyList : [],
+    buddyList: Array.isArray(data.buddyList) ? sanitizeUidList(data.buddyList) : [],
+    incomingRequests: Array.isArray(data.incomingRequests)
+      ? sanitizeUidList(data.incomingRequests)
+      : [],
+    outgoingRequests: Array.isArray(data.outgoingRequests)
+      ? sanitizeUidList(data.outgoingRequests)
+      : [],
     createdAt: data.createdAt ?? now,
     updatedAt: data.updatedAt ?? now
   }
@@ -96,7 +106,13 @@ function ensureUserDocument(data: Partial<UserDocument>, openid: string, uid: st
 function mapUserDocument(raw: UserDocument): UserDocument {
   return {
     ...raw,
-    buddyList: Array.isArray(raw.buddyList) ? raw.buddyList : [],
+    buddyList: Array.isArray(raw.buddyList) ? sanitizeUidList(raw.buddyList) : [],
+    incomingRequests: Array.isArray(raw.incomingRequests)
+      ? sanitizeUidList(raw.incomingRequests)
+      : [],
+    outgoingRequests: Array.isArray(raw.outgoingRequests)
+      ? sanitizeUidList(raw.outgoingRequests)
+      : [],
     nickname: raw.nickname || `睡眠伙伴${raw.uid.slice(-4)}`,
     targetHM: raw.targetHM || DEFAULT_TARGET_HM,
     tzOffset: typeof raw.tzOffset === 'number' ? raw.tzOffset : getDefaultTzOffset(),
@@ -177,7 +193,7 @@ export async function ensureCurrentUser(): Promise<UserDocument> {
   }
 }
 
-function sanitizeBuddyList(list: string[]): string[] {
+function sanitizeUidList(list: string[]): string[] {
   return Array.from(
     new Set(
       list
@@ -208,7 +224,13 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
     sanitized.buddyConsent = patch.buddyConsent
   }
   if (Array.isArray(patch.buddyList)) {
-    sanitized.buddyList = sanitizeBuddyList(patch.buddyList)
+    sanitized.buddyList = sanitizeUidList(patch.buddyList)
+  }
+  if (Array.isArray(patch.incomingRequests)) {
+    sanitized.incomingRequests = sanitizeUidList(patch.incomingRequests)
+  }
+  if (Array.isArray(patch.outgoingRequests)) {
+    sanitized.outgoingRequests = sanitizeUidList(patch.outgoingRequests)
   }
 
   await getUsersCollection(db)
@@ -228,6 +250,204 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
     await syncPublicProfileBasics(db, updated, now)
   }
   return updated
+}
+
+type SendFriendInviteResult =
+  | { status: 'not-found' }
+  | { status: 'already-friends'; user: UserDocument }
+  | { status: 'incoming-exists'; user: UserDocument }
+  | { status: 'already-sent'; user: UserDocument }
+  | { status: 'sent'; user: UserDocument }
+
+function removeUid(source: string[], target: string): string[] {
+  return source.filter((item) => item !== target)
+}
+
+async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
+  try {
+    const result = await getUsersCollection(db)
+      .where({
+        uid
+      })
+      .limit(1)
+      .get()
+
+    const doc = result.data?.[0]
+    if (!doc) {
+      return null
+    }
+    return mapUserDocument(doc)
+  } catch (error) {
+    console.error('通过 UID 查询用户失败', error)
+    throw error
+  }
+}
+
+export async function sendFriendInvite(targetUid: string): Promise<SendFriendInviteResult> {
+  const db = await ensureCloud()
+  const sender = await ensureCurrentUser()
+  const users = getUsersCollection(db)
+
+  if (sender.buddyList.includes(targetUid)) {
+    return { status: 'already-friends', user: sender }
+  }
+  if (sender.incomingRequests.includes(targetUid)) {
+    return { status: 'incoming-exists', user: sender }
+  }
+  if (sender.outgoingRequests.includes(targetUid)) {
+    return { status: 'already-sent', user: sender }
+  }
+
+  const recipient = await fetchUserByUid(db, targetUid)
+  if (!recipient) {
+    return { status: 'not-found' }
+  }
+  if (recipient.buddyList.includes(sender.uid)) {
+    return { status: 'already-friends', user: sender }
+  }
+
+  const now = db.serverDate ? db.serverDate() : new Date()
+
+  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, targetUid])
+  const nextRecipientIncoming = sanitizeUidList([...recipient.incomingRequests, sender.uid])
+
+  await Promise.all([
+    users.doc(sender._id).update({
+      data: {
+        outgoingRequests: nextSenderOutgoing,
+        updatedAt: now
+      }
+    }),
+    users.doc(recipient._id).update({
+      data: {
+        incomingRequests: nextRecipientIncoming,
+        updatedAt: now
+      }
+    })
+  ])
+
+  const updatedSender = await fetchUserByOpenId(db, sender._id)
+  if (!updatedSender) {
+    throw new Error('更新邀请信息后未找到当前用户记录')
+  }
+
+  return { status: 'sent', user: updatedSender }
+}
+
+type RespondFriendInviteResult =
+  | { status: 'accepted'; user: UserDocument }
+  | { status: 'declined'; user: UserDocument }
+  | { status: 'not-found'; user: UserDocument }
+
+export async function respondFriendInvite(
+  targetUid: string,
+  accept: boolean
+): Promise<RespondFriendInviteResult> {
+  const db = await ensureCloud()
+  const users = getUsersCollection(db)
+  const current = await ensureCurrentUser()
+
+  if (!current.incomingRequests.includes(targetUid)) {
+    return { status: 'not-found', user: current }
+  }
+
+  const requester = await fetchUserByUid(db, targetUid)
+  const now = db.serverDate ? db.serverDate() : new Date()
+
+  const nextCurrentIncoming = removeUid(current.incomingRequests, targetUid)
+  const nextCurrentOutgoing = removeUid(current.outgoingRequests, targetUid)
+  const currentBuddyList = accept
+    ? sanitizeUidList([...current.buddyList, targetUid])
+    : current.buddyList
+
+  await users.doc(current._id).update({
+    data: {
+      incomingRequests: nextCurrentIncoming,
+      outgoingRequests: nextCurrentOutgoing,
+      buddyList: currentBuddyList,
+      updatedAt: now
+    }
+  })
+
+  if (requester) {
+    const nextRequesterOutgoing = removeUid(requester.outgoingRequests, current.uid)
+    const nextRequesterIncoming = removeUid(requester.incomingRequests, current.uid)
+    const requesterBuddyList = accept
+      ? sanitizeUidList([...requester.buddyList, current.uid])
+      : requester.buddyList
+
+    await users.doc(requester._id).update({
+      data: {
+        outgoingRequests: nextRequesterOutgoing,
+        incomingRequests: nextRequesterIncoming,
+        buddyList: requesterBuddyList,
+        updatedAt: now
+      }
+    })
+  }
+
+  const updatedCurrent = await fetchUserByOpenId(db, current._id)
+  if (!updatedCurrent) {
+    throw new Error('处理好友邀请后未找到当前用户记录')
+  }
+
+  if (!requester) {
+    return { status: 'not-found', user: updatedCurrent }
+  }
+
+  return { status: accept ? 'accepted' : 'declined', user: updatedCurrent }
+}
+
+type RemoveFriendResult =
+  | { status: 'ok'; user: UserDocument }
+  | { status: 'not-found'; user: UserDocument }
+
+export async function removeFriend(targetUid: string): Promise<RemoveFriendResult> {
+  const db = await ensureCloud()
+  const users = getUsersCollection(db)
+  const current = await ensureCurrentUser()
+
+  if (!current.buddyList.includes(targetUid)) {
+    return { status: 'not-found', user: current }
+  }
+
+  const target = await fetchUserByUid(db, targetUid)
+  const now = db.serverDate ? db.serverDate() : new Date()
+
+  const nextCurrentBuddyList = removeUid(current.buddyList, targetUid)
+  const nextCurrentIncoming = removeUid(current.incomingRequests, targetUid)
+  const nextCurrentOutgoing = removeUid(current.outgoingRequests, targetUid)
+
+  await users.doc(current._id).update({
+    data: {
+      buddyList: nextCurrentBuddyList,
+      incomingRequests: nextCurrentIncoming,
+      outgoingRequests: nextCurrentOutgoing,
+      updatedAt: now
+    }
+  })
+
+  if (target) {
+    const nextTargetBuddyList = removeUid(target.buddyList, current.uid)
+    const nextTargetIncoming = removeUid(target.incomingRequests, current.uid)
+    const nextTargetOutgoing = removeUid(target.outgoingRequests, current.uid)
+
+    await users.doc(target._id).update({
+      data: {
+        buddyList: nextTargetBuddyList,
+        incomingRequests: nextTargetIncoming,
+        outgoingRequests: nextTargetOutgoing,
+        updatedAt: now
+      }
+    })
+  }
+
+  const updatedCurrent = await fetchUserByOpenId(db, current._id)
+  if (!updatedCurrent) {
+    throw new Error('解除好友关系后未找到当前用户记录')
+  }
+
+  return { status: 'ok', user: updatedCurrent }
 }
 
 function clampSleeptimeBucket(targetHM: string): string {

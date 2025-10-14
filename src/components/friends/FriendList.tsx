@@ -69,7 +69,7 @@ export function FriendList({ friends, onRefresh, onRemove }: FriendListProps) {
           ))}
         </View>
       ) : (
-        <Text className='friends__empty'>暂未关注好友，输入 UID 即可开始互相监督早睡。</Text>
+        <Text className='friends__empty'>暂未添加好友，发送邀请后等待对方同意即可开始互相监督。</Text>
       )}
     </View>
   )

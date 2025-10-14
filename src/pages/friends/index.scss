@@ -107,6 +107,12 @@
     gap: 22px;
   }
 
+  &__requests {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
   &__item {
     background: #f7f8ff;
     border-radius: 24px;
@@ -114,6 +120,39 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
+  }
+
+  &__request-item {
+    background: #f7f8ff;
+    border-radius: 24px;
+    padding: 24px;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  &__request-info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__request-meta {
+    font-size: 22px;
+    color: #8a91c9;
+  }
+
+  &__request-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    button {
+      font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
+      font-weight: 500;
+    }
   }
 
   &__item-header {
