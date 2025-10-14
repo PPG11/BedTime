@@ -15,7 +15,8 @@ export const CLOUD_SHOULD_ENABLE =
 export const COLLECTIONS = {
   users: 'users',
   checkins: 'checkins',
-  publicProfiles: 'public_profiles'
+  publicProfiles: 'public_profiles',
+  goodnightMessages: 'goodnight_messages'
 } as const
 
 export const UID_LENGTH = 8
