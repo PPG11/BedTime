@@ -28,11 +28,27 @@ export type UserUpsertPayload = Partial<
   tzOffset?: number
 }
 
+type PublicProfileDocument = {
+  _id: string
+  uid: string
+  nickname: string
+  sleeptime: string
+  streak: number
+  todayStatus: 'hit' | 'miss' | 'pending'
+  updatedAt: Date
+}
+
+type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
+
 const DEFAULT_TARGET_HM = '22:30'
 const DEFAULT_BUDDY_CONSENT = false
 
 function getUsersCollection(db: CloudDatabase): DbCollection<UserDocument> {
   return db.collection<UserDocument>(COLLECTIONS.users)
+}
+
+function getPublicProfilesCollection(db: CloudDatabase): DbCollection<PublicProfileDocument> {
+  return db.collection<PublicProfileDocument>(COLLECTIONS.publicProfiles)
 }
 
 function getDefaultTzOffset(): number {
@@ -208,5 +224,48 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
   if (!updated) {
     throw new Error('更新用户信息后未找到记录')
   }
+  if (typeof sanitized.nickname === 'string' || typeof sanitized.targetHM === 'string') {
+    await syncPublicProfileBasics(db, updated, now)
+  }
   return updated
+}
+
+function clampSleeptimeBucket(targetHM: string): string {
+  const minutes = parseTimeStringToMinutes(targetHM, 22 * 60 + 30)
+  const bucket = Math.round(minutes / 30) * 30
+  return formatMinutesToTime(bucket)
+}
+
+async function syncPublicProfileBasics(
+  db: CloudDatabase,
+  user: UserDocument,
+  timestamp: Date | CloudServerDate
+): Promise<void> {
+  const publicProfiles = getPublicProfilesCollection(db)
+  const doc = publicProfiles.doc(user.uid)
+  const updatePayload = {
+    nickname: user.nickname,
+    sleeptime: clampSleeptimeBucket(user.targetHM),
+    updatedAt: timestamp as unknown as Date
+  }
+
+  try {
+    await doc.update({
+      data: updatePayload
+    })
+    return
+  } catch (error) {
+    console.warn('更新公开资料失败，尝试创建新的记录', error)
+  }
+
+  await doc.set({
+    data: {
+      uid: user.uid,
+      nickname: updatePayload.nickname,
+      sleeptime: updatePayload.sleeptime,
+      streak: 0,
+      todayStatus: 'pending',
+      updatedAt: timestamp as unknown as Date
+    }
+  })
 }
