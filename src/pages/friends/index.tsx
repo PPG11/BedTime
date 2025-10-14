@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { FriendProfile, readFriends, readUserUid, saveFriends } from '../../utils/storage'
@@ -140,7 +140,10 @@ export default function Friends() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [canUseCloud] = useState(() => supportsCloud())
 
+  const friendAliasesRef = useRef<FriendProfile[]>([])
+
   const persistAliases = useCallback((next: FriendProfile[]) => {
+    friendAliasesRef.current = next
     setFriendAliases(next)
     saveFriends(next)
   }, [])
@@ -151,7 +154,7 @@ export default function Friends() {
       setUserUid(doc.uid)
       setOutgoingRequests(doc.outgoingRequests ?? [])
 
-      const source = aliasSource ?? friendAliases
+      const source = aliasSource ?? friendAliasesRef.current
       const buddyUids = doc.buddyList ?? []
       const normalizedAliases = mergeAliasList(buddyUids, source)
       const aliasPool = new Set([
@@ -189,11 +192,12 @@ export default function Friends() {
       }
       setFriendRequests(buildRequestItems(incomingUids, requestSnapshots))
     },
-    [friendAliases, persistAliases]
+    [persistAliases]
   )
 
   const hydrate = useCallback(async () => {
     const aliases = readFriends()
+    friendAliasesRef.current = aliases
     setFriendAliases(aliases)
 
     if (canUseCloud) {
@@ -205,9 +209,7 @@ export default function Friends() {
         console.error('同步好友数据失败，使用本地数据', error)
         Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
         const fallbackUid = readUserUid()
-        if (!userUid) {
-          setUserUid(fallbackUid)
-        }
+        setUserUid((prev) => (prev ? prev : fallbackUid))
         setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
         setFriendRequests([])
         setOutgoingRequests([])
@@ -218,11 +220,11 @@ export default function Friends() {
     }
 
     const fallbackUid = readUserUid()
-    setUserUid(fallbackUid)
+    setUserUid((prev) => (prev ? prev : fallbackUid))
     setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
     setFriendRequests([])
     setOutgoingRequests([])
-  }, [applyUserDoc, canUseCloud, userUid])
+  }, [applyUserDoc, canUseCloud])
 
   useEffect(() => {
     void hydrate()
