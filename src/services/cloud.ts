@@ -48,6 +48,7 @@ type TaroCloud = {
 
 let databaseCache: CloudDatabase | null = null
 let openIdCache: string | null = null
+let openIdPromise: Promise<string> | null = null
 
 export function supportsCloud(): boolean {
   if (!CLOUD_SHOULD_ENABLE) {
@@ -112,22 +113,33 @@ export async function getCurrentOpenId(): Promise<string> {
     return openIdCache
   }
 
+  if (!openIdPromise) {
+    openIdPromise = (async () => {
+      await ensureCloud()
+
+      const response = (await Taro.cloud.callFunction({
+        name: 'login'
+      })) as LoginResult
+
+      const openid = response?.result?.openid
+      if (!openid) {
+        throw new Error('登录云函数未返回 openid')
+      }
+
+      openIdCache = openid
+      return openid
+    })()
+  }
+
   try {
-    await ensureCloud()
-
-    const response = (await Taro.cloud.callFunction({
-      name: 'login'
-    })) as LoginResult
-
-    const openid = response?.result?.openid
-    if (!openid) {
-      throw new Error('登录云函数未返回 openid')
-    }
-
-    openIdCache = openid
-    return openid
+    return await openIdPromise
   } catch (error) {
     console.error('获取 openid 失败，云函数可能未部署或云开发环境未配置', error)
+    openIdPromise = null
     throw new Error('无法获取用户身份信息，请检查云函数配置或使用本地模式')
+  } finally {
+    if (openIdCache) {
+      openIdPromise = null
+    }
   }
 }
