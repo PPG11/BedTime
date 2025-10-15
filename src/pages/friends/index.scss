@@ -156,19 +156,27 @@
   }
 
   &__item-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: flex-start;
     gap: 18px;
   }
 
   &__item-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 12px;
+    flex-wrap: nowrap;
+    align-self: center;
 
     button {
+      min-width: 120px;
       font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
       font-weight: 500;
+
+      &::after {
+        display: none;
+      }
     }
   }
 
@@ -178,6 +186,8 @@
   }
 
   &__item-name {
+    display: block;
+    margin-bottom: 8px;
     font-size: 30px;
     font-weight: 600;
     color: #3941a0;
@@ -190,6 +200,8 @@
   }
 
   &__item-uid {
+    margin-top: 10px;
+    display: block;
     font-size: 22px;
     color: #7a80b1;
   }
@@ -221,6 +233,7 @@
 
   &__item-status {
     display: flex;
+    justify-content: flex-start;
   }
 
   &__status {
@@ -248,5 +261,94 @@
   &__empty {
     font-size: 24px;
     color: #6a71a3;
+  }
+
+  @media screen and (max-width: 680px) {
+    padding: 36px 24px 64px;
+
+    &__card {
+      padding: 26px;
+    }
+
+    &__item {
+      padding: 22px;
+      gap: 16px;
+    }
+
+    &__item-header {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    &__item-actions {
+      width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      align-self: stretch;
+
+      button {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+
+    &__item-status {
+      justify-content: center;
+    }
+
+    &__status {
+      width: 100%;
+      justify-content: center;
+    }
+
+    &__item-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    &__stat {
+      padding: 16px;
+    }
+
+    &__stat-value {
+      font-size: 30px;
+    }
+  }
+
+  @media screen and (max-width: 460px) {
+    padding: 32px 20px 56px;
+
+    &__card {
+      padding: 22px;
+      gap: 20px;
+    }
+
+    &__title {
+      font-size: 28px;
+    }
+
+    &__item {
+      padding: 20px;
+    }
+
+    &__item-name {
+      font-size: 28px;
+    }
+
+    &__item-stats {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    &__stat {
+      padding: 14px 16px;
+    }
+
+    &__stat-label {
+      font-size: 20px;
+    }
+
+    &__empty {
+      font-size: 22px;
+    }
   }
 }
