@@ -52,14 +52,41 @@ function mapSnapshot(
   return mapGoodnightMessage(docId, snapshot.data)
 }
 
+function isDocumentNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const err = error as { errMsg?: unknown; message?: unknown }
+  const message = typeof err.message === 'string' ? err.message : null
+  const errMsg = typeof err.errMsg === 'string' ? err.errMsg : null
+  const combined = `${errMsg ?? ''} ${message ?? ''}`
+
+  return /document\.get:fail/.test(combined) && /cannot find document/.test(combined)
+}
+
+async function getSnapshotOrNull(
+  doc: ReturnType<DbCollection<GoodnightMessageDocument>['doc']>
+): Promise<CloudDocumentSnapshot<GoodnightMessageRecord> | null> {
+  try {
+    return await doc.get()
+  } catch (error) {
+    if (isDocumentNotFoundError(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
 export async function fetchGoodnightMessageForDate(
   uid: string,
   date: string
 ): Promise<GoodnightMessage | null> {
   const db = await ensureCloud()
   const docId = getGoodnightMessageId(uid, date)
-  const snapshot = await getGoodnightMessagesCollection(db).doc(docId).get()
-  return mapSnapshot(docId, snapshot)
+  const doc = getGoodnightMessagesCollection(db).doc(docId)
+  const snapshot = await getSnapshotOrNull(doc)
+  return snapshot ? mapSnapshot(docId, snapshot) : null
 }
 
 export async function submitGoodnightMessage(params: {
@@ -70,9 +97,9 @@ export async function submitGoodnightMessage(params: {
   const db = await ensureCloud()
   const docId = getGoodnightMessageId(params.uid, params.date)
   const collection = getGoodnightMessagesCollection(db)
-  const existing = await collection.doc(docId).get()
+  const existingSnapshot = await getSnapshotOrNull(collection.doc(docId))
 
-  if (existing.data) {
+  if (existingSnapshot && existingSnapshot.data) {
     throw new Error(GOODNIGHT_ERROR_ALREADY_SUBMITTED)
   }
 
