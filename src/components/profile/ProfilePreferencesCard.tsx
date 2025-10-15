@@ -4,6 +4,7 @@ type ProfilePreferencesCardProps = {
   name: string
   targetTimeText: string
   onNameInput: (event: { detail: { value: string } }) => void
+  onNameBlur: (event: { detail: { value: string } }) => void
   onTargetTimeChange: (event: { detail: { value: string } }) => void
 }
 
@@ -11,6 +12,7 @@ export function ProfilePreferencesCard({
   name,
   targetTimeText,
   onNameInput,
+  onNameBlur,
   onTargetTimeChange
 }: ProfilePreferencesCardProps) {
   return (
@@ -23,6 +25,7 @@ export function ProfilePreferencesCard({
           value={name}
           placeholder='输入你的称呼'
           onInput={onNameInput}
+          onBlur={onNameBlur}
           maxLength={20}
         />
       </View>
