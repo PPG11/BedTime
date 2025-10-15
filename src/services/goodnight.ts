@@ -62,7 +62,9 @@ function isDocumentNotFoundError(error: unknown): boolean {
   const errMsg = typeof err.errMsg === 'string' ? err.errMsg : null
   const combined = `${errMsg ?? ''} ${message ?? ''}`
 
-  return /document\.get:fail/.test(combined) && /cannot find document/.test(combined)
+  return (
+    /document\.get:fail/i.test(combined) && /can\s*not find document/i.test(combined)
+  )
 }
 
 async function getSnapshotOrNull(
