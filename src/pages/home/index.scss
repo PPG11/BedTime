@@ -236,6 +236,58 @@
   box-shadow: none;
 }
 
+.goodnight-reward-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(232, 238, 255, 0.9) 100%);
+  border-radius: 36px;
+  padding: 32px 34px;
+  box-shadow: 0 18px 42px rgba(120, 118, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #3a2f5b;
+  overflow: hidden;
+}
+
+.goodnight-reward-card::before {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: rgba(255, 220, 245, 0.35);
+  border-radius: 50%;
+  top: -100px;
+  right: -80px;
+  z-index: 0;
+}
+
+.goodnight-reward-card__badge {
+  position: relative;
+  align-self: flex-start;
+  padding: 10px 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 24px;
+  color: #7e6bd0;
+  box-shadow: 0 4px 16px rgba(158, 144, 255, 0.18);
+  z-index: 1;
+}
+
+.goodnight-reward-card__content {
+  position: relative;
+  font-size: 30px;
+  line-height: 1.6;
+  color: #352b60;
+  z-index: 1;
+}
+
+.goodnight-reward-card__footer {
+  position: relative;
+  font-size: 24px;
+  color: #9b92c2;
+  z-index: 1;
+}
+
 .goodnight-card {
   position: relative;
   background: linear-gradient(135deg, rgba(255, 250, 255, 0.96) 0%, rgba(231, 239, 255, 0.95) 100%);

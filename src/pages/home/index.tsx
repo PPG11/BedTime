@@ -42,6 +42,7 @@ import {
 } from '../../services'
 import { GoodnightMessageCard } from '../../components/home/GoodnightMessageCard'
 import { GoodnightMessageModal } from '../../components/home/GoodnightMessageModal'
+import { GoodnightRewardCard } from '../../components/home/GoodnightRewardCard'
 import { GOODNIGHT_MESSAGE_MAX_LENGTH, type GoodnightVoteType } from '../../types/goodnight'
 import { useGoodnightInteraction } from './useGoodnight'
 import './index.scss'
@@ -223,6 +224,7 @@ export default function Index() {
     presentReward: presentGoodnightReward,
     modalVisible: goodnightModalVisible,
     modalMessage: goodnightModalMessage,
+    rewardMessage: receivedGoodnightMessage,
     closeModal: handleCloseGoodnightModal,
     vote: handleVoteGoodnight,
     hasVoted: hasVotedGoodnight,
@@ -348,6 +350,9 @@ export default function Index() {
         disabled={isSyncing}
         onCheckIn={handleCheckIn}
       />
+      {receivedGoodnightMessage ? (
+        <GoodnightRewardCard message={receivedGoodnightMessage} />
+      ) : null}
       <GoodnightMessageCard
         value={goodnightInput}
         onChange={setGoodnightInput}

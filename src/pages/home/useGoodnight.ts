@@ -37,6 +37,7 @@ type UseGoodnightInteractionResult = {
   presentReward: () => Promise<void>
   modalVisible: boolean
   modalMessage: GoodnightMessage | null
+  rewardMessage: GoodnightMessage | null
   closeModal: () => void
   vote: (vote: GoodnightVoteType) => Promise<void>
   hasVoted: boolean
@@ -55,6 +56,7 @@ export function useGoodnightInteraction({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [modalMessage, setModalMessage] = useState<GoodnightMessage | null>(null)
+  const [rewardMessage, setRewardMessage] = useState<GoodnightMessage | null>(null)
   const [hasVoted, setHasVoted] = useState(false)
   const [isVoting, setIsVoting] = useState(false)
   const [hasPresentedToday, setHasPresentedToday] = useState(false)
@@ -113,6 +115,7 @@ export function useGoodnightInteraction({
 
   useEffect(() => {
     setHasPresentedToday(false)
+    setRewardMessage(null)
   }, [todayKey])
 
   const presentReward = useCallback(async () => {
@@ -129,6 +132,7 @@ export function useGoodnightInteraction({
       }
 
       if (message) {
+        setRewardMessage(message)
         setModalMessage(message)
         setModalVisible(true)
         setHasVoted(false)
@@ -227,6 +231,7 @@ export function useGoodnightInteraction({
         }
 
         setModalMessage(updated)
+        setRewardMessage(updated)
         setHasVoted(true)
         Taro.showToast({ title: voteType === 'like' ? '已点赞' : '已收到反馈', icon: 'success' })
       } catch (error) {
@@ -254,6 +259,7 @@ export function useGoodnightInteraction({
     presentReward,
     modalVisible,
     modalMessage,
+    rewardMessage,
     closeModal,
     vote,
     hasVoted,
