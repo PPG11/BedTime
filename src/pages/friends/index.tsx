@@ -335,7 +335,7 @@ export default function Friends() {
       Taro.showModal({
         title: '解除好友',
         content: `确定要解除与 ${target.displayName} 的好友关系吗？`,
-        confirmColor: '#5c6cff',
+        confirmColor: '#6f63ff',
         success: async (res) => {
           if (!res.confirm) {
             return

@@ -2,8 +2,8 @@
   min-height: 100vh;
   padding: 52px 32px 96px;
   box-sizing: border-box;
-  background: linear-gradient(180deg, #fdf2ff 0%, #ffeff7 45%, #ffffff 100%);
-  color: #3a2f5b;
+  background: linear-gradient(180deg, #f3f2ff 0%, #eef5ff 60%, #ffffff 100%);
+  color: #2e2a59;
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -28,13 +28,13 @@
 }
 
 .index::before {
-  background: #ffd8f0;
+  background: #d8d2ff;
   top: -160px;
   right: -180px;
 }
 
 .index::after {
-  background: #e1e8ff;
+  background: #d3e4ff;
   bottom: -200px;
   left: -140px;
 }
@@ -45,10 +45,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(237, 225, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(238, 241, 255, 0.95) 100%);
   border-radius: 36px;
   padding: 34px 38px;
-  box-shadow: 0 20px 48px rgba(136, 107, 255, 0.12);
+  box-shadow: 0 20px 48px rgba(108, 102, 214, 0.18);
   gap: 32px;
   overflow: hidden;
 }
@@ -58,7 +58,7 @@
   position: absolute;
   width: 180px;
   height: 180px;
-  background: rgba(255, 189, 224, 0.4);
+  background: rgba(144, 136, 255, 0.28);
   border-radius: 50%;
   right: -40px;
   top: -60px;
@@ -77,10 +77,10 @@
 .hero__badge {
   align-self: flex-start;
   padding: 8px 18px;
-  background: linear-gradient(135deg, #ffe0f3 0%, #f1f3ff 100%);
+  background: linear-gradient(135deg, #e6e2ff 0%, #f1f5ff 100%);
   border-radius: 999px;
   font-size: 22px;
-  color: #a07be4;
+  color: #6f63ff;
   letter-spacing: 2px;
   white-space: nowrap;
 }
@@ -88,13 +88,13 @@
 .hero__greeting {
   font-size: 30px;
   font-weight: 600;
-  color: #513a90;
+  color: #4a438b;
   white-space: nowrap;
 }
 
 .hero__subtitle {
   font-size: 24px;
-  color: #9b92c2;
+  color: #7a78a8;
   white-space: nowrap;
 }
 
@@ -102,23 +102,23 @@
   margin-top: 6px;
   font-size: 40px;
   font-weight: 700;
-  color: #2d2759;
+  color: #2e2a59;
   letter-spacing: 2px;
   white-space: nowrap;
 }
 
 .hero__countdown {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(248, 247, 255, 0.92);
   border-radius: 26px;
   padding: 18px 24px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   text-align: right;
-  color: #4c53b3;
+  color: #5754af;
   gap: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 12px 24px rgba(164, 151, 255, 0.18);
+  border: 1px solid rgba(208, 206, 255, 0.7);
+  box-shadow: 0 12px 28px rgba(110, 104, 210, 0.16);
   white-space: nowrap;
 }
 
@@ -129,8 +129,8 @@
 
 .hero__countdown-label {
   font-size: 24px;
-  opacity: 0.75;
-  color: #7d83b5;
+  opacity: 0.8;
+  color: #7a78a8;
   white-space: nowrap;
 }
 
@@ -138,16 +138,16 @@
   margin-top: 4px;
   font-size: 34px;
   font-weight: 700;
-  color: #ff7ab5;
+  color: #6f63ff;
   white-space: nowrap;
 }
 
 .checkin-card {
   position: relative;
-  background: linear-gradient(135deg, rgba(255, 247, 253, 0.95) 0%, rgba(236, 243, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(238, 243, 255, 0.95) 100%);
   border-radius: 38px;
   padding: 36px 34px;
-  box-shadow: 0 18px 46px rgba(161, 134, 255, 0.14);
+  box-shadow: 0 18px 46px rgba(110, 104, 210, 0.16);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -159,7 +159,7 @@
   position: absolute;
   width: 220px;
   height: 220px;
-  background: rgba(255, 189, 224, 0.22);
+  background: rgba(144, 136, 255, 0.18);
   border-radius: 50%;
   bottom: -120px;
   right: -80px;
@@ -169,39 +169,39 @@
 .checkin-card__title {
   font-size: 32px;
   font-weight: 700;
-  color: #352b60;
+  color: #2e2a59;
   white-space: nowrap;
   z-index: 1;
 }
 
 .checkin-card__note {
   font-size: 24px;
-  color: #a28ed0;
+  color: #7c7aae;
   white-space: nowrap;
   z-index: 1;
 }
 
 .checkin-card__status {
   font-size: 24px;
-  color: #6c5ca8;
+  color: #5f5cb1;
   letter-spacing: 1px;
   white-space: nowrap;
   z-index: 1;
 }
 
 .checkin-card__status--late {
-  color: #ff6b98;
+  color: #ff8a9b;
 }
 
 .checkin-card__timestamp {
   font-size: 22px;
-  color: #9b92c2;
+  color: #8f8dbc;
   white-space: nowrap;
   z-index: 1;
 }
 
 .checkin-card__timestamp--late {
-  color: #ff6b98;
+  color: #ff8a9b;
 }
 
 .checkin-card__button {
@@ -210,7 +210,7 @@
   height: 92px;
   border: none;
   border-radius: 28px;
-  background: linear-gradient(135deg, #ffa4d3 0%, #8f9aff 100%);
+  background: linear-gradient(135deg, #6f63ff 0%, #8f7aff 100%);
   color: #ffffff;
   font-size: 30px;
   font-weight: 600;
@@ -218,7 +218,7 @@
   align-items: center;
   justify-content: center;
   letter-spacing: 2px;
-  box-shadow: 0 12px 32px rgba(255, 164, 211, 0.35);
+  box-shadow: 0 12px 32px rgba(110, 104, 210, 0.28);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   white-space: nowrap;
   font-family: 'HarmonyOS Sans SC', 'PingFang SC', 'Helvetica Neue', sans-serif;
@@ -227,25 +227,25 @@
 
 .checkin-card__button:active {
   transform: scale(0.98);
-  box-shadow: 0 8px 18px rgba(255, 164, 211, 0.3);
+  box-shadow: 0 8px 18px rgba(110, 104, 210, 0.26);
 }
 
 .checkin-card__button[disabled] {
-  background: linear-gradient(135deg, #e0e3fb 0%, #cfd7ff 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #e0e3ff 0%, #d1d7ff 100%);
+  color: #f4f5ff;
   box-shadow: none;
 }
 
 .goodnight-reward-card {
   position: relative;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(232, 238, 255, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(234, 238, 255, 0.92) 100%);
   border-radius: 36px;
   padding: 32px 34px;
-  box-shadow: 0 18px 42px rgba(120, 118, 255, 0.12);
+  box-shadow: 0 18px 42px rgba(110, 104, 214, 0.14);
   display: flex;
   flex-direction: column;
   gap: 18px;
-  color: #3a2f5b;
+  color: #2e2a59;
   overflow: hidden;
 }
 
@@ -254,7 +254,7 @@
   position: absolute;
   width: 200px;
   height: 200px;
-  background: rgba(255, 220, 245, 0.35);
+  background: rgba(144, 136, 255, 0.16);
   border-radius: 50%;
   top: -100px;
   right: -80px;
@@ -266,10 +266,10 @@
   align-self: flex-start;
   padding: 10px 24px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
   font-size: 24px;
-  color: #7e6bd0;
-  box-shadow: 0 4px 16px rgba(158, 144, 255, 0.18);
+  color: #6f63ff;
+  box-shadow: 0 4px 16px rgba(108, 102, 214, 0.18);
   z-index: 1;
 }
 
@@ -277,23 +277,23 @@
   position: relative;
   font-size: 30px;
   line-height: 1.6;
-  color: #352b60;
+  color: #2e2a59;
   z-index: 1;
 }
 
 .goodnight-reward-card__footer {
   position: relative;
   font-size: 24px;
-  color: #9b92c2;
+  color: #7a78a8;
   z-index: 1;
 }
 
 .goodnight-card {
   position: relative;
-  background: linear-gradient(135deg, rgba(255, 250, 255, 0.96) 0%, rgba(231, 239, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(234, 238, 255, 0.94) 100%);
   border-radius: 34px;
   padding: 32px 30px;
-  box-shadow: 0 16px 40px rgba(164, 144, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(110, 104, 214, 0.14);
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -305,7 +305,7 @@
   position: absolute;
   width: 200px;
   height: 200px;
-  background: rgba(255, 206, 231, 0.22);
+  background: rgba(144, 136, 255, 0.16);
   border-radius: 50%;
   top: -90px;
   left: -60px;
@@ -315,13 +315,13 @@
 .goodnight-card__title {
   font-size: 30px;
   font-weight: 700;
-  color: #352b60;
+  color: #2e2a59;
   z-index: 1;
 }
 
 .goodnight-card__description {
   font-size: 24px;
-  color: #8d7eb8;
+  color: #7a78a8;
   line-height: 1.6;
   z-index: 1;
 }
@@ -331,23 +331,23 @@
   min-height: 168px;
   padding: 18px 20px;
   border-radius: 24px;
-  border: 1px solid rgba(152, 146, 216, 0.36);
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(150, 146, 220, 0.32);
+  background: rgba(255, 255, 255, 0.94);
   font-size: 26px;
-  color: #3a2f5b;
+  color: #2e2a59;
   box-sizing: border-box;
   z-index: 1;
 }
 
 .goodnight-card__textarea[disabled] {
-  color: #9b92c2;
-  background: rgba(248, 245, 255, 0.6);
+  color: #8684ba;
+  background: rgba(244, 244, 255, 0.7);
 }
 
 .goodnight-card__counter {
   align-self: flex-end;
   font-size: 22px;
-  color: #a197c5;
+  color: #8f8dbc;
   z-index: 1;
 }
 
@@ -356,7 +356,7 @@
   height: 88px;
   border-radius: 28px;
   border: none;
-  background: linear-gradient(135deg, #8f9aff 0%, #ffa4d3 100%);
+  background: linear-gradient(135deg, #6f63ff 0%, #8f7aff 100%);
   color: #ffffff;
   font-size: 30px;
   font-weight: 600;
@@ -364,35 +364,35 @@
   align-items: center;
   justify-content: center;
   letter-spacing: 2px;
-  box-shadow: 0 14px 30px rgba(159, 154, 255, 0.32);
+  box-shadow: 0 14px 30px rgba(110, 104, 214, 0.3);
   z-index: 1;
 }
 
 .goodnight-card__button[disabled] {
-  background: linear-gradient(135deg, #e3e6fd 0%, #d7defd 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, #e0e3ff 0%, #d4d9ff 100%);
+  color: #f4f5ff;
   box-shadow: none;
 }
 
 .goodnight-card__submitted {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.88);
   border-radius: 24px;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: inset 0 0 0 1px rgba(152, 146, 216, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(150, 146, 220, 0.2);
   z-index: 1;
 }
 
 .goodnight-card__submitted-label {
   font-size: 24px;
-  color: #8d7eb8;
+  color: #7a78a8;
 }
 
 .goodnight-card__submitted-content {
   font-size: 28px;
-  color: #3a2f5b;
+  color: #2e2a59;
   line-height: 1.6;
   white-space: pre-line;
 }
@@ -404,14 +404,14 @@
 }
 
 .stats-card {
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.84);
   border-radius: 26px;
   padding: 28px;
-  box-shadow: 0 14px 36px rgba(140, 134, 255, 0.1);
+  box-shadow: 0 14px 36px rgba(110, 104, 214, 0.12);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border: 2px solid rgba(234, 224, 255, 0.8);
+  border: 1px solid rgba(210, 208, 255, 0.65);
 }
 
 .stats-card__icon {
@@ -423,21 +423,21 @@
 .stats-card__value {
   font-size: 34px;
   font-weight: 700;
-  color: #5f5bff;
+  color: #6f63ff;
   white-space: nowrap;
 }
 
 .stats-card__label {
   font-size: 22px;
-  color: #8d85b8;
+  color: #8684ba;
   white-space: nowrap;
 }
 
 .recent {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94) 0%, rgba(246, 248, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(236, 240, 255, 0.94) 100%);
   border-radius: 32px;
   padding: 32px;
-  box-shadow: 0 16px 40px rgba(142, 138, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(110, 104, 214, 0.14);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -447,13 +447,13 @@
 .recent__title {
   font-size: 30px;
   font-weight: 700;
-  color: #352b60;
+  color: #2e2a59;
   white-space: nowrap;
 }
 
 .recent__hint {
   font-size: 22px;
-  color: #a79fcc;
+  color: #8684ba;
   white-space: nowrap;
 }
 
@@ -478,9 +478,9 @@
   scroll-snap-align: start;
   border-radius: 26px;
   padding: 16px 18px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.82);
   text-align: center;
-  color: #7d73ab;
+  color: #7a78a8;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -490,11 +490,11 @@
 }
 
 .recent__item--checked {
-  background: linear-gradient(135deg, #8ea0ff 0%, #ff9bd9 100%);
+  background: linear-gradient(135deg, #6f63ff 0%, #8f7aff 100%);
   color: #ffffff;
   transform: translateY(-6px);
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 12px 28px rgba(148, 132, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 12px 28px rgba(110, 104, 214, 0.28);
 }
 
 .recent__date {
@@ -510,10 +510,10 @@
 }
 
 .tips {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(247, 245, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(239, 242, 255, 0.94) 100%);
   border-radius: 32px;
   padding: 34px;
-  box-shadow: 0 16px 42px rgba(175, 160, 255, 0.12);
+  box-shadow: 0 16px 42px rgba(110, 104, 214, 0.14);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -522,13 +522,13 @@
 .tips__title {
   font-size: 30px;
   font-weight: 700;
-  color: #352b60;
+  color: #2e2a59;
   white-space: nowrap;
 }
 
 .tips__subtitle {
   font-size: 24px;
-  color: #a898d0;
+  color: #8684ba;
   white-space: nowrap;
 }
 
@@ -541,12 +541,12 @@
   position: relative;
   padding: 20px 24px 20px 64px;
   border-radius: 24px;
-  background: rgba(246, 239, 255, 0.9);
-  color: #6f5f9f;
+  background: rgba(236, 232, 255, 0.92);
+  color: #5f5cb1;
   font-size: 24px;
   line-height: 1.65;
-  box-shadow: 0 10px 22px rgba(175, 160, 255, 0.12);
-  border: 1px solid rgba(167, 146, 219, 0.35);
+  box-shadow: 0 10px 22px rgba(110, 104, 214, 0.14);
+  border: 1px solid rgba(188, 186, 240, 0.5);
 }
 
 .tips__item::before {
@@ -580,8 +580,8 @@
   max-width: 640px;
   padding: 42px 38px 32px;
   border-radius: 32px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(236, 238, 255, 0.98) 100%);
-  box-shadow: 0 28px 64px rgba(99, 85, 160, 0.22);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(236, 240, 255, 0.98) 100%);
+  box-shadow: 0 28px 64px rgba(88, 84, 176, 0.24);
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -591,13 +591,13 @@
 .goodnight-modal__title {
   font-size: 32px;
   font-weight: 700;
-  color: #352b60;
+  color: #2e2a59;
   text-align: center;
 }
 
 .goodnight-modal__content {
   font-size: 28px;
-  color: #3a2f5b;
+  color: #2e2a59;
   line-height: 1.7;
   text-align: left;
   white-space: pre-line;
@@ -605,7 +605,7 @@
 
 .goodnight-modal__hint {
   font-size: 24px;
-  color: #a197c5;
+  color: #8684ba;
   text-align: center;
 }
 
@@ -628,12 +628,12 @@
 }
 
 .goodnight-modal__button--dislike {
-  background: linear-gradient(135deg, #d9dcff 0%, #f5b8d7 100%);
-  color: #584b88;
+  background: linear-gradient(135deg, #e2e5ff 0%, #f2defd 100%);
+  color: #5a559d;
 }
 
 .goodnight-modal__button--like {
-  background: linear-gradient(135deg, #ff9bd9 0%, #8f9aff 100%);
+  background: linear-gradient(135deg, #6f63ff 0%, #8f7aff 100%);
 }
 
 .goodnight-modal__button[disabled] {
@@ -647,8 +647,8 @@
   height: 72px;
   border-radius: 24px;
   border: none;
-  background: linear-gradient(135deg, #f3e6ff 0%, #ffd8ec 100%);
-  color: #6c5ca8;
+  background: linear-gradient(135deg, #e8e7ff 0%, #f2ecff 100%);
+  color: #5f5cb1;
   font-size: 26px;
   font-weight: 600;
 }
