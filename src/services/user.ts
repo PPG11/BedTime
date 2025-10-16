@@ -264,10 +264,12 @@ function removeUid(source: string[], target: string): string[] {
 }
 
 async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
-  try {
-    const result = await getUsersCollection(db)
+  const users = getUsersCollection(db)
+
+  const queryByUid = async (candidate: string | number): Promise<UserDocument | null> => {
+    const result = await users
       .where({
-        uid
+        uid: candidate
       })
       .limit(1)
       .get()
@@ -277,6 +279,22 @@ async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocum
       return null
     }
     return mapUserDocument(doc)
+  }
+
+  try {
+    const doc = await queryByUid(uid)
+    if (doc) {
+      return doc
+    }
+
+    if (/^\d+$/.test(uid)) {
+      const numericUid = Number(uid)
+      if (Number.isSafeInteger(numericUid)) {
+        return await queryByUid(numericUid)
+      }
+    }
+
+    return null
   } catch (error) {
     console.error('通过 UID 查询用户失败', error)
     throw error
