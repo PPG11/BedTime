@@ -42,6 +42,8 @@ type PublicProfileDocument = {
   updatedAt: Date
 }
 
+type RawUserDocument = Omit<UserDocument, 'uid'> & { uid: string | number }
+
 type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
 
 const DEFAULT_TARGET_HM = '22:30'
@@ -103,9 +105,17 @@ function ensureUserDocument(data: Partial<UserDocument>, openid: string, uid: st
   }
 }
 
-function mapUserDocument(raw: UserDocument): UserDocument {
+function mapUserDocument(raw: RawUserDocument): UserDocument {
+  const uid =
+    typeof raw.uid === 'number'
+      ? Number.isSafeInteger(raw.uid)
+        ? normalizeUid(raw.uid)
+        : String(raw.uid)
+      : raw.uid
+
   return {
     ...raw,
+    uid,
     buddyList: Array.isArray(raw.buddyList) ? sanitizeUidList(raw.buddyList) : [],
     incomingRequests: Array.isArray(raw.incomingRequests)
       ? sanitizeUidList(raw.incomingRequests)
@@ -113,7 +123,7 @@ function mapUserDocument(raw: UserDocument): UserDocument {
     outgoingRequests: Array.isArray(raw.outgoingRequests)
       ? sanitizeUidList(raw.outgoingRequests)
       : [],
-    nickname: raw.nickname || `睡眠伙伴${raw.uid.slice(-4)}`,
+    nickname: raw.nickname || `睡眠伙伴${uid.slice(-4)}`,
     targetHM: raw.targetHM || DEFAULT_TARGET_HM,
     tzOffset: typeof raw.tzOffset === 'number' ? raw.tzOffset : getDefaultTzOffset(),
     buddyConsent: Boolean(raw.buddyConsent),
@@ -264,10 +274,12 @@ function removeUid(source: string[], target: string): string[] {
 }
 
 async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
-  try {
-    const result = await getUsersCollection(db)
+  const users = getUsersCollection(db)
+
+  const queryByUid = async (candidate: string | number): Promise<UserDocument | null> => {
+    const result = await users
       .where({
-        uid
+        uid: candidate
       })
       .limit(1)
       .get()
@@ -277,6 +289,22 @@ async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocum
       return null
     }
     return mapUserDocument(doc)
+  }
+
+  try {
+    const doc = await queryByUid(uid)
+    if (doc) {
+      return doc
+    }
+
+    if (/^\d+$/.test(uid)) {
+      const numericUid = Number(uid)
+      if (Number.isSafeInteger(numericUid)) {
+        return await queryByUid(numericUid)
+      }
+    }
+
+    return null
   } catch (error) {
     console.error('通过 UID 查询用户失败', error)
     throw error
