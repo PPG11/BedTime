@@ -282,6 +282,10 @@ export default function Friends() {
           Taro.showToast({ title: '未找到该用户', icon: 'none' })
           return
         }
+        if (result.status === 'self-target') {
+          Taro.showToast({ title: '不能添加自己哦', icon: 'none' })
+          return
+        }
         await applyUserDoc(result.user)
         if (remark) {
           persistAliases([

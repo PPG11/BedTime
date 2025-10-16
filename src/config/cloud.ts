@@ -16,7 +16,8 @@ export const COLLECTIONS = {
   users: 'users',
   checkins: 'checkins',
   publicProfiles: 'public_profiles',
-  goodnightMessages: 'goodnight_messages'
+  goodnightMessages: 'goodnight_messages',
+  friendInvites: 'friend_invites'
 } as const
 
 export const UID_LENGTH = 8

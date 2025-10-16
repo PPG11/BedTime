@@ -42,9 +42,24 @@ type PublicProfileDocument = {
   updatedAt: Date
 }
 
+type PublicProfileRecord = PublicProfileDocument & { _openid?: string }
+
 type RawUserDocument = Omit<UserDocument, 'uid'> & { uid: string | number }
 
 type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
+
+type FriendInviteStatus = 'pending' | 'accepted' | 'declined'
+
+type FriendInviteDocument = {
+  _id: string
+  senderUid: string
+  senderOpenId: string
+  recipientUid: string
+  recipientOpenId: string
+  status: FriendInviteStatus
+  createdAt: Date
+  updatedAt: Date
+}
 
 const DEFAULT_TARGET_HM = '22:30'
 const DEFAULT_BUDDY_CONSENT = false
@@ -55,6 +70,10 @@ function getUsersCollection(db: CloudDatabase): DbCollection<UserDocument> {
 
 function getPublicProfilesCollection(db: CloudDatabase): DbCollection<PublicProfileDocument> {
   return db.collection<PublicProfileDocument>(COLLECTIONS.publicProfiles)
+}
+
+function getFriendInvitesCollection(db: CloudDatabase): DbCollection<FriendInviteDocument> {
+  return db.collection<FriendInviteDocument>(COLLECTIONS.friendInvites)
 }
 
 function getDefaultTzOffset(): number {
@@ -148,7 +167,8 @@ async function fetchUserByOpenId(
     if (!doc) {
       return null
     }
-    return mapUserDocument(doc)
+    const mapped = mapUserDocument(doc)
+    return await hydrateUserInviteLists(db, mapped)
   } catch (error) {
     console.error('读取用户信息失败', error)
     throw error
@@ -214,6 +234,55 @@ function sanitizeUidList(list: string[]): string[] {
   )
 }
 
+function buildFriendInviteId(senderUid: string, recipientUid: string): string {
+  return `invite_${senderUid}_${recipientUid}`
+}
+
+async function hydrateUserInviteLists(
+  db: CloudDatabase,
+  user: UserDocument
+): Promise<UserDocument> {
+  try {
+    const invites = getFriendInvitesCollection(db)
+    const [outgoingSnapshot, incomingSnapshot] = await Promise.all([
+      invites
+        .where({
+          senderUid: user.uid,
+          status: 'pending'
+        })
+        .limit(100)
+        .get(),
+      invites
+        .where({
+          recipientUid: user.uid,
+          status: 'pending'
+        })
+        .limit(100)
+        .get()
+    ])
+
+    const outgoingUids = sanitizeUidList(
+      (outgoingSnapshot.data ?? []).map((invite) => invite.recipientUid)
+    )
+    const incomingUids = sanitizeUidList(
+      (incomingSnapshot.data ?? []).map((invite) => invite.senderUid)
+    )
+
+    return {
+      ...user,
+      incomingRequests: incomingUids,
+      outgoingRequests: outgoingUids
+    }
+  } catch (error) {
+    console.warn('同步好友邀请列表失败', error)
+    return {
+      ...user,
+      incomingRequests: sanitizeUidList(user.incomingRequests ?? []),
+      outgoingRequests: sanitizeUidList(user.outgoingRequests ?? [])
+    }
+  }
+}
+
 export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserDocument> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
@@ -264,6 +333,7 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
 
 type SendFriendInviteResult =
   | { status: 'not-found' }
+  | { status: 'self-target'; user: UserDocument }
   | { status: 'already-friends'; user: UserDocument }
   | { status: 'incoming-exists'; user: UserDocument }
   | { status: 'already-sent'; user: UserDocument }
@@ -292,15 +362,168 @@ async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocum
   }
 
   try {
-    const doc = await queryByUid(uid)
-    if (doc) {
-      return doc
+    const candidates: Array<string | number> = []
+    const seen = new Set<string>()
+    const pushCandidate = (value: string | number) => {
+      if (typeof value === 'string') {
+        const trimmed = value.trim()
+        if (!trimmed.length) {
+          return
+        }
+        const key = `string:${trimmed}`
+        if (seen.has(key)) {
+          return
+        }
+        seen.add(key)
+        candidates.push(trimmed)
+        return
+      }
+      const key = `number:${value}`
+      if (seen.has(key)) {
+        return
+      }
+      seen.add(key)
+      candidates.push(value)
     }
 
-    if (/^\d+$/.test(uid)) {
-      const numericUid = Number(uid)
+    const normalized = uid.trim()
+    pushCandidate(normalized)
+
+    if (normalized.length && normalized !== uid) {
+      pushCandidate(uid)
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      if (normalized.length < UID_LENGTH) {
+        pushCandidate(normalized.padStart(UID_LENGTH, '0'))
+      }
+
+      const withoutLeadingZeros = normalized.replace(/^0+/, '')
+      if (withoutLeadingZeros.length) {
+        pushCandidate(withoutLeadingZeros)
+      }
+
+      const numericUid = Number(normalized)
       if (Number.isSafeInteger(numericUid)) {
-        return await queryByUid(numericUid)
+        pushCandidate(numericUid)
+        pushCandidate(String(numericUid))
+        pushCandidate(normalizeUid(numericUid))
+      }
+    }
+
+    for (const candidate of candidates) {
+      const doc = await queryByUid(candidate)
+      if (doc) {
+        return doc
+      }
+    }
+
+    const publicProfiles = getPublicProfilesCollection(db)
+    const seenPublicCandidates = new Set<string>()
+    const resolveFromPublicProfile = async (candidate: string): Promise<UserDocument | null> => {
+      const trimmed = candidate.trim()
+      if (!trimmed.length || seenPublicCandidates.has(trimmed)) {
+        return null
+      }
+      seenPublicCandidates.add(trimmed)
+
+      const records: PublicProfileRecord[] = []
+
+      try {
+        const snapshot = await publicProfiles.doc(trimmed).get()
+        if (snapshot.data) {
+          records.push({
+            ...snapshot.data,
+            uid: snapshot.data.uid ?? trimmed
+          } as PublicProfileRecord)
+        }
+      } catch (error) {
+        console.warn('按 UID 读取公开资料失败', error)
+      }
+
+      try {
+        const queried = await publicProfiles
+          .where({
+            uid: trimmed
+          })
+          .limit(1)
+          .get()
+        const doc = queried.data?.[0]
+        if (doc) {
+          records.push(doc as PublicProfileRecord)
+        }
+      } catch (error) {
+        console.warn('查询公开资料失败', error)
+      }
+
+      for (const record of records) {
+        if (!record || typeof record.uid !== 'string' || !record.uid.length) {
+          continue
+        }
+
+        const openid = (record as { _openid?: unknown })._openid
+        if (typeof openid !== 'string' || !openid.length) {
+          continue
+        }
+
+        try {
+          const existing = await fetchUserByOpenId(db, openid)
+          if (existing) {
+            return existing
+          }
+        } catch (error) {
+          console.warn('通过公开资料关联用户信息失败', error)
+        }
+
+        const now = db.serverDate ? db.serverDate() : new Date()
+        const bootstrap = ensureUserDocument(
+          {
+            nickname: typeof record.nickname === 'string' ? record.nickname : undefined,
+            targetHM: typeof record.sleeptime === 'string' ? record.sleeptime : undefined,
+            createdAt: now as unknown as Date,
+            updatedAt: now as unknown as Date
+          },
+          openid,
+          record.uid
+        )
+
+        try {
+          await users.doc(openid).set({
+            data: {
+              uid: bootstrap.uid,
+              nickname: bootstrap.nickname,
+              tzOffset: bootstrap.tzOffset,
+              targetHM: bootstrap.targetHM,
+              buddyConsent: bootstrap.buddyConsent,
+              buddyList: bootstrap.buddyList,
+              incomingRequests: bootstrap.incomingRequests,
+              outgoingRequests: bootstrap.outgoingRequests,
+              createdAt: now,
+              updatedAt: now
+            }
+          })
+        } catch (error) {
+          console.error('根据公开资料补充用户信息失败', error)
+          continue
+        }
+
+        return {
+          ...bootstrap,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+
+      return null
+    }
+
+    const stringCandidates = candidates.filter(
+      (item): item is string => typeof item === 'string'
+    )
+    for (const candidate of stringCandidates) {
+      const resolved = await resolveFromPublicProfile(candidate)
+      if (resolved) {
+        return resolved
       }
     }
 
@@ -315,44 +538,94 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
   const db = await ensureCloud()
   const sender = await ensureCurrentUser()
   const users = getUsersCollection(db)
+  const invites = getFriendInvitesCollection(db)
+  const normalizedTargetUid = targetUid.trim()
 
-  if (sender.buddyList.includes(targetUid)) {
+  if (!normalizedTargetUid.length) {
+    return { status: 'not-found' }
+  }
+  if (normalizedTargetUid === sender.uid) {
+    return { status: 'self-target', user: sender }
+  }
+  if (sender.buddyList.includes(normalizedTargetUid)) {
     return { status: 'already-friends', user: sender }
   }
-  if (sender.incomingRequests.includes(targetUid)) {
+  if (sender.incomingRequests.includes(normalizedTargetUid)) {
     return { status: 'incoming-exists', user: sender }
   }
-  if (sender.outgoingRequests.includes(targetUid)) {
+  if (sender.outgoingRequests.includes(normalizedTargetUid)) {
     return { status: 'already-sent', user: sender }
   }
 
-  const recipient = await fetchUserByUid(db, targetUid)
+  const recipient = await fetchUserByUid(db, normalizedTargetUid)
   if (!recipient) {
     return { status: 'not-found' }
+  }
+  if (recipient.uid === sender.uid) {
+    return { status: 'self-target', user: sender }
   }
   if (recipient.buddyList.includes(sender.uid)) {
     return { status: 'already-friends', user: sender }
   }
 
   const now = db.serverDate ? db.serverDate() : new Date()
+  const inviteId = buildFriendInviteId(sender.uid, recipient.uid)
+  const inviteDoc = invites.doc(inviteId)
+  let existingInvite: FriendInviteDocument | undefined
 
-  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, targetUid])
-  const nextRecipientIncoming = sanitizeUidList([...recipient.incomingRequests, sender.uid])
+  try {
+    const snapshot = await inviteDoc.get()
+    if (snapshot.data) {
+      existingInvite = snapshot.data
+    }
+  } catch (error) {
+    console.warn('读取好友邀请记录失败', error)
+  }
 
-  await Promise.all([
-    users.doc(sender._id).update({
-      data: {
-        outgoingRequests: nextSenderOutgoing,
-        updatedAt: now
-      }
-    }),
-    users.doc(recipient._id).update({
-      data: {
-        incomingRequests: nextRecipientIncoming,
-        updatedAt: now
-      }
+  if (existingInvite) {
+    if (existingInvite.status === 'pending') {
+      return { status: 'already-sent', user: sender }
+    }
+    if (existingInvite.status === 'accepted') {
+      return { status: 'already-friends', user: sender }
+    }
+  }
+
+  const inviteCreatedAt =
+    existingInvite?.createdAt instanceof Date
+      ? (existingInvite.createdAt as Date)
+      : existingInvite?.createdAt
+      ? new Date(existingInvite.createdAt)
+      : now
+
+  const invitePayload = {
+    senderUid: sender.uid,
+    senderOpenId: sender._id,
+    recipientUid: recipient.uid,
+    recipientOpenId: recipient._id,
+    status: 'pending' as FriendInviteStatus,
+    createdAt: inviteCreatedAt as unknown as Date,
+    updatedAt: now as unknown as Date
+  }
+
+  if (existingInvite) {
+    await inviteDoc.update({
+      data: invitePayload
     })
-  ])
+  } else {
+    await inviteDoc.set({
+      data: invitePayload
+    })
+  }
+
+  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, normalizedTargetUid])
+
+  await users.doc(sender._id).update({
+    data: {
+      outgoingRequests: nextSenderOutgoing,
+      updatedAt: now
+    }
+  })
 
   const updatedSender = await fetchUserByOpenId(db, sender._id)
   if (!updatedSender) {
@@ -373,19 +646,44 @@ export async function respondFriendInvite(
 ): Promise<RespondFriendInviteResult> {
   const db = await ensureCloud()
   const users = getUsersCollection(db)
+  const invites = getFriendInvitesCollection(db)
   const current = await ensureCurrentUser()
+  const normalizedTargetUid = targetUid.trim()
 
-  if (!current.incomingRequests.includes(targetUid)) {
+  if (!normalizedTargetUid.length) {
     return { status: 'not-found', user: current }
   }
 
-  const requester = await fetchUserByUid(db, targetUid)
-  const now = db.serverDate ? db.serverDate() : new Date()
+  if (!current.incomingRequests.includes(normalizedTargetUid)) {
+    return { status: 'not-found', user: current }
+  }
 
-  const nextCurrentIncoming = removeUid(current.incomingRequests, targetUid)
-  const nextCurrentOutgoing = removeUid(current.outgoingRequests, targetUid)
-  const currentBuddyList = accept
-    ? sanitizeUidList([...current.buddyList, targetUid])
+  const inviteId = buildFriendInviteId(normalizedTargetUid, current.uid)
+  const inviteDoc = invites.doc(inviteId)
+  let invite: FriendInviteDocument | undefined
+
+  try {
+    const snapshot = await inviteDoc.get()
+    if (snapshot.data) {
+      invite = snapshot.data
+    }
+  } catch (error) {
+    console.warn('读取好友邀请失败', error)
+  }
+
+  if (!invite || invite.status !== 'pending') {
+    return { status: 'not-found', user: current }
+  }
+
+  const requester = await fetchUserByUid(db, normalizedTargetUid)
+  const now = db.serverDate ? db.serverDate() : new Date()
+  const nextInviteStatus: FriendInviteStatus =
+    accept && requester ? 'accepted' : 'declined'
+
+  const nextCurrentIncoming = removeUid(current.incomingRequests, normalizedTargetUid)
+  const nextCurrentOutgoing = removeUid(current.outgoingRequests, normalizedTargetUid)
+  const currentBuddyList = accept && requester
+    ? sanitizeUidList([...current.buddyList, normalizedTargetUid])
     : current.buddyList
 
   await users.doc(current._id).update({
@@ -413,6 +711,13 @@ export async function respondFriendInvite(
       }
     })
   }
+
+  await inviteDoc.update({
+    data: {
+      status: nextInviteStatus,
+      updatedAt: now
+    }
+  })
 
   const updatedCurrent = await fetchUserByOpenId(db, current._id)
   if (!updatedCurrent) {

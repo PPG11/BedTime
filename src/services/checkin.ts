@@ -18,19 +18,93 @@ export type CheckinDocument = {
   tzOffset: number
 }
 
-function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinDocument> {
-  return db.collection<CheckinDocument>(COLLECTIONS.checkins)
+type CheckinRecord = {
+  _id: string
+  uid: string
+  userUid?: string
+  date: string
+  status: CheckinStatus
+  ts: Date | string | number | { [key: string]: unknown }
+  tzOffset: number
+}
+
+function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinRecord> {
+  return db.collection<CheckinRecord>(COLLECTIONS.checkins)
 }
 
 function getCheckinDocId(uid: string, date: string): string {
   return `${uid}_${date}`
 }
 
-function mapCheckinDocument(raw: CheckinDocument): CheckinDocument {
-  return {
-    ...raw,
-    ts: raw.ts instanceof Date ? raw.ts : new Date(raw.ts)
+function normalizeTimestamp(input: CheckinRecord['ts']): Date {
+  if (input instanceof Date) {
+    return input
   }
+
+  if (typeof input === 'number' || typeof input === 'string') {
+    const parsed = new Date(input)
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed
+    }
+  }
+
+  if (input && typeof input === 'object') {
+    const candidate =
+      (input as { value?: unknown }).value ??
+      (input as { time?: unknown }).time ??
+      (input as { $date?: unknown }).$date
+    if (typeof candidate === 'number' || typeof candidate === 'string') {
+      const parsed = new Date(candidate)
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed
+      }
+    }
+  }
+
+  return new Date()
+}
+
+function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
+  const userUid = raw.userUid ?? raw.uid
+  return {
+    _id: raw._id,
+    uid: userUid,
+    date: raw.date,
+    status: raw.status,
+    tzOffset: raw.tzOffset,
+    ts: normalizeTimestamp(raw.ts)
+  }
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  if (!error) {
+    return false
+  }
+
+  if (typeof error === 'object') {
+    const maybeError = error as { errCode?: unknown; errMsg?: unknown; message?: unknown }
+    const errMsg = maybeError.errMsg ?? maybeError.message
+    if (typeof errMsg === 'string' && errMsg.toLowerCase().includes('duplicate key')) {
+      return true
+    }
+  }
+
+  const text = String(error)
+  return text.toLowerCase().includes('duplicate key')
+}
+
+function extractDateFromCheckin(raw: CheckinRecord): string | null {
+  if (typeof raw.date === 'string' && raw.date) {
+    return raw.date
+  }
+
+  const segments = raw._id.split('_')
+  const candidate = segments[segments.length - 1]
+  if (/^\d{8}$/.test(candidate)) {
+    return candidate
+  }
+
+  return null
 }
 
 function shiftDateKey(key: string, delta: number): string {
@@ -45,24 +119,72 @@ export async function upsertCheckin(
   const db = await ensureCloud()
   const docId = getCheckinDocId(params.uid, params.date)
   const now = db.serverDate ? db.serverDate() : new Date()
-  const data = {
-    uid: params.uid,
+  const data: Omit<CheckinRecord, '_id'> = {
+    uid: docId,
+    userUid: params.uid,
     date: params.date,
     status: params.status,
     tzOffset: params.tzOffset,
     ts: params.ts ?? now
   }
 
-  await getCheckinsCollection(db)
-    .doc(docId)
-    .set({
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('upsertCheckin', { docId, payload: data })
+  }
+
+  const collection = getCheckinsCollection(db)
+  try {
+    await collection.doc(docId).set({
       data
     })
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error
+    }
+
+    const legacyResult = await collection
+      .where({
+        uid: params.uid
+      })
+      .limit(1000)
+      .get()
+
+    const legacyDocs = legacyResult.data ?? []
+    if (!legacyDocs.length) {
+      throw error
+    }
+
+    for (const legacy of legacyDocs) {
+      const legacyDate = extractDateFromCheckin(legacy) ?? params.date
+      const migratedUid = getCheckinDocId(params.uid, legacyDate)
+      await collection.doc(legacy._id).update({
+        data: {
+          uid: migratedUid,
+          userUid: params.uid
+        }
+      })
+    }
+
+    const hasTargetId = legacyDocs.some((item) => item._id === docId)
+    if (hasTargetId) {
+      await collection.doc(docId).update({
+        data
+      })
+
+      return mapCheckinDocument({
+        _id: docId,
+        ...data
+      })
+    }
+
+    await collection.doc(docId).set({
+      data
+    })
+  }
 
   return mapCheckinDocument({
     _id: docId,
-    ...data,
-    ts: data.ts as unknown as Date
+    ...data
   })
 }
 
