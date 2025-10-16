@@ -148,6 +148,31 @@ export default function Friends() {
     saveFriends(next)
   }, [])
 
+  const upsertAlias = useCallback(
+    (uid: string, remark?: string) => {
+      const trimmed = remark?.trim() ?? ''
+      const current = friendAliasesRef.current
+      const filtered = current.filter((item) => item.uid !== uid)
+      if (!trimmed.length) {
+        persistAliases(filtered)
+        return
+      }
+      persistAliases([...filtered, { uid, remark: trimmed }])
+    },
+    [persistAliases]
+  )
+
+  const removeAlias = useCallback(
+    (uid: string) => {
+      const current = friendAliasesRef.current
+      const next = current.filter((item) => item.uid !== uid)
+      if (next.length !== current.length) {
+        persistAliases(next)
+      }
+    },
+    [persistAliases]
+  )
+
   const applyUserDoc = useCallback(
     async (doc: UserDocument, aliasSource?: FriendProfile[]) => {
       setUserDoc(doc)
@@ -288,10 +313,7 @@ export default function Friends() {
         }
         await applyUserDoc(result.user)
         if (remark) {
-          persistAliases([
-            ...friendAliases.filter((item) => item.uid !== normalizedUid),
-            { uid: normalizedUid, remark }
-          ])
+          upsertAlias(normalizedUid, remark)
         }
         resetForm()
         if (result.status === 'sent') {
@@ -317,15 +339,15 @@ export default function Friends() {
     aliasInput,
     applyUserDoc,
     canUseCloud,
-    friendAliases,
+    friendAliasesRef,
     incomingRequestSet,
     isSyncing,
     knownUids,
     outgoingRequestSet,
-    persistAliases,
     resetForm,
     sendFriendInvite,
     uidInput,
+    upsertAlias,
     userDoc,
     userUid
   ])
@@ -362,14 +384,22 @@ export default function Friends() {
             }
             return
           }
-          const nextAliases = friendAliases.filter((item) => item.uid !== targetUid)
-          persistAliases(nextAliases)
+          removeAlias(targetUid)
           setFriendItems((prev) => prev.filter((item) => item.uid !== targetUid))
           Taro.showToast({ title: '已解除好友关系', icon: 'none' })
         }
       })
     },
-    [applyUserDoc, canUseCloud, friendAliases, friendItems, isSyncing, persistAliases, removeFriend, userDoc]
+    [
+      applyUserDoc,
+      canUseCloud,
+      friendAliasesRef,
+      friendItems,
+      isSyncing,
+      removeAlias,
+      removeFriend,
+      userDoc
+    ]
   )
 
   const handleAcceptRequest = useCallback(
@@ -444,7 +474,7 @@ export default function Friends() {
           if (!snapshots.length) {
             Taro.showToast({ title: '暂无最新状态', icon: 'none' })
           } else {
-            const alias = friendAliases.find((item) => item.uid === targetUid)?.remark
+            const alias = friendAliasesRef.current.find((item) => item.uid === targetUid)?.remark
             const updated = buildFriendItems(
               [targetUid],
               snapshots,
@@ -466,12 +496,14 @@ export default function Friends() {
 
       setFriendItems((prev) =>
         prev.map((item) =>
-          item.uid === targetUid ? createPlaceholderItem(item.uid, item.remark) : item
+          item.uid === targetUid
+            ? createPlaceholderItem(item.uid, item.remark)
+            : item
         )
       )
       Taro.showToast({ title: '好友状态已更新', icon: 'success' })
     },
-    [canUseCloud, friendAliases, isSyncing, userDoc]
+    [canUseCloud, friendAliasesRef, isSyncing, userDoc]
   )
 
   return (
