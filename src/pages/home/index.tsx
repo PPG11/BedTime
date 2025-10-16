@@ -248,10 +248,11 @@ export default function Index() {
     }
 
     if (canUseCloud && userDoc) {
+      setIsSyncing(true)
       try {
-        setIsSyncing(true)
         const latestUser = withLatestSettings(userDoc, settings)
-        const tzOffset = typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
+        const tzOffset =
+          typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
         const created = await upsertCheckin({
           uid: latestUser.uid,
           date: todayKey,
@@ -261,13 +262,17 @@ export default function Index() {
         const timestamp = created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
         setUserDoc(latestUser)
-        await refreshPublicProfile(
-          {
-            ...latestUser,
-            tzOffset
-          },
-          todayKey
-        )
+        try {
+          await refreshPublicProfile(
+            {
+              ...latestUser,
+              tzOffset
+            },
+            todayKey
+          )
+        } catch (error) {
+          console.warn('刷新公开资料失败（将在后台重试）', error)
+        }
         Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
         void presentGoodnightReward()
       } catch (error) {
