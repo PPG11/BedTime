@@ -73,23 +73,49 @@ export async function refreshPublicProfile(
 }
 
 export async function fetchPublicProfiles(uids: string[]): Promise<FriendProfileSnapshot[]> {
-  if (!uids.length) {
+  const uniqueUids = Array.from(new Set(uids.filter((uid) => typeof uid === 'string' && uid)))
+  if (!uniqueUids.length) {
     return []
   }
 
   const db = await ensureCloud()
-  const command = db.command
-  const result = await getPublicProfilesCollection(db)
-    .where({
-      uid: command.in(uids)
+  const collection = getPublicProfilesCollection(db)
+
+  const snapshots = await Promise.allSettled(
+    uniqueUids.map(async (uid) => {
+      try {
+        const result = await collection.doc(uid).get()
+        const data = result.data
+        if (!data) {
+          console.warn('未找到好友公开资料', uid)
+          return null
+        }
+
+        const normalizedUid = typeof data.uid === 'string' && data.uid.length ? data.uid : uid
+        const updatedAt =
+          data.updatedAt instanceof Date ? data.updatedAt : new Date(data.updatedAt ?? Date.now())
+
+        return {
+          uid: normalizedUid,
+          nickname: typeof data.nickname === 'string' ? data.nickname : '',
+          sleeptime: typeof data.sleeptime === 'string' ? data.sleeptime : '',
+          streak: typeof data.streak === 'number' ? data.streak : 0,
+          todayStatus: (data.todayStatus as CheckinStatus) ?? 'pending',
+          updatedAt
+        } satisfies FriendProfileSnapshot
+      } catch (error) {
+        console.warn('获取好友公开资料失败', uid, error)
+        return null
+      }
     })
-    .get()
-  return (result.data ?? []).map((item) => ({
-    uid: item.uid,
-    nickname: item.nickname,
-    sleeptime: item.sleeptime,
-    streak: item.streak,
-    todayStatus: item.todayStatus,
-    updatedAt: item.updatedAt instanceof Date ? item.updatedAt : new Date(item.updatedAt)
-  }))
+  )
+
+  const records: FriendProfileSnapshot[] = []
+  for (const snapshot of snapshots) {
+    if (snapshot.status === 'fulfilled' && snapshot.value) {
+      records.push(snapshot.value)
+    }
+  }
+
+  return records
 }
