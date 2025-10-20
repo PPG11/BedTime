@@ -93,6 +93,26 @@ function isDuplicateKeyError(error: unknown): boolean {
   return text.toLowerCase().includes('duplicate key')
 }
 
+function isDocumentMissingError(error: unknown): boolean {
+  if (!error) {
+    return false
+  }
+
+  if (typeof error === 'object') {
+    const maybeError = error as { errMsg?: unknown; message?: unknown }
+    const errMsg = maybeError.errMsg ?? maybeError.message
+    if (typeof errMsg === 'string') {
+      const lower = errMsg.toLowerCase()
+      if (lower.includes('cannot find document') || lower.includes('not found')) {
+        return true
+      }
+    }
+  }
+
+  const text = String(error).toLowerCase()
+  return text.includes('cannot find document') || text.includes('not found')
+}
+
 function extractDateFromCheckin(raw: CheckinRecord): string | null {
   if (typeof raw.date === 'string' && raw.date) {
     return raw.date
@@ -111,6 +131,49 @@ function shiftDateKey(key: string, delta: number): string {
   const date = parseDateKey(key)
   date.setTime(date.getTime() + delta * ONE_DAY_MS)
   return formatDateKey(date)
+}
+
+async function tryUpdateExistingCheckin(
+  collection: DbCollection<CheckinRecord>,
+  docId: string,
+  data: Omit<CheckinRecord, '_id'>,
+  openid: string
+): Promise<CheckinDocument | null> {
+  try {
+    await collection.doc(docId).update({
+      data
+    })
+    return mapCheckinDocument({
+      _id: docId,
+      ...data
+    })
+  } catch (error) {
+    if (!isDocumentMissingError(error)) {
+      throw error
+    }
+  }
+
+  const sameDateResult = await collection
+    .where({
+      _openid: openid,
+      date: data.date
+    })
+    .limit(1)
+    .get()
+
+  const existingByDate = sameDateResult.data?.[0]
+  if (existingByDate) {
+    await collection.doc(existingByDate._id).update({
+      data
+    })
+
+    return mapCheckinDocument({
+      _id: existingByDate._id,
+      ...data
+    })
+  }
+
+  return null
 }
 
 export async function upsertCheckin(
@@ -142,6 +205,12 @@ export async function upsertCheckin(
       throw error
     }
 
+    const openid = await getCurrentOpenId()
+    const resolved = await tryUpdateExistingCheckin(collection, docId, data, openid)
+    if (resolved) {
+      return resolved
+    }
+
     const legacyResult = await collection
       .where({
         uid: params.uid
@@ -154,14 +223,32 @@ export async function upsertCheckin(
       throw error
     }
 
+    const normalizedLegacy: Array<{ id: string; legacyDate: string }> = []
     for (const legacy of legacyDocs) {
       const legacyDate = extractDateFromCheckin(legacy) ?? params.date
       const migratedUid = getCheckinDocId(params.uid, legacyDate)
       await collection.doc(legacy._id).update({
         data: {
+          date: legacyDate,
           uid: migratedUid,
           userUid: params.uid
         }
+      })
+      normalizedLegacy.push({
+        id: legacy._id,
+        legacyDate
+      })
+    }
+
+    const targetLegacy = normalizedLegacy.find((item) => item.legacyDate === params.date)
+    if (targetLegacy) {
+      await collection.doc(targetLegacy.id).update({
+        data
+      })
+
+      return mapCheckinDocument({
+        _id: targetLegacy.id,
+        ...data
       })
     }
 
@@ -177,9 +264,19 @@ export async function upsertCheckin(
       })
     }
 
-    await collection.doc(docId).set({
-      data
-    })
+    try {
+      await collection.doc(docId).set({
+        data
+      })
+    } catch (finalError) {
+      if (isDuplicateKeyError(finalError)) {
+        const fallback = await tryUpdateExistingCheckin(collection, docId, data, openid)
+        if (fallback) {
+          return fallback
+        }
+      }
+      throw finalError
+    }
   }
 
   return mapCheckinDocument({
