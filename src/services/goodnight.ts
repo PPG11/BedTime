@@ -91,6 +91,17 @@ export async function fetchGoodnightMessageForDate(
   return snapshot ? mapSnapshot(docId, snapshot) : null
 }
 
+export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMessage | null> {
+  if (!id) {
+    return null
+  }
+
+  const db = await ensureCloud()
+  const doc = getGoodnightMessagesCollection(db).doc(id)
+  const snapshot = await getSnapshotOrNull(doc)
+  return snapshot ? mapSnapshot(id, snapshot) : null
+}
+
 export async function submitGoodnightMessage(params: {
   uid: string
   content: string

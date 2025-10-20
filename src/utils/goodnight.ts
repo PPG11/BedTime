@@ -5,7 +5,10 @@ import {
   type GoodnightVoteType
 } from '../types/goodnight'
 
-const STORAGE_KEY = 'bedtime-goodnight-messages'
+const STORAGE_KEYS = {
+  messages: 'bedtime-goodnight-messages',
+  rewards: 'bedtime-goodnight-rewards'
+} as const
 
 type StoredGoodnightMessage = Omit<GoodnightMessage, 'createdAt'> & {
   createdAt: string
@@ -29,7 +32,7 @@ function isStoredGoodnightMessage(value: unknown): value is StoredGoodnightMessa
 
 function readStoredMessages(): StoredGoodnightMessage[] {
   try {
-    const stored = Taro.getStorageSync(STORAGE_KEY) as StoredGoodnightMessage[] | undefined
+    const stored = Taro.getStorageSync(STORAGE_KEYS.messages) as StoredGoodnightMessage[] | undefined
     if (Array.isArray(stored)) {
       return stored.filter(isStoredGoodnightMessage)
     }
@@ -41,10 +44,43 @@ function readStoredMessages(): StoredGoodnightMessage[] {
 
 function writeStoredMessages(list: StoredGoodnightMessage[]): void {
   try {
-    Taro.setStorageSync(STORAGE_KEY, list)
+    Taro.setStorageSync(STORAGE_KEYS.messages, list)
   } catch (error) {
     console.warn('保存晚安心语列表失败', error)
   }
+}
+
+type StoredRewardMap = Record<string, StoredGoodnightMessage>
+
+function readStoredRewardMap(): StoredRewardMap {
+  try {
+    const stored = Taro.getStorageSync(STORAGE_KEYS.rewards) as StoredRewardMap | undefined
+    if (!stored || typeof stored !== 'object') {
+      return {}
+    }
+
+    return Object.entries(stored).reduce<StoredRewardMap>((acc, [key, value]) => {
+      if (isStoredGoodnightMessage(value)) {
+        acc[key] = value
+      }
+      return acc
+    }, {})
+  } catch (error) {
+    console.warn('读取已领取的晚安心语失败', error)
+  }
+  return {}
+}
+
+function writeStoredRewardMap(map: StoredRewardMap): void {
+  try {
+    Taro.setStorageSync(STORAGE_KEYS.rewards, map)
+  } catch (error) {
+    console.warn('保存已领取的晚安心语失败', error)
+  }
+}
+
+function getRewardKey(uid: string, date: string): string {
+  return `${uid}_${date}`
 }
 
 function toStored(message: GoodnightMessage): StoredGoodnightMessage {
@@ -79,6 +115,29 @@ export function readLocalGoodnightMessage(uid: string, date: string): GoodnightM
   const list = readStoredMessages()
   const target = list.find((item) => item.uid === uid && item.date === date)
   return target ? fromStored(target) : null
+}
+
+export function readReceivedGoodnightReward(uid: string, date: string): GoodnightMessage | null {
+  if (!uid || !date) {
+    return null
+  }
+  const map = readStoredRewardMap()
+  const stored = map[getRewardKey(uid, date)]
+  return stored ? fromStored(stored) : null
+}
+
+export function saveReceivedGoodnightReward(params: {
+  uid: string
+  date: string
+  message: GoodnightMessage
+}): void {
+  const { uid, date, message } = params
+  if (!uid || !date) {
+    return
+  }
+  const map = readStoredRewardMap()
+  map[getRewardKey(uid, date)] = toStored(message)
+  writeStoredRewardMap(map)
 }
 
 export function createLocalGoodnightMessage(params: {

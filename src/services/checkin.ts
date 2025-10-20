@@ -7,7 +7,7 @@ import {
   type DbCollection
 } from './cloud'
 
-export type CheckinStatus = 'hit' | 'miss' | 'pending'
+export type CheckinStatus = 'hit' | 'late' | 'miss' | 'pending'
 
 export type CheckinDocument = {
   _id: string
@@ -16,6 +16,8 @@ export type CheckinDocument = {
   status: CheckinStatus
   ts: Date
   tzOffset: number
+  goodnightMessageId?: string
+  message?: string
 }
 
 type CheckinRecord = {
@@ -26,6 +28,8 @@ type CheckinRecord = {
   status: CheckinStatus
   ts: Date | string | number | { [key: string]: unknown }
   tzOffset: number
+  goodnightMessageId?: string
+  message?: string
 }
 
 function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinRecord> {
@@ -66,13 +70,21 @@ function normalizeTimestamp(input: CheckinRecord['ts']): Date {
 
 function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
   const userUid = raw.userUid ?? raw.uid
+  const messageId =
+    typeof raw.goodnightMessageId === 'string' && raw.goodnightMessageId.length
+      ? raw.goodnightMessageId
+      : typeof raw.message === 'string' && raw.message.length
+      ? raw.message
+      : undefined
   return {
     _id: raw._id,
     uid: userUid,
     date: raw.date,
     status: raw.status,
     tzOffset: raw.tzOffset,
-    ts: normalizeTimestamp(raw.ts)
+    ts: normalizeTimestamp(raw.ts),
+    goodnightMessageId: messageId,
+    message: messageId
   }
 }
 
@@ -176,6 +188,48 @@ async function tryUpdateExistingCheckin(
   return null
 }
 
+async function resolveCheckinRecordByDate(
+  collection: DbCollection<CheckinRecord>,
+  uid: string,
+  date: string,
+  openid: string
+): Promise<{ id: string; record: CheckinRecord } | null> {
+  const docId = getCheckinDocId(uid, date)
+  try {
+    const snapshot = await collection.doc(docId).get()
+    if (snapshot.data) {
+      return {
+        id: docId,
+        record: {
+          _id: docId,
+          ...snapshot.data
+        }
+      }
+    }
+  } catch (error) {
+    if (!isDocumentMissingError(error)) {
+      throw error
+    }
+  }
+
+  const sameDateResult = await collection
+    .where({
+      _openid: openid,
+      date
+    })
+    .limit(1)
+    .get()
+
+  const existing = sameDateResult.data?.[0]
+  if (!existing) {
+    return null
+  }
+  return {
+    id: existing._id,
+    record: existing
+  }
+}
+
 export async function upsertCheckin(
   params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
 ): Promise<CheckinDocument> {
@@ -188,7 +242,9 @@ export async function upsertCheckin(
     date: params.date,
     status: params.status,
     tzOffset: params.tzOffset,
-    ts: params.ts ?? now
+    ts: params.ts ?? now,
+    goodnightMessageId: params.goodnightMessageId ?? params.message,
+    message: params.message ?? params.goodnightMessageId
   }
 
   if (process.env.NODE_ENV !== 'production') {
@@ -285,6 +341,51 @@ export async function upsertCheckin(
   })
 }
 
+export async function updateCheckinGoodnightMessage(params: {
+  uid: string
+  date: string
+  goodnightMessageId: string
+}): Promise<CheckinDocument | null> {
+  const db = await ensureCloud()
+  const collection = getCheckinsCollection(db)
+  const openid = await getCurrentOpenId()
+
+  const resolved = await resolveCheckinRecordByDate(collection, params.uid, params.date, openid)
+  if (!resolved) {
+    return null
+  }
+
+  const { id, record } = resolved
+  const messageValue = params.goodnightMessageId
+  const nextRecord: CheckinRecord = {
+    ...record,
+    goodnightMessageId: messageValue,
+    message: messageValue
+  }
+
+  try {
+    await collection.doc(id).update({
+      data: {
+        goodnightMessageId: messageValue,
+        message: messageValue
+      }
+    })
+  } catch (error) {
+    if (!isDocumentMissingError(error)) {
+      throw error
+    }
+    const { _id: _ignored, ...rest } = nextRecord
+    await collection.doc(id).set({
+      data: rest
+    })
+  }
+
+  return mapCheckinDocument({
+    ...nextRecord,
+    _id: id
+  })
+}
+
 export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
@@ -299,6 +400,20 @@ export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDo
   return (result.data ?? [])
     .map(mapCheckinDocument)
     .filter((item) => item.uid === uid)
+}
+
+export async function fetchCheckinInfoForDate(
+  uid: string,
+  date: string
+): Promise<CheckinDocument | null> {
+  const db = await ensureCloud()
+  const collection = getCheckinsCollection(db)
+  const openid = await getCurrentOpenId()
+  const resolved = await resolveCheckinRecordByDate(collection, uid, date, openid)
+  if (!resolved) {
+    return null
+  }
+  return mapCheckinDocument(resolved.record)
 }
 
 export async function fetchCheckinsInRange(
@@ -332,7 +447,7 @@ export function computeHitStreak(records: CheckinDocument[], todayKey: string): 
   let cursor = todayKey
   while (true) {
     const current = recordMap.get(cursor)
-    if (!current || current.status !== 'hit') {
+    if (!current || (current.status !== 'hit' && current.status !== 'late')) {
       break
     }
     streak += 1

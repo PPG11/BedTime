@@ -22,6 +22,7 @@ import './index.scss'
 
 const statusLabels: Record<CheckinStatus, string> = {
   hit: '今日已按时休息',
+  late: '今日稍晚休息',
   miss: '今日尚未达标',
   pending: '等待打卡'
 }
@@ -40,7 +41,7 @@ function createPlaceholderItem(uid: string, remark?: string): FriendListItem {
   const digits = uid.split('').map(Number)
   const base = digits.reduce((sum, value, index) => sum + value * (index + 3), 0)
   const streak = (base % 12) + 1
-  const statuses: CheckinStatus[] = ['hit', 'miss', 'pending']
+  const statuses: CheckinStatus[] = ['hit', 'late', 'miss', 'pending']
   const todayStatus = statuses[base % statuses.length]
   const sleepMinutes = 21 * 60 + (base % 120)
   const fallbackName = `早睡伙伴 ${uid.slice(-4)}`

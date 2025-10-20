@@ -33,6 +33,7 @@ import { RecentCheckIns } from '../../components/home/RecentCheckIns'
 import { TipsSection } from '../../components/home/TipsSection'
 import {
   CheckinDocument,
+  type CheckinStatus,
   UserDocument,
   ensureCurrentUser,
   fetchCheckins,
@@ -43,7 +44,11 @@ import {
 import { GoodnightMessageCard } from '../../components/home/GoodnightMessageCard'
 import { GoodnightMessageModal } from '../../components/home/GoodnightMessageModal'
 import { GoodnightRewardCard } from '../../components/home/GoodnightRewardCard'
-import { GOODNIGHT_MESSAGE_MAX_LENGTH, type GoodnightVoteType } from '../../types/goodnight'
+import {
+  GOODNIGHT_MESSAGE_MAX_LENGTH,
+  type GoodnightMessage,
+  type GoodnightVoteType
+} from '../../types/goodnight'
 import { useGoodnightInteraction } from './useGoodnight'
 import './index.scss'
 
@@ -55,7 +60,7 @@ const sleepTips = [
 
 function mapCheckinsToRecord(list: CheckinDocument[]): CheckInMap {
   return list.reduce<CheckInMap>((acc, item) => {
-    if (item.status === 'hit') {
+    if (item.status === 'hit' || item.status === 'late') {
       const ts = item.ts instanceof Date ? item.ts.getTime() : new Date(item.ts).getTime()
       acc[item.date] = ts
     }
@@ -179,30 +184,29 @@ export default function Index() {
           name: user.nickname || DEFAULT_USER_NAME,
           targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
         })
-        // Ensure public profile exists/updates on first entry
         try {
           await refreshPublicProfile(user, todayKey)
         } catch (e) {
           console.warn('刷新公开资料失败（将稍后重试）', e)
         }
         const checkins = await fetchCheckins(user.uid, 365)
-        setRecords(mapCheckinsToRecord(checkins))
+        const mappedRecords = mapCheckinsToRecord(checkins)
+        setRecords(mappedRecords)
       } catch (error) {
-        console.error('同步云端数据失败，使用本地数据', error)
-        Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
-        // 回退到本地模式
+        console.error('同步云端数据失败', error)
+        Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
         setUserDoc(null)
-        setRecords(readCheckIns())
-        setSettings(readSettings())
+        setRecords({})
       } finally {
         setIsSyncing(false)
       }
       return
     }
+
     setUserDoc(null)
     setRecords(readCheckIns())
     setSettings(readSettings())
-  }, [canUseCloud])
+  }, [canUseCloud, todayKey])
 
   const persistRecords = useCallback(
     (next: CheckInMap) => {
@@ -222,6 +226,7 @@ export default function Index() {
     isSubmitting: isSubmittingGoodnight,
     submit: handleGoodnightSubmit,
     presentReward: presentGoodnightReward,
+    fetchRewardForToday,
     modalVisible: goodnightModalVisible,
     modalMessage: goodnightModalMessage,
     rewardMessage: receivedGoodnightMessage,
@@ -247,54 +252,78 @@ export default function Index() {
       return
     }
 
-    if (canUseCloud && userDoc) {
-      setIsSyncing(true)
+    setIsSyncing(true)
+    let rewardCandidate: GoodnightMessage | null = null
+    try {
       try {
-        const latestUser = withLatestSettings(userDoc, settings)
-        const tzOffset =
-          typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
-        const created = await upsertCheckin({
-          uid: latestUser.uid,
-          date: todayKey,
-          status: 'hit',
-          tzOffset
-        })
-        const timestamp = created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
-        persistRecords({ ...records, [todayKey]: timestamp })
-        setUserDoc(latestUser)
-        try {
-          await refreshPublicProfile(
-            {
-              ...latestUser,
-              tzOffset
-            },
-            todayKey
-          )
-        } catch (error) {
-          console.warn('刷新公开资料失败（将在后台重试）', error)
-        }
-        Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
-        void presentGoodnightReward()
+        rewardCandidate = await fetchRewardForToday()
       } catch (error) {
-        console.error('云端打卡失败', error)
-        Taro.showToast({ title: '云端打卡失败，请稍后重试', icon: 'none' })
-      } finally {
+        console.warn('获取今日晚安心语失败', error)
+      }
+
+      if (canUseCloud && userDoc) {
+        try {
+          const latestUser = withLatestSettings(userDoc, settings)
+          const tzOffset =
+            typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
+          const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
+          const created = await upsertCheckin({
+            uid: latestUser.uid,
+            date: todayKey,
+            status: checkinStatus,
+            tzOffset,
+            goodnightMessageId: rewardCandidate?._id,
+            message: rewardCandidate?._id
+          })
+          const timestamp = created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
+          persistRecords({ ...records, [todayKey]: timestamp })
+          setUserDoc(latestUser)
+          try {
+            await refreshPublicProfile(
+              {
+                ...latestUser,
+                tzOffset
+              },
+              todayKey
+            )
+          } catch (error) {
+            console.warn('刷新公开资料失败（将在后台重试）', error)
+          }
+          Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+          await presentGoodnightReward({
+            message: rewardCandidate,
+            syncToCheckin: true
+          })
+        } catch (error) {
+          console.error('云端打卡失败', error)
+          Taro.showToast({ title: '云端打卡失败，请稍后重试', icon: 'none' })
+        } finally {
+          setIsSyncing(false)
+        }
+        return
+      }
+
+      const now = new Date()
+      const key = formatDateKey(now)
+      const updated = { ...records, [key]: now.getTime() }
+      persistRecords(updated)
+      Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+      await presentGoodnightReward({
+        message: rewardCandidate,
+        syncToCheckin: true
+      })
+    } finally {
+      if (!canUseCloud || !userDoc) {
         setIsSyncing(false)
       }
-      return
     }
-
-    const now = new Date()
-    const key = formatDateKey(now)
-    const updated = { ...records, [key]: now.getTime() }
-    persistRecords(updated)
-    Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
-    void presentGoodnightReward()
   }, [
     canUseCloud,
     hasCheckedInToday,
+    fetchRewardForToday,
     isSyncing,
     isWindowOpen,
+    isLateNow,
     presentGoodnightReward,
     persistRecords,
     records,
