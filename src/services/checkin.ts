@@ -69,7 +69,7 @@ function normalizeTimestamp(input: CheckinRecord['ts']): Date {
 }
 
 function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
-  const userUid = raw.userUid ?? raw.uid
+  const userUid = resolveUserUid(raw)
   const messageId =
     typeof raw.goodnightMessageId === 'string' && raw.goodnightMessageId.length
       ? raw.goodnightMessageId
@@ -86,6 +86,22 @@ function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
     goodnightMessageId: messageId,
     message: messageId
   }
+}
+
+function resolveUserUid(raw: CheckinRecord): string {
+  if (typeof raw.userUid === 'string' && raw.userUid.length) {
+    return raw.userUid
+  }
+
+  if (typeof raw.uid === 'string' && raw.uid.length) {
+    const [candidate] = raw.uid.split('_')
+    if (candidate && candidate.length) {
+      return candidate
+    }
+    return raw.uid
+  }
+
+  return ''
 }
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -148,6 +164,7 @@ function shiftDateKey(key: string, delta: number): string {
 async function tryUpdateExistingCheckin(
   collection: DbCollection<CheckinRecord>,
   docId: string,
+  uid: string,
   data: Omit<CheckinRecord, '_id'>,
   openid: string
 ): Promise<CheckinDocument | null> {
@@ -165,27 +182,19 @@ async function tryUpdateExistingCheckin(
     }
   }
 
-  const sameDateResult = await collection
-    .where({
-      _openid: openid,
-      date: data.date
-    })
-    .limit(1)
-    .get()
-
-  const existingByDate = sameDateResult.data?.[0]
-  if (existingByDate) {
-    await collection.doc(existingByDate._id).update({
-      data
-    })
-
-    return mapCheckinDocument({
-      _id: existingByDate._id,
-      ...data
-    })
+  const resolved = await resolveCheckinRecordByDate(collection, uid, data.date, openid)
+  if (!resolved) {
+    return null
   }
 
-  return null
+  await collection.doc(resolved.id).update({
+    data
+  })
+
+  return mapCheckinDocument({
+    _id: resolved.id,
+    ...data
+  })
 }
 
 async function resolveCheckinRecordByDate(
@@ -230,6 +239,71 @@ async function resolveCheckinRecordByDate(
   }
 }
 
+async function migrateLegacyCheckins(
+  collection: DbCollection<CheckinRecord>,
+  params: {
+    userUid: string
+    targetDate: string
+    docId: string
+    data: Omit<CheckinRecord, '_id'>
+  }
+): Promise<CheckinDocument | null> {
+  const legacyResult = await collection
+    .where({
+      uid: params.userUid
+    })
+    .limit(1000)
+    .get()
+
+  const legacyDocs = legacyResult.data ?? []
+  if (!legacyDocs.length) {
+    return null
+  }
+
+  const normalizedLegacy: Array<{ id: string; legacyDate: string }> = []
+  for (const legacy of legacyDocs) {
+    const legacyDate = extractDateFromCheckin(legacy) ?? params.targetDate
+    const migratedUid = getCheckinDocId(params.userUid, legacyDate)
+    await collection.doc(legacy._id).update({
+      data: {
+        date: legacyDate,
+        uid: migratedUid,
+        userUid: params.userUid
+      }
+    })
+    normalizedLegacy.push({
+      id: legacy._id,
+      legacyDate
+    })
+  }
+
+  const targetLegacy = normalizedLegacy.find((item) => item.legacyDate === params.targetDate)
+  if (targetLegacy) {
+    await collection.doc(targetLegacy.id).update({
+      data: params.data
+    })
+
+    return mapCheckinDocument({
+      _id: targetLegacy.id,
+      ...params.data
+    })
+  }
+
+  const hasTargetId = legacyDocs.some((item) => item._id === params.docId)
+  if (hasTargetId) {
+    await collection.doc(params.docId).update({
+      data: params.data
+    })
+
+    return mapCheckinDocument({
+      _id: params.docId,
+      ...params.data
+    })
+  }
+
+  return null
+}
+
 export async function upsertCheckin(
   params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
 ): Promise<CheckinDocument> {
@@ -262,62 +336,19 @@ export async function upsertCheckin(
     }
 
     const openid = await getCurrentOpenId()
-    const resolved = await tryUpdateExistingCheckin(collection, docId, data, openid)
+    const resolved = await tryUpdateExistingCheckin(collection, docId, params.uid, data, openid)
     if (resolved) {
       return resolved
     }
 
-    const legacyResult = await collection
-      .where({
-        uid: params.uid
-      })
-      .limit(1000)
-      .get()
-
-    const legacyDocs = legacyResult.data ?? []
-    if (!legacyDocs.length) {
-      throw error
-    }
-
-    const normalizedLegacy: Array<{ id: string; legacyDate: string }> = []
-    for (const legacy of legacyDocs) {
-      const legacyDate = extractDateFromCheckin(legacy) ?? params.date
-      const migratedUid = getCheckinDocId(params.uid, legacyDate)
-      await collection.doc(legacy._id).update({
-        data: {
-          date: legacyDate,
-          uid: migratedUid,
-          userUid: params.uid
-        }
-      })
-      normalizedLegacy.push({
-        id: legacy._id,
-        legacyDate
-      })
-    }
-
-    const targetLegacy = normalizedLegacy.find((item) => item.legacyDate === params.date)
-    if (targetLegacy) {
-      await collection.doc(targetLegacy.id).update({
-        data
-      })
-
-      return mapCheckinDocument({
-        _id: targetLegacy.id,
-        ...data
-      })
-    }
-
-    const hasTargetId = legacyDocs.some((item) => item._id === docId)
-    if (hasTargetId) {
-      await collection.doc(docId).update({
-        data
-      })
-
-      return mapCheckinDocument({
-        _id: docId,
-        ...data
-      })
+    const migrated = await migrateLegacyCheckins(collection, {
+      userUid: params.uid,
+      targetDate: params.date,
+      docId,
+      data
+    })
+    if (migrated) {
+      return migrated
     }
 
     try {
@@ -326,7 +357,7 @@ export async function upsertCheckin(
       })
     } catch (finalError) {
       if (isDuplicateKeyError(finalError)) {
-        const fallback = await tryUpdateExistingCheckin(collection, docId, data, openid)
+        const fallback = await tryUpdateExistingCheckin(collection, docId, params.uid, data, openid)
         if (fallback) {
           return fallback
         }
@@ -398,8 +429,8 @@ export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDo
     .get()
 
   return (result.data ?? [])
+    .filter((raw) => resolveUserUid(raw) === uid)
     .map(mapCheckinDocument)
-    .filter((item) => item.uid === uid)
 }
 
 export async function fetchCheckinInfoForDate(
@@ -423,18 +454,22 @@ export async function fetchCheckinsInRange(
 ): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
+  const [from, to] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate]
+  const rangeCondition = db.command.gte(from).and(db.command.lte(to))
 
   const result = await getCheckinsCollection(db)
     .where({
-      _openid: openid
+      _openid: openid,
+      date: rangeCondition
     })
     .orderBy('date', 'asc')
     .limit(1000)
     .get()
 
   return (result.data ?? [])
+    .filter((raw) => resolveUserUid(raw) === uid)
     .map(mapCheckinDocument)
-    .filter((item) => item.uid === uid && item.date >= startDate && item.date <= endDate)
+    .filter((item) => item.date >= from && item.date <= to)
 }
 
 export function computeHitStreak(records: CheckinDocument[], todayKey: string): number {

@@ -73,6 +73,52 @@ export function useGoodnightInteraction({
   const [isVoting, setIsVoting] = useState(false)
   const lastLoadedDateRef = useRef<string | null>(null)
 
+  const resolveRewardMessage = useCallback(
+    async ({
+      existing,
+      forceRefresh = false
+    }: { existing?: GoodnightMessage | null; forceRefresh?: boolean } = {}): Promise<
+      GoodnightMessage | null
+    > => {
+      if (!effectiveUid) {
+        return null
+      }
+
+      if (!forceRefresh && existing) {
+        return existing
+      }
+
+      if (canUseCloud && userDoc) {
+        try {
+          const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
+          const messageId = checkin?.goodnightMessageId ?? checkin?.message
+          if (messageId) {
+            const message = await fetchGoodnightMessageById(messageId)
+            if (message) {
+              return message
+            }
+          }
+        } catch (error) {
+          console.warn('加载今日晚安心语失败', error)
+        }
+
+        try {
+          return await fetchRandomGoodnightMessage(effectiveUid)
+        } catch (error) {
+          console.warn('抽取晚安心语失败', error)
+          return null
+        }
+      }
+
+      const stored = readReceivedGoodnightReward(effectiveUid, todayKey)
+      if (stored) {
+        return stored
+      }
+      return pickRandomLocalGoodnightMessage(effectiveUid)
+    },
+    [canUseCloud, effectiveUid, todayKey, userDoc]
+  )
+
   const loadSubmittedMessage = useCallback(async () => {
     if (!effectiveUid) {
       setSubmittedMessage(null)
@@ -127,41 +173,19 @@ export function useGoodnightInteraction({
   useEffect(() => {
     let cancelled = false
 
+    if (!effectiveUid) {
+      setRewardMessage(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setRewardMessage(null)
+
     const loadReward = async () => {
-      if (!effectiveUid) {
-        setRewardMessage(null)
-        return
-      }
-
-      if (canUseCloud && userDoc) {
-        try {
-          const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-          if (!checkin?.goodnightMessageId || cancelled) {
-            setRewardMessage(null)
-            return
-          }
-
-          const message = await fetchGoodnightMessageById(checkin.goodnightMessageId)
-          if (!message || cancelled) {
-            setRewardMessage(null)
-            return
-          }
-
-          setRewardMessage(message)
-        } catch (error) {
-          if (!cancelled) {
-            console.warn('加载今日晚安心语奖励失败', error)
-            setRewardMessage(null)
-          }
-        }
-        return
-      }
-
-      const stored = readReceivedGoodnightReward(effectiveUid, todayKey)
-      if (stored) {
-        setRewardMessage(stored)
-      } else {
-        setRewardMessage(null)
+      const message = await resolveRewardMessage({ forceRefresh: true })
+      if (!cancelled) {
+        setRewardMessage(message)
       }
     }
 
@@ -170,94 +194,42 @@ export function useGoodnightInteraction({
     return () => {
       cancelled = true
     }
-  }, [canUseCloud, effectiveUid, todayKey, userDoc])
+  }, [effectiveUid, resolveRewardMessage, todayKey])
 
   const fetchRewardForToday = useCallback(async (): Promise<GoodnightMessage | null> => {
-    if (!effectiveUid) {
-      return null
-    }
-
-    if (canUseCloud && userDoc) {
-      try {
-        const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-        const messageId = checkin?.goodnightMessageId ?? checkin?.message
-        if (messageId) {
-          const existing = await fetchGoodnightMessageById(messageId)
-          if (existing) {
-            return existing
-          }
-        }
-      } catch (error) {
-        console.warn('加载今日晚安心语失败', error)
-      }
-
-      try {
-        return await fetchRandomGoodnightMessage(effectiveUid)
-      } catch (error) {
-        console.warn('抽取晚安心语失败', error)
-        return null
-      }
-    }
-
-    const stored = readReceivedGoodnightReward(effectiveUid, todayKey)
-    if (stored) {
-      return stored
-    }
-    return pickRandomLocalGoodnightMessage(effectiveUid)
-  }, [canUseCloud, effectiveUid, todayKey, userDoc])
+    const message = await resolveRewardMessage({ existing: rewardMessage })
+    setRewardMessage(message)
+    return message
+  }, [resolveRewardMessage, rewardMessage])
 
   const presentReward = useCallback(
     async (options?: PresentRewardOptions): Promise<GoodnightMessage | null> => {
       const shouldShowModal = options?.showModal ?? true
       const shouldSync = options?.syncToCheckin ?? true
-      let message = options?.message ?? rewardMessage
-
       if (!effectiveUid) {
         return null
       }
 
-      const ensureModalState = (target?: GoodnightMessage | null) => {
-        if (target && shouldShowModal) {
-          setModalMessage(target)
-          setModalVisible(true)
-          setHasVoted(false)
-        } else {
-          setModalVisible(false)
-          setModalMessage(target ?? null)
-        }
+      let message = options?.message ?? rewardMessage
+      if (!message) {
+        message = await resolveRewardMessage({ existing: rewardMessage })
       }
 
       if (!message) {
-        if (canUseCloud && userDoc) {
-          try {
-            const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-            const messageId = checkin?.goodnightMessageId ?? checkin?.message
-            if (messageId) {
-              message = await fetchGoodnightMessageById(messageId)
-            }
-          } catch (error) {
-            console.warn('加载今日晚安心语失败', error)
-          }
-          if (!message) {
-            try {
-              message = await fetchRandomGoodnightMessage(effectiveUid)
-            } catch (error) {
-              console.warn('抽取晚安心语失败', error)
-            }
-          }
-        } else {
-          const stored = readReceivedGoodnightReward(effectiveUid, todayKey)
-          message = stored ?? pickRandomLocalGoodnightMessage(effectiveUid)
-        }
-      }
-
-      if (!message) {
-        ensureModalState(null)
+        setModalVisible(false)
+        setModalMessage(null)
         return null
       }
 
       setRewardMessage(message)
-      ensureModalState(message)
+      if (shouldShowModal) {
+        setModalMessage(message)
+        setModalVisible(true)
+        setHasVoted(false)
+      } else {
+        setModalVisible(false)
+        setModalMessage(message)
+      }
 
       if (shouldSync) {
         if (canUseCloud && userDoc) {
@@ -280,7 +252,16 @@ export function useGoodnightInteraction({
       }
 
       return message
-    }, [canUseCloud, effectiveUid, rewardMessage, todayKey, userDoc])
+    },
+    [
+      canUseCloud,
+      effectiveUid,
+      resolveRewardMessage,
+      rewardMessage,
+      todayKey,
+      userDoc
+    ]
+  )
 
   const submit = useCallback(async () => {
     if (isSubmitting || hasSubmitted) {
