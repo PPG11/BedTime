@@ -681,6 +681,46 @@ async function resolveUserFromPublicProfiles(
   return null
 }
 
+async function findPublicProfileByUid(
+  db: CloudDatabase,
+  uid: string
+): Promise<PublicProfileRecord | null> {
+  const publicProfiles = getPublicProfilesCollection(db)
+  const candidates = buildUidCandidates(uid)
+  const seen = new Set<string>()
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue
+    }
+
+    const trimmed = candidate.trim()
+    if (!trimmed.length || seen.has(trimmed)) {
+      continue
+    }
+    seen.add(trimmed)
+
+    const records = await fetchPublicProfileRecords(publicProfiles, trimmed)
+    for (const record of records) {
+      if (!record || typeof record.uid !== 'string') {
+        continue
+      }
+
+      const recordUid = record.uid.trim()
+      if (!recordUid.length) {
+        continue
+      }
+
+      return {
+        ...record,
+        uid: recordUid
+      }
+    }
+  }
+
+  return null
+}
+
 async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
   const users = getUsersCollection(db)
 
@@ -722,19 +762,38 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
     return { status: 'already-sent', user: sender }
   }
 
-  const recipient = await fetchUserByUid(db, normalizedTargetUid)
-  if (!recipient) {
+  const recipientProfile = await findPublicProfileByUid(db, normalizedTargetUid)
+  if (!recipientProfile) {
     return { status: 'not-found' }
   }
-  if (recipient.uid === sender.uid) {
+
+  const resolvedRecipientUid =
+    typeof recipientProfile.uid === 'string' && recipientProfile.uid.trim().length
+      ? recipientProfile.uid.trim()
+      : normalizedTargetUid
+  const profileOpenId = (recipientProfile as { _openid?: unknown })._openid
+  const recipientOpenId =
+    typeof profileOpenId === 'string' && profileOpenId.trim().length ? profileOpenId.trim() : ''
+
+  if (resolvedRecipientUid === sender.uid) {
     return { status: 'self-target', user: sender }
   }
-  if (recipient.buddyList.includes(sender.uid)) {
+  if (sender.buddyList.includes(resolvedRecipientUid)) {
     return { status: 'already-friends', user: sender }
+  }
+  if (sender.incomingRequests.includes(resolvedRecipientUid)) {
+    return { status: 'incoming-exists', user: sender }
+  }
+  if (sender.outgoingRequests.includes(resolvedRecipientUid)) {
+    return { status: 'already-sent', user: sender }
+  }
+  if (!recipientOpenId.length) {
+    console.warn('公开资料缺少 openid，无法发送好友邀请', recipientProfile)
+    return { status: 'not-found' }
   }
 
   const now = db.serverDate ? db.serverDate() : new Date()
-  const inviteId = buildFriendInviteId(sender.uid, recipient.uid)
+  const inviteId = buildFriendInviteId(sender.uid, resolvedRecipientUid)
   const inviteDoc = invites.doc(inviteId)
   let existingInvite: FriendInviteDocument | undefined
 
@@ -766,8 +825,8 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
   const invitePayload = {
     senderUid: sender.uid,
     senderOpenId: sender._id,
-    recipientUid: recipient.uid,
-    recipientOpenId: recipient._id,
+    recipientUid: resolvedRecipientUid,
+    recipientOpenId,
     status: 'pending' as FriendInviteStatus,
     createdAt: inviteCreatedAt as unknown as Date,
     updatedAt: now as unknown as Date
@@ -783,7 +842,7 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
     })
   }
 
-  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, normalizedTargetUid])
+  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, resolvedRecipientUid])
 
   await users.doc(sender._id).update({
     data: {
