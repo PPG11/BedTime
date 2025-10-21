@@ -343,10 +343,68 @@ function removeUid(source: string[], target: string): string[] {
   return source.filter((item) => item !== target)
 }
 
-async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
-  const users = getUsersCollection(db)
+type UidCandidate = string | number
 
-  const queryByUid = async (candidate: string | number): Promise<UserDocument | null> => {
+function buildUidCandidates(uid: string): UidCandidate[] {
+  const candidates: UidCandidate[] = []
+  const seen = new Set<string>()
+
+  const pushCandidate = (value: UidCandidate) => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (!trimmed.length) {
+        return
+      }
+      const key = `string:${trimmed}`
+      if (seen.has(key)) {
+        return
+      }
+      seen.add(key)
+      candidates.push(trimmed)
+      return
+    }
+
+    const key = `number:${value}`
+    if (seen.has(key)) {
+      return
+    }
+    seen.add(key)
+    candidates.push(value)
+  }
+
+  const normalized = uid.trim()
+  pushCandidate(normalized)
+
+  if (normalized.length && normalized !== uid) {
+    pushCandidate(uid)
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    if (normalized.length < UID_LENGTH) {
+      pushCandidate(normalized.padStart(UID_LENGTH, '0'))
+    }
+
+    const withoutLeadingZeros = normalized.replace(/^0+/, '')
+    if (withoutLeadingZeros.length) {
+      pushCandidate(withoutLeadingZeros)
+    }
+
+    const numericUid = Number(normalized)
+    if (Number.isSafeInteger(numericUid)) {
+      pushCandidate(numericUid)
+      pushCandidate(String(numericUid))
+      pushCandidate(normalizeUid(numericUid))
+    }
+  }
+
+  return candidates
+}
+
+async function queryUserByCandidates(
+  users: DbCollection<UserDocument>,
+  candidates: UidCandidate[]
+): Promise<UserDocument | null> {
+  for (const candidate of candidates) {
     const result = await users
       .where({
         uid: candidate
@@ -355,179 +413,156 @@ async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocum
       .get()
 
     const doc = result.data?.[0]
-    if (!doc) {
-      return null
+    if (doc) {
+      return mapUserDocument(doc)
     }
-    return mapUserDocument(doc)
+  }
+
+  return null
+}
+
+async function fetchPublicProfileRecords(
+  publicProfiles: DbCollection<PublicProfileDocument>,
+  candidate: string
+): Promise<PublicProfileRecord[]> {
+  const records: PublicProfileRecord[] = []
+
+  try {
+    const snapshot = await publicProfiles.doc(candidate).get()
+    if (snapshot.data) {
+      records.push({
+        ...snapshot.data,
+        uid: snapshot.data.uid ?? candidate
+      } as PublicProfileRecord)
+    }
+  } catch (error) {
+    console.warn('按 UID 读取公开资料失败', error)
   }
 
   try {
-    const candidates: Array<string | number> = []
-    const seen = new Set<string>()
-    const pushCandidate = (value: string | number) => {
-      if (typeof value === 'string') {
-        const trimmed = value.trim()
-        if (!trimmed.length) {
-          return
-        }
-        const key = `string:${trimmed}`
-        if (seen.has(key)) {
-          return
-        }
-        seen.add(key)
-        candidates.push(trimmed)
-        return
-      }
-      const key = `number:${value}`
-      if (seen.has(key)) {
-        return
-      }
-      seen.add(key)
-      candidates.push(value)
+    const queried = await publicProfiles
+      .where({
+        uid: candidate
+      })
+      .limit(1)
+      .get()
+    const doc = queried.data?.[0]
+    if (doc) {
+      records.push(doc as PublicProfileRecord)
     }
+  } catch (error) {
+    console.warn('查询公开资料失败', error)
+  }
 
-    const normalized = uid.trim()
-    pushCandidate(normalized)
+  return records
+}
 
-    if (normalized.length && normalized !== uid) {
-      pushCandidate(uid)
-    }
+async function bootstrapUserFromPublicProfile(
+  db: CloudDatabase,
+  users: DbCollection<UserDocument>,
+  record: PublicProfileRecord,
+  openid: string
+): Promise<UserDocument | null> {
+  const now = db.serverDate ? db.serverDate() : new Date()
+  const bootstrap = ensureUserDocument(
+    {
+      nickname: typeof record.nickname === 'string' ? record.nickname : undefined,
+      targetHM: typeof record.sleeptime === 'string' ? record.sleeptime : undefined,
+      createdAt: now as unknown as Date,
+      updatedAt: now as unknown as Date
+    },
+    openid,
+    record.uid
+  )
 
-    if (/^\d+$/.test(normalized)) {
-      if (normalized.length < UID_LENGTH) {
-        pushCandidate(normalized.padStart(UID_LENGTH, '0'))
+  try {
+    await users.doc(openid).set({
+      data: {
+        uid: bootstrap.uid,
+        nickname: bootstrap.nickname,
+        tzOffset: bootstrap.tzOffset,
+        targetHM: bootstrap.targetHM,
+        buddyConsent: bootstrap.buddyConsent,
+        buddyList: bootstrap.buddyList,
+        incomingRequests: bootstrap.incomingRequests,
+        outgoingRequests: bootstrap.outgoingRequests,
+        createdAt: now,
+        updatedAt: now
       }
-
-      const withoutLeadingZeros = normalized.replace(/^0+/, '')
-      if (withoutLeadingZeros.length) {
-        pushCandidate(withoutLeadingZeros)
-      }
-
-      const numericUid = Number(normalized)
-      if (Number.isSafeInteger(numericUid)) {
-        pushCandidate(numericUid)
-        pushCandidate(String(numericUid))
-        pushCandidate(normalizeUid(numericUid))
-      }
-    }
-
-    for (const candidate of candidates) {
-      const doc = await queryByUid(candidate)
-      if (doc) {
-        return doc
-      }
-    }
-
-    const publicProfiles = getPublicProfilesCollection(db)
-    const seenPublicCandidates = new Set<string>()
-    const resolveFromPublicProfile = async (candidate: string): Promise<UserDocument | null> => {
-      const trimmed = candidate.trim()
-      if (!trimmed.length || seenPublicCandidates.has(trimmed)) {
-        return null
-      }
-      seenPublicCandidates.add(trimmed)
-
-      const records: PublicProfileRecord[] = []
-
-      try {
-        const snapshot = await publicProfiles.doc(trimmed).get()
-        if (snapshot.data) {
-          records.push({
-            ...snapshot.data,
-            uid: snapshot.data.uid ?? trimmed
-          } as PublicProfileRecord)
-        }
-      } catch (error) {
-        console.warn('按 UID 读取公开资料失败', error)
-      }
-
-      try {
-        const queried = await publicProfiles
-          .where({
-            uid: trimmed
-          })
-          .limit(1)
-          .get()
-        const doc = queried.data?.[0]
-        if (doc) {
-          records.push(doc as PublicProfileRecord)
-        }
-      } catch (error) {
-        console.warn('查询公开资料失败', error)
-      }
-
-      for (const record of records) {
-        if (!record || typeof record.uid !== 'string' || !record.uid.length) {
-          continue
-        }
-
-        const openid = (record as { _openid?: unknown })._openid
-        if (typeof openid !== 'string' || !openid.length) {
-          continue
-        }
-
-        try {
-          const existing = await fetchUserByOpenId(db, openid)
-          if (existing) {
-            return existing
-          }
-        } catch (error) {
-          console.warn('通过公开资料关联用户信息失败', error)
-        }
-
-        const now = db.serverDate ? db.serverDate() : new Date()
-        const bootstrap = ensureUserDocument(
-          {
-            nickname: typeof record.nickname === 'string' ? record.nickname : undefined,
-            targetHM: typeof record.sleeptime === 'string' ? record.sleeptime : undefined,
-            createdAt: now as unknown as Date,
-            updatedAt: now as unknown as Date
-          },
-          openid,
-          record.uid
-        )
-
-        try {
-          await users.doc(openid).set({
-            data: {
-              uid: bootstrap.uid,
-              nickname: bootstrap.nickname,
-              tzOffset: bootstrap.tzOffset,
-              targetHM: bootstrap.targetHM,
-              buddyConsent: bootstrap.buddyConsent,
-              buddyList: bootstrap.buddyList,
-              incomingRequests: bootstrap.incomingRequests,
-              outgoingRequests: bootstrap.outgoingRequests,
-              createdAt: now,
-              updatedAt: now
-            }
-          })
-        } catch (error) {
-          console.error('根据公开资料补充用户信息失败', error)
-          continue
-        }
-
-        return {
-          ...bootstrap,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      }
-
-      return null
-    }
-
-    const stringCandidates = candidates.filter(
-      (item): item is string => typeof item === 'string'
-    )
-    for (const candidate of stringCandidates) {
-      const resolved = await resolveFromPublicProfile(candidate)
-      if (resolved) {
-        return resolved
-      }
-    }
-
+    })
+  } catch (error) {
+    console.error('根据公开资料补充用户信息失败', error)
     return null
+  }
+
+  return {
+    ...bootstrap,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }
+}
+
+async function resolveUserFromPublicProfiles(
+  db: CloudDatabase,
+  users: DbCollection<UserDocument>,
+  candidates: UidCandidate[]
+): Promise<UserDocument | null> {
+  const publicProfiles = getPublicProfilesCollection(db)
+  const seen = new Set<string>()
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue
+    }
+
+    const trimmed = candidate.trim()
+    if (!trimmed.length || seen.has(trimmed)) {
+      continue
+    }
+    seen.add(trimmed)
+
+    const records = await fetchPublicProfileRecords(publicProfiles, trimmed)
+    for (const record of records) {
+      if (!record || typeof record.uid !== 'string' || !record.uid.length) {
+        continue
+      }
+
+      const openid = (record as { _openid?: unknown })._openid
+      if (typeof openid !== 'string' || !openid.length) {
+        continue
+      }
+
+      try {
+        const existing = await fetchUserByOpenId(db, openid)
+        if (existing) {
+          return existing
+        }
+      } catch (error) {
+        console.warn('通过公开资料关联用户信息失败', error)
+      }
+
+      const bootstrapped = await bootstrapUserFromPublicProfile(db, users, record, openid)
+      if (bootstrapped) {
+        return bootstrapped
+      }
+    }
+  }
+
+  return null
+}
+
+async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
+  const users = getUsersCollection(db)
+
+  try {
+    const candidates = buildUidCandidates(uid)
+
+    const directMatch = await queryUserByCandidates(users, candidates)
+    if (directMatch) {
+      return directMatch
+    }
+
+    return await resolveUserFromPublicProfiles(db, users, candidates)
   } catch (error) {
     console.error('通过 UID 查询用户失败', error)
     throw error
