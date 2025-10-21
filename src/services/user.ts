@@ -234,6 +234,20 @@ function sanitizeUidList(list: string[]): string[] {
   )
 }
 
+function areUidListsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
 function buildFriendInviteId(senderUid: string, recipientUid: string): string {
   return `invite_${senderUid}_${recipientUid}`
 }
@@ -244,35 +258,128 @@ async function hydrateUserInviteLists(
 ): Promise<UserDocument> {
   try {
     const invites = getFriendInvitesCollection(db)
+    const users = getUsersCollection(db)
     const [outgoingSnapshot, incomingSnapshot] = await Promise.all([
       invites
         .where({
-          senderUid: user.uid,
-          status: 'pending'
+          senderUid: user.uid
         })
         .limit(100)
         .get(),
       invites
         .where({
-          recipientUid: user.uid,
-          status: 'pending'
+          recipientUid: user.uid
         })
         .limit(100)
         .get()
     ])
 
-    const outgoingUids = sanitizeUidList(
-      (outgoingSnapshot.data ?? []).map((invite) => invite.recipientUid)
+    const outgoingInvites = outgoingSnapshot.data ?? []
+    const incomingInvites = incomingSnapshot.data ?? []
+    const pendingOutgoing: string[] = []
+    const pendingIncoming: string[] = []
+    const buddySet = new Set(user.buddyList ?? [])
+    const cleanupInviteIds: string[] = []
+
+    for (const invite of incomingInvites) {
+      if (invite.status === 'pending') {
+        pendingIncoming.push(invite.senderUid)
+        continue
+      }
+
+      if (invite.status === 'accepted') {
+        buddySet.add(invite.senderUid)
+      }
+    }
+
+    for (const invite of outgoingInvites) {
+      if (invite.status === 'pending') {
+        pendingOutgoing.push(invite.recipientUid)
+        continue
+      }
+
+      if (invite.status === 'accepted') {
+        buddySet.add(invite.recipientUid)
+        cleanupInviteIds.push(invite._id)
+        continue
+      }
+
+      if (invite.status === 'declined') {
+        cleanupInviteIds.push(invite._id)
+      }
+    }
+
+    const sanitizedIncoming = sanitizeUidList(pendingIncoming)
+    const sanitizedOutgoing = sanitizeUidList(pendingOutgoing)
+    const sanitizedBuddyList = sanitizeUidList(Array.from(buddySet))
+
+    const shouldUpdateIncoming = !areUidListsEqual(
+      sanitizedIncoming,
+      user.incomingRequests
     )
-    const incomingUids = sanitizeUidList(
-      (incomingSnapshot.data ?? []).map((invite) => invite.senderUid)
+    const shouldUpdateOutgoing = !areUidListsEqual(
+      sanitizedOutgoing,
+      user.outgoingRequests
+    )
+    const shouldUpdateBuddy = !areUidListsEqual(
+      sanitizedBuddyList,
+      user.buddyList
     )
 
-    return {
-      ...user,
-      incomingRequests: incomingUids,
-      outgoingRequests: outgoingUids
+    const now = db.serverDate ? db.serverDate() : new Date()
+    const updatePayload: Partial<UserDocument> & {
+      updatedAt?: Date | CloudServerDate
+    } = {}
+
+    if (shouldUpdateIncoming) {
+      updatePayload.incomingRequests = sanitizedIncoming
     }
+    if (shouldUpdateOutgoing) {
+      updatePayload.outgoingRequests = sanitizedOutgoing
+    }
+    if (shouldUpdateBuddy) {
+      updatePayload.buddyList = sanitizedBuddyList
+    }
+
+    let nextUser = {
+      ...user,
+      buddyList: sanitizedBuddyList,
+      incomingRequests: sanitizedIncoming,
+      outgoingRequests: sanitizedOutgoing
+    }
+
+    if (
+      shouldUpdateIncoming ||
+      shouldUpdateOutgoing ||
+      shouldUpdateBuddy
+    ) {
+      updatePayload.updatedAt = now
+
+      try {
+        await users.doc(user._id).update({
+          data: updatePayload
+        })
+        nextUser = {
+          ...nextUser,
+          updatedAt: now as unknown as Date
+        }
+      } catch (error) {
+        console.warn('同步好友邀请缓存失败', error)
+      }
+    }
+
+    if (cleanupInviteIds.length) {
+      await Promise.all(
+        cleanupInviteIds.map((inviteId) =>
+          invites
+            .doc(inviteId)
+            .remove()
+            .catch((error) => console.warn('清理好友邀请失败', error))
+        )
+      )
+    }
+
+    return nextUser
   } catch (error) {
     console.warn('同步好友邀请列表失败', error)
     return {
@@ -719,7 +826,7 @@ export async function respondFriendInvite(
   const nextCurrentOutgoing = removeUid(current.outgoingRequests, normalizedTargetUid)
   const currentBuddyList = accept && requester
     ? sanitizeUidList([...current.buddyList, normalizedTargetUid])
-    : current.buddyList
+    : sanitizeUidList(current.buddyList)
 
   await users.doc(current._id).update({
     data: {
@@ -729,23 +836,6 @@ export async function respondFriendInvite(
       updatedAt: now
     }
   })
-
-  if (requester) {
-    const nextRequesterOutgoing = removeUid(requester.outgoingRequests, current.uid)
-    const nextRequesterIncoming = removeUid(requester.incomingRequests, current.uid)
-    const requesterBuddyList = accept
-      ? sanitizeUidList([...requester.buddyList, current.uid])
-      : requester.buddyList
-
-    await users.doc(requester._id).update({
-      data: {
-        outgoingRequests: nextRequesterOutgoing,
-        incomingRequests: nextRequesterIncoming,
-        buddyList: requesterBuddyList,
-        updatedAt: now
-      }
-    })
-  }
 
   await inviteDoc.update({
     data: {
