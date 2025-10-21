@@ -116,19 +116,16 @@ export default function Index() {
     () => isCheckInWindowOpen(minutesNow, settings.targetSleepMinute),
     [minutesNow, settings.targetSleepMinute]
   )
-  const hasCheckedInToday = Boolean(records[todayKey])
-  const effectiveUid = useMemo(() => (userDoc ? userDoc.uid : localUid), [userDoc, localUid])
-
   const recommendedBedTime = useMemo(
     () => computeRecommendedBedTime(currentTime, settings.targetSleepMinute),
     [currentTime, settings.targetSleepMinute]
   )
-
   const countdownText = useMemo(() => {
     const diff = recommendedBedTime.getTime() - currentTime.getTime()
     return formatCountdown(diff)
   }, [currentTime, recommendedBedTime])
-
+  const todayRecord = useMemo(() => records[todayKey] ?? null, [records, todayKey])
+  const hasCheckedInToday = Boolean(todayRecord)
   const windowHint = useMemo(
     () =>
       formatWindowHint(
@@ -139,74 +136,37 @@ export default function Index() {
       ),
     [currentTime, isWindowOpen, recommendedBedTime, settings.targetSleepMinute]
   )
-
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),
     [settings.targetSleepMinute]
   )
-
   const stats = useMemo(() => createHomeStats(records, currentTime), [records, currentTime])
-
   const recentDays = useMemo(
     () => createRecentCheckIns(records, currentTime),
     [records, currentTime]
   )
-
   const lastCheckInTime = useMemo(() => {
-    const timestamp = records[todayKey]
-    if (!timestamp) {
+    if (!todayRecord) {
       return ''
     }
-    return formatTime(new Date(timestamp))
-  }, [records, todayKey])
-
+    return formatTime(new Date(todayRecord))
+  }, [todayRecord])
   const isLateCheckIn = useMemo(() => {
-    const timestamp = records[todayKey]
-    if (!timestamp) {
+    if (!todayRecord) {
       return false
     }
-    const targetForRecord = computeRecommendedBedTime(new Date(timestamp), settings.targetSleepMinute)
-    return timestamp > targetForRecord.getTime()
-  }, [records, settings.targetSleepMinute, todayKey])
-
+    const targetForRecord = computeRecommendedBedTime(
+      new Date(todayRecord),
+      settings.targetSleepMinute
+    )
+    return todayRecord > targetForRecord.getTime()
+  }, [settings.targetSleepMinute, todayRecord])
   const isLateNow = useMemo(
     () => currentTime.getTime() > recommendedBedTime.getTime(),
     [currentTime, recommendedBedTime]
   )
-
-  const hydrateAll = useCallback(async () => {
-    if (canUseCloud) {
-      setIsSyncing(true)
-      try {
-        const user = await ensureCurrentUser()
-        setUserDoc(user)
-        setSettings({
-          name: user.nickname || DEFAULT_USER_NAME,
-          targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
-        })
-        try {
-          await refreshPublicProfile(user, todayKey)
-        } catch (e) {
-          console.warn('刷新公开资料失败（将稍后重试）', e)
-        }
-        const checkins = await fetchCheckins(user.uid, 365)
-        const mappedRecords = mapCheckinsToRecord(checkins)
-        setRecords(mappedRecords)
-      } catch (error) {
-        console.error('同步云端数据失败', error)
-        Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
-        setUserDoc(null)
-        setRecords({})
-      } finally {
-        setIsSyncing(false)
-      }
-      return
-    }
-
-    setUserDoc(null)
-    setRecords(readCheckIns())
-    setSettings(readSettings())
-  }, [canUseCloud, todayKey])
+  const displayName = useMemo(() => settings.name || DEFAULT_USER_NAME, [settings.name])
+  const effectiveUid = userDoc?.uid ?? localUid
 
   const persistRecords = useCallback(
     (next: CheckInMap) => {
@@ -217,6 +177,62 @@ export default function Index() {
     },
     [canUseCloud]
   )
+
+  const hydrateFromCloud = useCallback(async () => {
+    setIsSyncing(true)
+    try {
+      const user = await ensureCurrentUser()
+      setUserDoc(user)
+      setSettings({
+        name: user.nickname || DEFAULT_USER_NAME,
+        targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
+      })
+      try {
+        await refreshPublicProfile(user, todayKey)
+      } catch (error) {
+        console.warn('刷新公开资料失败（将稍后重试）', error)
+      }
+      const checkins = await fetchCheckins(user.uid, 365)
+      setRecords(mapCheckinsToRecord(checkins))
+    } catch (error) {
+      console.error('同步云端数据失败', error)
+      Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
+      setUserDoc(null)
+      setRecords({})
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [todayKey])
+
+  const hydrateAll = useCallback(async () => {
+    if (canUseCloud) {
+      await hydrateFromCloud()
+      return
+    }
+
+    setUserDoc(null)
+    setRecords(readCheckIns())
+    setSettings(readSettings())
+  }, [canUseCloud, hydrateFromCloud])
+
+  const startTimer = useCallback(() => {
+    if (timerRef.current) {
+      return
+    }
+
+    timerRef.current = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60 * 1000)
+  }, [])
+
+  const stopTimer = useCallback(() => {
+    if (!timerRef.current) {
+      return
+    }
+
+    clearInterval(timerRef.current)
+    timerRef.current = null
+  }, [])
 
   const {
     input: goodnightInput,
@@ -242,6 +258,79 @@ export default function Index() {
     hasCheckedInToday
   })
 
+  const checkInWithCloud = useCallback(
+    async (rewardCandidate: GoodnightMessage | null) => {
+      if (!userDoc) {
+        return
+      }
+
+      try {
+        const latestUser = withLatestSettings(userDoc, settings)
+        const tzOffset =
+          typeof latestUser.tzOffset === 'number'
+            ? latestUser.tzOffset
+            : -new Date().getTimezoneOffset()
+        const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
+        const created = await upsertCheckin({
+          uid: latestUser.uid,
+          date: todayKey,
+          status: checkinStatus,
+          tzOffset,
+          goodnightMessageId: rewardCandidate?._id,
+          message: rewardCandidate?._id
+        })
+        const timestamp =
+          created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
+        persistRecords({ ...records, [todayKey]: timestamp })
+        setUserDoc(latestUser)
+        try {
+          await refreshPublicProfile(
+            {
+              ...latestUser,
+              tzOffset
+            },
+            todayKey
+          )
+        } catch (error) {
+          console.warn('刷新公开资料失败（将在后台重试）', error)
+        }
+        Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+        await presentGoodnightReward({
+          message: rewardCandidate,
+          syncToCheckin: true
+        })
+      } catch (error) {
+        console.error('云端打卡失败', error)
+        Taro.showToast({ title: '云端打卡失败，请稍后重试', icon: 'none' })
+      }
+    },
+    [
+      isLateNow,
+      persistRecords,
+      presentGoodnightReward,
+      records,
+      refreshPublicProfile,
+      settings,
+      todayKey,
+      userDoc
+    ]
+  )
+
+  const checkInLocally = useCallback(
+    async (rewardCandidate: GoodnightMessage | null) => {
+      const now = new Date()
+      const key = formatDateKey(now)
+      const updated = { ...records, [key]: now.getTime() }
+      persistRecords(updated)
+      Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+      await presentGoodnightReward({
+        message: rewardCandidate,
+        syncToCheckin: true
+      })
+    },
+    [persistRecords, presentGoodnightReward, records]
+  )
+
   const handleCheckIn = useCallback(async () => {
     if (hasCheckedInToday || isSyncing) {
       Taro.showToast({ title: '今天已经打过卡了', icon: 'none' })
@@ -254,8 +343,8 @@ export default function Index() {
     }
 
     setIsSyncing(true)
-    let rewardCandidate: GoodnightMessage | null = null
     try {
+      let rewardCandidate: GoodnightMessage | null = null
       try {
         rewardCandidate = await fetchRewardForToday()
       } catch (error) {
@@ -263,76 +352,24 @@ export default function Index() {
       }
 
       if (canUseCloud && userDoc) {
-        try {
-          const latestUser = withLatestSettings(userDoc, settings)
-          const tzOffset =
-            typeof latestUser.tzOffset === 'number' ? latestUser.tzOffset : -new Date().getTimezoneOffset()
-          const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
-          const created = await upsertCheckin({
-            uid: latestUser.uid,
-            date: todayKey,
-            status: checkinStatus,
-            tzOffset,
-            goodnightMessageId: rewardCandidate?._id,
-            message: rewardCandidate?._id
-          })
-          const timestamp = created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
-          persistRecords({ ...records, [todayKey]: timestamp })
-          setUserDoc(latestUser)
-          try {
-            await refreshPublicProfile(
-              {
-                ...latestUser,
-                tzOffset
-              },
-              todayKey
-            )
-          } catch (error) {
-            console.warn('刷新公开资料失败（将在后台重试）', error)
-          }
-          Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
-          await presentGoodnightReward({
-            message: rewardCandidate,
-            syncToCheckin: true
-          })
-        } catch (error) {
-          console.error('云端打卡失败', error)
-          Taro.showToast({ title: '云端打卡失败，请稍后重试', icon: 'none' })
-        } finally {
-          setIsSyncing(false)
-        }
+        await checkInWithCloud(rewardCandidate)
         return
       }
 
-      const now = new Date()
-      const key = formatDateKey(now)
-      const updated = { ...records, [key]: now.getTime() }
-      persistRecords(updated)
-      Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
-      await presentGoodnightReward({
-        message: rewardCandidate,
-        syncToCheckin: true
-      })
+      await checkInLocally(rewardCandidate)
     } finally {
-      if (!canUseCloud || !userDoc) {
-        setIsSyncing(false)
-      }
+      setIsSyncing(false)
     }
   }, [
     canUseCloud,
-    hasCheckedInToday,
+    checkInLocally,
+    checkInWithCloud,
     fetchRewardForToday,
+    hasCheckedInToday,
     isSyncing,
     isWindowOpen,
-    isLateNow,
-    presentGoodnightReward,
-    persistRecords,
-    records,
-    settings,
-    todayKey,
     userDoc
   ])
-
 
   useLoad(() => {
     void hydrateAll()
@@ -340,31 +377,20 @@ export default function Index() {
 
   useDidShow(() => {
     void hydrateAll()
-    if (!timerRef.current) {
-      timerRef.current = setInterval(() => {
-        setCurrentTime(new Date())
-      }, 60 * 1000)
-    }
+    startTimer()
   })
 
   useDidHide(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
-    }
+    stopTimer()
   })
 
   useEffect(() => {
     setCurrentTime(new Date())
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
+      stopTimer()
     }
-  }, [])
-
-  const displayName = useMemo(() => settings.name || DEFAULT_USER_NAME, [settings.name])
+  }, [stopTimer])
 
   return (
     <View className='index'>
