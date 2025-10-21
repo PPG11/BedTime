@@ -145,7 +145,13 @@ export async function fetchRandomGoodnightMessage(
   excludeUid?: string
 ): Promise<GoodnightMessage | null> {
   const db = await ensureCloud()
-  const result = await getGoodnightMessagesCollection(db)
+  const collection = getGoodnightMessagesCollection(db)
+  const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+
+  const result = await collection
+    .where({
+      createdAt: db.command.gte(cutoff)
+    })
     .orderBy('createdAt', 'desc')
     .limit(50)
     .get()
