@@ -259,54 +259,77 @@ async function hydrateUserInviteLists(
   try {
     const invites = getFriendInvitesCollection(db)
     const users = getUsersCollection(db)
-    const [outgoingSnapshot, incomingSnapshot] = await Promise.all([
+    const [
+      pendingOutgoingSnapshot,
+      pendingIncomingSnapshot,
+      acceptedOutgoingSnapshot,
+      acceptedIncomingSnapshot,
+      declinedOutgoingSnapshot
+    ] = await Promise.all([
       invites
         .where({
-          senderUid: user.uid
+          senderUid: user.uid,
+          status: 'pending'
+        })
+        .get(),
+      invites
+        .where({
+          recipientUid: user.uid,
+          status: 'pending'
+        })
+        .get(),
+      invites
+        .where({
+          senderUid: user.uid,
+          status: 'accepted'
         })
         .limit(100)
         .get(),
       invites
         .where({
-          recipientUid: user.uid
+          recipientUid: user.uid,
+          status: 'accepted'
+        })
+        .limit(100)
+        .get(),
+      invites
+        .where({
+          senderUid: user.uid,
+          status: 'declined'
         })
         .limit(100)
         .get()
     ])
 
-    const outgoingInvites = outgoingSnapshot.data ?? []
-    const incomingInvites = incomingSnapshot.data ?? []
+    const pendingOutgoingInvites = pendingOutgoingSnapshot.data ?? []
+    const pendingIncomingInvites = pendingIncomingSnapshot.data ?? []
+    const acceptedOutgoingInvites = acceptedOutgoingSnapshot.data ?? []
+    const acceptedIncomingInvites = acceptedIncomingSnapshot.data ?? []
+    const declinedOutgoingInvites = declinedOutgoingSnapshot.data ?? []
     const pendingOutgoing: string[] = []
     const pendingIncoming: string[] = []
     const buddySet = new Set(user.buddyList ?? [])
     const cleanupInviteIds: string[] = []
 
-    for (const invite of incomingInvites) {
-      if (invite.status === 'pending') {
-        pendingIncoming.push(invite.senderUid)
-        continue
-      }
-
-      if (invite.status === 'accepted') {
-        buddySet.add(invite.senderUid)
-      }
+    for (const invite of pendingIncomingInvites) {
+      pendingIncoming.push(invite.senderUid)
     }
 
-    for (const invite of outgoingInvites) {
-      if (invite.status === 'pending') {
-        pendingOutgoing.push(invite.recipientUid)
-        continue
-      }
+    for (const invite of pendingOutgoingInvites) {
+      pendingOutgoing.push(invite.recipientUid)
+    }
 
-      if (invite.status === 'accepted') {
-        buddySet.add(invite.recipientUid)
-        cleanupInviteIds.push(invite._id)
-        continue
-      }
+    for (const invite of acceptedIncomingInvites) {
+      buddySet.add(invite.senderUid)
+    }
 
-      if (invite.status === 'declined') {
-        cleanupInviteIds.push(invite._id)
-      }
+    for (const invite of acceptedOutgoingInvites) {
+      buddySet.add(invite.recipientUid)
+      cleanupInviteIds.push(invite._id)
+    }
+
+    for (const invite of declinedOutgoingInvites) {
+      cleanupInviteIds.push(invite._id)
     }
 
     const sanitizedIncoming = sanitizeUidList(pendingIncoming)
