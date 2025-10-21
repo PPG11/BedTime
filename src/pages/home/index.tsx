@@ -238,7 +238,8 @@ export default function Index() {
     canUseCloud,
     userDoc,
     effectiveUid,
-    todayKey
+    todayKey,
+    hasCheckedInToday
   })
 
   const handleCheckIn = useCallback(async () => {

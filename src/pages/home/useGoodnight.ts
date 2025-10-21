@@ -30,6 +30,7 @@ type UseGoodnightInteractionParams = {
   userDoc: UserDocument | null
   effectiveUid: string | null
   todayKey: string
+  hasCheckedInToday: boolean
 }
 
 type PresentRewardOptions = {
@@ -60,7 +61,8 @@ export function useGoodnightInteraction({
   canUseCloud,
   userDoc,
   effectiveUid,
-  todayKey
+  todayKey,
+  hasCheckedInToday
 }: UseGoodnightInteractionParams): UseGoodnightInteractionResult {
   const [input, setInput] = useState('')
   const [submittedMessage, setSubmittedMessage] = useState<GoodnightMessage | null>(null)
@@ -72,6 +74,11 @@ export function useGoodnightInteraction({
   const [hasVoted, setHasVoted] = useState(false)
   const [isVoting, setIsVoting] = useState(false)
   const lastLoadedDateRef = useRef<string | null>(null)
+  const pendingRewardRef = useRef<{
+    key: string
+    uid: string | null
+    message: GoodnightMessage | null
+  } | null>(null)
 
   const resolveRewardMessage = useCallback(
     async ({
@@ -175,17 +182,37 @@ export function useGoodnightInteraction({
 
     if (!effectiveUid) {
       setRewardMessage(null)
+      pendingRewardRef.current = null
       return () => {
         cancelled = true
       }
     }
 
-    setRewardMessage(null)
+    if (!hasCheckedInToday) {
+      setRewardMessage(null)
+      pendingRewardRef.current = null
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const cache = pendingRewardRef.current
+    if (cache && cache.key === todayKey && cache.uid === effectiveUid) {
+      setRewardMessage(cache.message)
+      return () => {
+        cancelled = true
+      }
+    }
 
     const loadReward = async () => {
       const message = await resolveRewardMessage({ forceRefresh: true })
       if (!cancelled) {
         setRewardMessage(message)
+        pendingRewardRef.current = {
+          key: todayKey,
+          uid: effectiveUid,
+          message
+        }
       }
     }
 
@@ -194,13 +221,26 @@ export function useGoodnightInteraction({
     return () => {
       cancelled = true
     }
-  }, [effectiveUid, resolveRewardMessage, todayKey])
+  }, [effectiveUid, hasCheckedInToday, resolveRewardMessage, todayKey])
 
   const fetchRewardForToday = useCallback(async (): Promise<GoodnightMessage | null> => {
-    const message = await resolveRewardMessage({ existing: rewardMessage })
-    setRewardMessage(message)
+    if (!effectiveUid) {
+      return null
+    }
+
+    const cache = pendingRewardRef.current
+    if (cache && cache.key === todayKey && cache.uid === effectiveUid) {
+      return cache.message
+    }
+
+    const message = await resolveRewardMessage()
+    pendingRewardRef.current = {
+      key: todayKey,
+      uid: effectiveUid,
+      message
+    }
     return message
-  }, [resolveRewardMessage, rewardMessage])
+  }, [effectiveUid, resolveRewardMessage, todayKey])
 
   const presentReward = useCallback(
     async (options?: PresentRewardOptions): Promise<GoodnightMessage | null> => {
@@ -222,6 +262,11 @@ export function useGoodnightInteraction({
       }
 
       setRewardMessage(message)
+      pendingRewardRef.current = {
+        key: todayKey,
+        uid: effectiveUid,
+        message
+      }
       if (shouldShowModal) {
         setModalMessage(message)
         setModalVisible(true)
