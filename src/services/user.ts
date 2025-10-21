@@ -48,7 +48,7 @@ type RawUserDocument = Omit<UserDocument, 'uid'> & { uid: string | number }
 
 type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
 
-type FriendInviteStatus = 'pending' | 'accepted' | 'declined'
+type FriendInviteStatus = 'pending' | 'accept' | 'accepted' | 'declined'
 
 type FriendInviteDocument = {
   _id: string
@@ -252,6 +252,122 @@ function buildFriendInviteId(senderUid: string, recipientUid: string): string {
   return `invite_${senderUid}_${recipientUid}`
 }
 
+function buildUidMatchSet(candidate: string): Set<string> {
+  const matches = new Set<string>()
+
+  for (const option of buildUidCandidates(candidate)) {
+    if (typeof option === 'string') {
+      const trimmed = option.trim()
+      if (trimmed.length) {
+        matches.add(trimmed)
+      }
+      continue
+    }
+
+    if (typeof option === 'number' && Number.isSafeInteger(option)) {
+      const asString = String(option)
+      if (asString.length) {
+        matches.add(asString)
+      }
+      matches.add(normalizeUid(option))
+    }
+  }
+
+  return matches
+}
+
+function findMatchingUid(source: string[], candidate: string): string | null {
+  if (!Array.isArray(source) || !source.length) {
+    return null
+  }
+
+  const matchSet = buildUidMatchSet(candidate)
+  if (!matchSet.size) {
+    return null
+  }
+
+  for (const value of source) {
+    if (typeof value !== 'string') {
+      continue
+    }
+    const trimmed = value.trim()
+    if (!trimmed.length) {
+      continue
+    }
+    if (matchSet.has(trimmed)) {
+      return trimmed
+    }
+  }
+
+  return null
+}
+
+function hasUidCandidate(source: string[], candidate: string): boolean {
+  return Boolean(findMatchingUid(source, candidate))
+}
+
+function isInviteAccepted(status: unknown): boolean {
+  return status === 'accepted' || status === 'accept'
+}
+
+async function fetchInviteDocumentByParticipants(
+  invites: DbCollection<FriendInviteDocument>,
+  senderUid: string,
+  recipientUid: string
+): Promise<FriendInviteDocument | null> {
+  try {
+    const result = await invites
+      .where({
+        senderUid,
+        recipientUid
+      })
+      .limit(1)
+      .get()
+
+    const doc = result.data?.[0]
+    if (!doc) {
+      return null
+    }
+
+    const createdAt =
+      doc.createdAt instanceof Date
+        ? doc.createdAt
+        : doc.createdAt
+        ? new Date(doc.createdAt)
+        : new Date()
+    const updatedAt =
+      doc.updatedAt instanceof Date
+        ? doc.updatedAt
+        : doc.updatedAt
+        ? new Date(doc.updatedAt)
+        : new Date()
+
+    return {
+      ...doc,
+      createdAt,
+      updatedAt
+    } as FriendInviteDocument
+  } catch (error) {
+    console.warn('按参与方读取好友邀请失败', error)
+    return null
+  }
+}
+
+function isDocumentNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const err = error as { errMsg?: unknown; message?: unknown }
+  const message = typeof err.message === 'string' ? err.message : ''
+  const errMsg = typeof err.errMsg === 'string' ? err.errMsg : ''
+  const combined = `${errMsg} ${message}`
+
+  return (
+    /document\.get:fail/i.test(combined) && /can\s*not find document/i.test(combined)
+  )
+}
+
 async function hydrateUserInviteLists(
   db: CloudDatabase,
   user: UserDocument
@@ -259,6 +375,11 @@ async function hydrateUserInviteLists(
   try {
     const invites = getFriendInvitesCollection(db)
     const users = getUsersCollection(db)
+    const acceptedStatusQuery =
+      db.command && typeof db.command.in === 'function'
+        ? db.command.in(['accepted', 'accept'])
+        : 'accepted'
+
     const [
       pendingOutgoingSnapshot,
       pendingIncomingSnapshot,
@@ -281,14 +402,14 @@ async function hydrateUserInviteLists(
       invites
         .where({
           senderUid: user.uid,
-          status: 'accepted'
+          status: acceptedStatusQuery
         })
         .limit(100)
         .get(),
       invites
         .where({
           recipientUid: user.uid,
-          status: 'accepted'
+          status: acceptedStatusQuery
         })
         .limit(100)
         .get(),
@@ -752,13 +873,13 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
   if (normalizedTargetUid === sender.uid) {
     return { status: 'self-target', user: sender }
   }
-  if (sender.buddyList.includes(normalizedTargetUid)) {
+  if (hasUidCandidate(sender.buddyList, normalizedTargetUid)) {
     return { status: 'already-friends', user: sender }
   }
-  if (sender.incomingRequests.includes(normalizedTargetUid)) {
+  if (hasUidCandidate(sender.incomingRequests, normalizedTargetUid)) {
     return { status: 'incoming-exists', user: sender }
   }
-  if (sender.outgoingRequests.includes(normalizedTargetUid)) {
+  if (hasUidCandidate(sender.outgoingRequests, normalizedTargetUid)) {
     return { status: 'already-sent', user: sender }
   }
 
@@ -778,13 +899,13 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
   if (resolvedRecipientUid === sender.uid) {
     return { status: 'self-target', user: sender }
   }
-  if (sender.buddyList.includes(resolvedRecipientUid)) {
+  if (hasUidCandidate(sender.buddyList, resolvedRecipientUid)) {
     return { status: 'already-friends', user: sender }
   }
-  if (sender.incomingRequests.includes(resolvedRecipientUid)) {
+  if (hasUidCandidate(sender.incomingRequests, resolvedRecipientUid)) {
     return { status: 'incoming-exists', user: sender }
   }
-  if (sender.outgoingRequests.includes(resolvedRecipientUid)) {
+  if (hasUidCandidate(sender.outgoingRequests, resolvedRecipientUid)) {
     return { status: 'already-sent', user: sender }
   }
   if (!recipientOpenId.length) {
@@ -803,14 +924,18 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
       existingInvite = snapshot.data
     }
   } catch (error) {
-    console.warn('读取好友邀请记录失败', error)
+    if (isDocumentNotFoundError(error)) {
+      existingInvite = undefined
+    } else {
+      console.warn('读取好友邀请记录失败', error)
+    }
   }
 
   if (existingInvite) {
     if (existingInvite.status === 'pending') {
       return { status: 'already-sent', user: sender }
     }
-    if (existingInvite.status === 'accepted') {
+    if (isInviteAccepted(existingInvite.status)) {
       return { status: 'already-friends', user: sender }
     }
   }
@@ -878,48 +1003,104 @@ export async function respondFriendInvite(
     return { status: 'not-found', user: current }
   }
 
-  if (!current.incomingRequests.includes(normalizedTargetUid)) {
+  const matchedRequesterUid = findMatchingUid(current.incomingRequests, normalizedTargetUid)
+  if (!matchedRequesterUid) {
     return { status: 'not-found', user: current }
   }
 
-  const inviteId = buildFriendInviteId(normalizedTargetUid, current.uid)
-  const inviteDoc = invites.doc(inviteId)
+  const inviteId = buildFriendInviteId(matchedRequesterUid, current.uid)
+  let inviteDocRef = invites.doc(inviteId)
   let invite: FriendInviteDocument | undefined
 
   try {
-    const snapshot = await inviteDoc.get()
+    const snapshot = await inviteDocRef.get()
     if (snapshot.data) {
       invite = snapshot.data
     }
   } catch (error) {
-    console.warn('读取好友邀请失败', error)
+    if (isDocumentNotFoundError(error)) {
+      invite = undefined
+    } else {
+      console.warn('读取好友邀请失败', error)
+    }
+  }
+
+  if (!invite) {
+    const fallbackInvite = await fetchInviteDocumentByParticipants(
+      invites,
+      matchedRequesterUid,
+      current.uid
+    )
+    if (fallbackInvite) {
+      invite = fallbackInvite
+      if (fallbackInvite._id && fallbackInvite._id !== inviteId) {
+        inviteDocRef = invites.doc(fallbackInvite._id)
+      }
+    }
   }
 
   if (!invite || invite.status !== 'pending') {
     return { status: 'not-found', user: current }
   }
 
-  const requester = await fetchUserByUid(db, normalizedTargetUid)
+  const requester = await fetchUserByUid(db, matchedRequesterUid)
   const now = db.serverDate ? db.serverDate() : new Date()
   const nextInviteStatus: FriendInviteStatus =
-    accept && requester ? 'accepted' : 'declined'
+    accept && requester ? 'accept' : 'declined'
 
-  const nextCurrentIncoming = removeUid(current.incomingRequests, normalizedTargetUid)
-  const nextCurrentOutgoing = removeUid(current.outgoingRequests, normalizedTargetUid)
-  const currentBuddyList = accept && requester
-    ? sanitizeUidList([...current.buddyList, normalizedTargetUid])
+  const nextCurrentIncoming = sanitizeUidList(
+    removeUid(current.incomingRequests, matchedRequesterUid)
+  )
+  const matchedOutgoingUid = findMatchingUid(current.outgoingRequests, matchedRequesterUid)
+  const rawCurrentOutgoing = matchedOutgoingUid
+    ? removeUid(current.outgoingRequests, matchedOutgoingUid)
+    : current.outgoingRequests
+  const nextCurrentOutgoing = sanitizeUidList(rawCurrentOutgoing)
+  const nextCurrentBuddyList = accept && requester
+    ? sanitizeUidList([...current.buddyList, matchedRequesterUid])
     : sanitizeUidList(current.buddyList)
 
   await users.doc(current._id).update({
     data: {
       incomingRequests: nextCurrentIncoming,
       outgoingRequests: nextCurrentOutgoing,
-      buddyList: currentBuddyList,
+      buddyList: nextCurrentBuddyList,
       updatedAt: now
     }
   })
 
-  await inviteDoc.update({
+  if (requester) {
+    const nextRequesterOutgoing = sanitizeUidList(
+      removeUid(requester.outgoingRequests, current.uid)
+    )
+    const nextRequesterIncoming = sanitizeUidList(
+      removeUid(requester.incomingRequests, current.uid)
+    )
+    const nextRequesterBuddyList = accept
+      ? sanitizeUidList([...requester.buddyList, current.uid])
+      : sanitizeUidList(requester.buddyList)
+    const requesterUpdatePayload: Partial<UserDocument> & {
+      updatedAt: Date | CloudServerDate
+    } = {
+      outgoingRequests: nextRequesterOutgoing,
+      incomingRequests: nextRequesterIncoming,
+      updatedAt: now
+    }
+
+    if (!areUidListsEqual(nextRequesterBuddyList, requester.buddyList)) {
+      requesterUpdatePayload.buddyList = nextRequesterBuddyList
+    }
+
+    try {
+      await users.doc(requester._id).update({
+        data: requesterUpdatePayload
+      })
+    } catch (error) {
+      console.warn('同步邀请发起者信息失败', error)
+    }
+  }
+
+  await inviteDocRef.update({
     data: {
       status: nextInviteStatus,
       updatedAt: now

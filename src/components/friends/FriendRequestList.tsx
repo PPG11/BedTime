@@ -9,12 +9,22 @@ export type FriendRequestItem = {
 
 type FriendRequestListProps = {
   requests: FriendRequestItem[]
-  onAccept: (uid: string) => void
-  onReject: (uid: string) => void
+  onAccept?: (uid: string) => void
+  onReject?: (uid: string) => void
 }
 
 export function FriendRequestList({ requests, onAccept, onReject }: FriendRequestListProps) {
   const hasRequests = requests.length > 0
+  const handleAccept = (uid: string) => {
+    if (typeof onAccept === 'function') {
+      onAccept(uid)
+    }
+  }
+  const handleReject = (uid: string) => {
+    if (typeof onReject === 'function') {
+      onReject(uid)
+    }
+  }
 
   return (
     <View className='friends__card'>
@@ -31,10 +41,10 @@ export function FriendRequestList({ requests, onAccept, onReject }: FriendReques
                 </Text>
               </View>
               <View className='friends__request-actions'>
-                <Button size='mini' type='primary' onClick={() => onAccept(request.uid)}>
+                <Button size='mini' type='primary' onClick={() => handleAccept(request.uid)}>
                   同意
                 </Button>
-                <Button size='mini' className='friends__remove' onClick={() => onReject(request.uid)}>
+                <Button size='mini' className='friends__remove' onClick={() => handleReject(request.uid)}>
                   拒绝
                 </Button>
               </View>
