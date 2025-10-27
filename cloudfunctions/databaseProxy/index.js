@@ -486,6 +486,16 @@ function createAccessGuard(db, openid) {
           if (data.recipientUid !== undefined && data.recipientUid !== recipientUid) {
             throw new Error('禁止修改好友邀请的接收者 UID')
           }
+          if (data.status !== undefined) {
+            const normalizedStatus = String(data.status).trim()
+            if (!normalizedStatus.length) {
+              throw new Error('好友邀请状态不能为空')
+            }
+            if (normalizedStatus !== 'pending') {
+              throw new Error('好友邀请初始状态必须为待处理')
+            }
+            data.status = normalizedStatus
+          }
           return {
             collection,
             id,
@@ -601,11 +611,33 @@ function createAccessGuard(db, openid) {
           if (!isRecipient && data.recipientOpenId !== undefined) {
             throw new Error('无权修改好友邀请的接收者身份信息')
           }
+          if (data.status !== undefined) {
+            const normalizedStatus = String(data.status).trim()
+            if (!normalizedStatus.length) {
+              throw new Error('好友邀请状态不能为空')
+            }
+            const allowedStatuses = new Set(['pending', 'accept', 'accepted', 'declined'])
+            if (!allowedStatuses.has(normalizedStatus)) {
+              throw new Error('不支持的好友邀请状态更新')
+            }
+            if (!isRecipient && normalizedStatus !== 'pending') {
+              throw new Error('只有邀请接收者可以更新好友邀请状态')
+            }
+            data.status = normalizedStatus
+          }
           if (isSender) {
             if (data.senderOpenId !== undefined && data.senderOpenId !== openid) {
               throw new Error('发起者身份信息不匹配')
             }
             data.senderOpenId = openid
+          }
+          if (isRecipient) {
+            if (data.recipientOpenId !== undefined && data.recipientOpenId !== openid) {
+              throw new Error('接收者身份信息不匹配')
+            }
+            if (data.status !== undefined || data.recipientOpenId !== undefined) {
+              data.recipientOpenId = openid
+            }
           }
           return { collection, id, data }
         }
