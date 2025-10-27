@@ -455,7 +455,7 @@ export async function fetchCheckinsInRange(
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
   const [from, to] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate]
-  const rangeCondition = db.command.gte(from).and(db.command.lte(to))
+  const rangeCondition = db.command.and([db.command.gte(from), db.command.lte(to)])
 
   const result = await getCheckinsCollection(db)
     .where({
