@@ -134,7 +134,7 @@ export async function submitGoodnightMessage(params: {
       likes: data.likes,
       dislikes: data.dislikes,
       date: data.date,
-      createdAt: now
+      createdAt: now as unknown as Date
     }
   })
 

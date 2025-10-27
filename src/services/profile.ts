@@ -62,7 +62,7 @@ export async function refreshPublicProfile(
         sleeptime: payload.sleeptime,
         streak: payload.streak,
         todayStatus: payload.todayStatus,
-        updatedAt: now
+        updatedAt: now as unknown as Date
       }
     })
 

@@ -211,8 +211,8 @@ export async function ensureCurrentUser(): Promise<UserDocument> {
         targetHM: doc.targetHM,
         buddyConsent: doc.buddyConsent,
         buddyList: doc.buddyList,
-        createdAt: now,
-        updatedAt: now
+        createdAt: now as unknown as Date,
+        updatedAt: now as unknown as Date
       }
     })
 
@@ -497,7 +497,7 @@ async function hydrateUserInviteLists(
       shouldUpdateOutgoing ||
       shouldUpdateBuddy
     ) {
-      updatePayload.updatedAt = now
+      updatePayload.updatedAt = now as unknown as Date
 
       try {
         await users.doc(user._id).update({
@@ -568,7 +568,7 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
     .update({
       data: {
         ...sanitized,
-        updatedAt: now
+        updatedAt: now as unknown as Date
       }
     })
 
@@ -737,8 +737,8 @@ async function bootstrapUserFromPublicProfile(
         buddyList: bootstrap.buddyList,
         incomingRequests: bootstrap.incomingRequests,
         outgoingRequests: bootstrap.outgoingRequests,
-        createdAt: now,
-        updatedAt: now
+        createdAt: now as unknown as Date,
+        updatedAt: now as unknown as Date
       }
     })
   } catch (error) {
@@ -972,7 +972,7 @@ export async function sendFriendInvite(targetUid: string): Promise<SendFriendInv
   await users.doc(sender._id).update({
     data: {
       outgoingRequests: nextSenderOutgoing,
-      updatedAt: now
+      updatedAt: now as unknown as Date
     }
   })
 
@@ -1065,7 +1065,7 @@ export async function respondFriendInvite(
       incomingRequests: nextCurrentIncoming,
       outgoingRequests: nextCurrentOutgoing,
       buddyList: nextCurrentBuddyList,
-      updatedAt: now
+      updatedAt: now as unknown as Date
     }
   })
 
@@ -1084,7 +1084,7 @@ export async function respondFriendInvite(
     } = {
       outgoingRequests: nextRequesterOutgoing,
       incomingRequests: nextRequesterIncoming,
-      updatedAt: now
+      updatedAt: now as unknown as Date
     }
 
     if (!areUidListsEqual(nextRequesterBuddyList, requester.buddyList)) {
@@ -1103,7 +1103,7 @@ export async function respondFriendInvite(
   await inviteDocRef.update({
     data: {
       status: nextInviteStatus,
-      updatedAt: now
+      updatedAt: now as unknown as Date
     }
   })
 
@@ -1144,7 +1144,7 @@ export async function removeFriend(targetUid: string): Promise<RemoveFriendResul
       buddyList: nextCurrentBuddyList,
       incomingRequests: nextCurrentIncoming,
       outgoingRequests: nextCurrentOutgoing,
-      updatedAt: now
+      updatedAt: now as unknown as Date
     }
   })
 
@@ -1158,7 +1158,7 @@ export async function removeFriend(targetUid: string): Promise<RemoveFriendResul
         buddyList: nextTargetBuddyList,
         incomingRequests: nextTargetIncoming,
         outgoingRequests: nextTargetOutgoing,
-        updatedAt: now
+        updatedAt: now as unknown as Date
       }
     })
   }
