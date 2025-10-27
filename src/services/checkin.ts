@@ -131,14 +131,22 @@ function isDocumentMissingError(error: unknown): boolean {
     const errMsg = maybeError.errMsg ?? maybeError.message
     if (typeof errMsg === 'string') {
       const lower = errMsg.toLowerCase()
-      if (lower.includes('cannot find document') || lower.includes('not found')) {
+      if (
+        lower.includes('cannot find document') ||
+        lower.includes('not found') ||
+        lower.includes('does not exist')
+      ) {
         return true
       }
     }
   }
 
   const text = String(error).toLowerCase()
-  return text.includes('cannot find document') || text.includes('not found')
+  return (
+    text.includes('cannot find document') ||
+    text.includes('not found') ||
+    text.includes('does not exist')
+  )
 }
 
 function extractDateFromCheckin(raw: CheckinRecord): string | null {

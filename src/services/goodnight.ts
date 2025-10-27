@@ -62,8 +62,13 @@ function isDocumentNotFoundError(error: unknown): boolean {
   const errMsg = typeof err.errMsg === 'string' ? err.errMsg : null
   const combined = `${errMsg ?? ''} ${message ?? ''}`
 
+  if (!/document\.get:fail/i.test(combined)) {
+    return false
+  }
+
   return (
-    /document\.get:fail/i.test(combined) && /can\s*not find document/i.test(combined)
+    /can\s*not\s*find\s*document/i.test(combined) ||
+    /document\s+with\s+_id[\s\S]*does\s+not\s+exist/i.test(combined)
   )
 }
 
