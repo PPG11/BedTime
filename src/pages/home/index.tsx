@@ -39,7 +39,7 @@ import {
   fetchCheckins,
   refreshPublicProfile,
   supportsCloud,
-  upsertCheckin
+  submitCheckinRecord
 } from '../../services'
 import { GoodnightMessageCard } from '../../components/home/GoodnightMessageCard'
 import { GoodnightMessageModal } from '../../components/home/GoodnightMessageModal'
@@ -271,7 +271,7 @@ export default function Index() {
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
         const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
-        const created = await upsertCheckin({
+        const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: todayKey,
           status: checkinStatus,
@@ -283,21 +283,28 @@ export default function Index() {
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
         setUserDoc(latestUser)
-        try {
-          await refreshPublicProfile(
-            {
-              ...latestUser,
-              tzOffset
-            },
-            todayKey
-          )
-        } catch (error) {
-          console.warn('刷新公开资料失败（将在后台重试）', error)
+        if (submitStatus === 'created') {
+          try {
+            await refreshPublicProfile(
+              {
+                ...latestUser,
+                tzOffset
+              },
+              todayKey
+            )
+          } catch (error) {
+            console.warn('刷新公开资料失败（将在后台重试）', error)
+          }
         }
-        Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+        if (submitStatus === 'created') {
+          Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
+        } else {
+          Taro.showToast({ title: '今天已经打过卡了', icon: 'none' })
+        }
         await presentGoodnightReward({
-          message: rewardCandidate,
-          syncToCheckin: true
+          message: submitStatus === 'created' ? rewardCandidate : undefined,
+          syncToCheckin: submitStatus === 'created',
+          showModal: submitStatus === 'created'
         })
       } catch (error) {
         console.error('云端打卡失败', error)

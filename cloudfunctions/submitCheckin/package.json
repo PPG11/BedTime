@@ -1,0 +1,9 @@
+{
+  "name": "submitCheckin",
+  "version": "1.0.0",
+  "description": "提交用户每日打卡记录的云函数",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

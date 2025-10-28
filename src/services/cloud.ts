@@ -578,6 +578,23 @@ export async function ensureCloud(): Promise<CloudDatabase> {
   return databaseCache
 }
 
+type CloudFunctionCallResult<T> = {
+  result?: T
+}
+
+export type CloudFunctionCallOptions = {
+  name: string
+  data?: Record<string, unknown>
+}
+
+export async function callCloudFunction<T = unknown>(
+  options: CloudFunctionCallOptions
+): Promise<T | undefined> {
+  await ensureCloud()
+  const response = (await ensureTaroCloud().callFunction(options)) as CloudFunctionCallResult<T>
+  return response?.result
+}
+
 type LoginResult = {
   result?: {
     openid?: string

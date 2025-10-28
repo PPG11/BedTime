@@ -3,6 +3,7 @@ import { formatDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
 import {
   ensureCloud,
   getCurrentOpenId,
+  callCloudFunction,
   type CloudDatabase,
   type DbCollection
 } from './cloud'
@@ -30,6 +31,11 @@ type CheckinRecord = {
   tzOffset: number
   goodnightMessageId?: string
   message?: string
+}
+
+export type SubmitCheckinResult = {
+  document: CheckinDocument
+  status: 'created' | 'already_exists'
 }
 
 function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinRecord> {
@@ -167,6 +173,172 @@ function shiftDateKey(key: string, delta: number): string {
   const date = parseDateKey(key)
   date.setTime(date.getTime() + delta * ONE_DAY_MS)
   return formatDateKey(date)
+}
+
+function isCloudFunctionMissingError(error: unknown): boolean {
+  if (!error) {
+    return false
+  }
+
+  if (typeof error === 'object' && error) {
+    const maybeCode = (error as { code?: unknown; errCode?: unknown }).code
+    const maybeErrCode = (error as { code?: unknown; errCode?: unknown }).errCode
+    const codes = [maybeCode, maybeErrCode]
+    for (const code of codes) {
+      if (typeof code === 'string') {
+        const normalized = code.toUpperCase()
+        if (
+          normalized.includes('FUNCTION_NOT_FOUND') ||
+          normalized.includes('FUNCTION_NOT_EXIST') ||
+          normalized.includes('INVALID_FUNCTION_NAME')
+        ) {
+          return true
+        }
+      }
+    }
+  }
+
+  const candidate =
+    typeof error === 'object'
+      ? (error as { errMsg?: unknown; message?: unknown; code?: unknown; errCode?: unknown }).errMsg ??
+        (error as { errMsg?: unknown; message?: unknown }).message
+      : error
+
+  const text = String(candidate ?? '').toLowerCase()
+  if (!text) {
+    return false
+  }
+
+  const keywords = [
+    'function not exist',
+    'function not found',
+    'functionname not found',
+    'functionname not exist',
+    'function does not exist',
+    'functionname not available',
+    'functionnameundefined',
+    'functionname not defined',
+    'functionnamenotfound',
+    'functionname not available',
+    'functionname not configured',
+    'functionname not exists',
+    'functionnamenotexists',
+    'functionnamenot exist',
+    'functionnamenot found',
+    'functionname not accessible'
+  ]
+
+  return keywords.some((keyword) => text.includes(keyword))
+}
+
+type SubmitCheckinFunctionResponse = {
+  ok?: boolean
+  code?: string
+  data?: CheckinRecord
+  message?: string
+}
+
+type CheckTodayFunctionResponse = {
+  ok?: boolean
+  code?: string
+  exists?: boolean
+  data?: CheckinRecord
+  message?: string
+}
+
+async function submitCheckinViaCloudFunction(params: {
+  uid: string
+  date: string
+  status: CheckinStatus
+  tzOffset: number
+  goodnightMessageId?: string
+}): Promise<SubmitCheckinResult | null> {
+  try {
+    const payload: Record<string, unknown> = {
+      uid: params.uid,
+      date: params.date,
+      status: params.status,
+      tzOffset: params.tzOffset
+    }
+    if (params.goodnightMessageId) {
+      payload.goodnightMessageId = params.goodnightMessageId
+    }
+
+    const response = await callCloudFunction<SubmitCheckinFunctionResponse>({
+      name: 'submitCheckin',
+      data: payload
+    })
+
+    if (!response) {
+      return null
+    }
+
+    if (response.ok === false) {
+      const message =
+        typeof response.message === 'string' && response.message.length
+          ? response.message
+          : '提交打卡失败'
+      throw new Error(message)
+    }
+
+    if (!response.data) {
+      return null
+    }
+
+    const document = mapCheckinDocument(response.data)
+    const status: SubmitCheckinResult['status'] =
+      response.code === 'already_exists' ? 'already_exists' : 'created'
+
+    return {
+      document,
+      status
+    }
+  } catch (error) {
+    if (isCloudFunctionMissingError(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
+async function fetchCheckinViaCloudFunction(
+  uid: string,
+  date: string
+): Promise<CheckinDocument | null> {
+  try {
+    const payload: Record<string, unknown> = {
+      uid,
+      date
+    }
+
+    const response = await callCloudFunction<CheckTodayFunctionResponse>({
+      name: 'checkTodayCheckin',
+      data: payload
+    })
+
+    if (!response) {
+      return null
+    }
+
+    if (response.ok === false) {
+      const message =
+        typeof response.message === 'string' && response.message.length
+          ? response.message
+          : '查询打卡状态失败'
+      throw new Error(message)
+    }
+
+    if (!response.exists || !response.data) {
+      return null
+    }
+
+    return mapCheckinDocument(response.data)
+  } catch (error) {
+    if (isCloudFunctionMissingError(error)) {
+      return null
+    }
+    throw error
+  }
 }
 
 async function tryUpdateExistingCheckin(
@@ -312,7 +484,7 @@ async function migrateLegacyCheckins(
   return null
 }
 
-export async function upsertCheckin(
+async function legacyUpsertCheckin(
   params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
 ): Promise<CheckinDocument> {
   const db = await ensureCloud()
@@ -380,6 +552,42 @@ export async function upsertCheckin(
   })
 }
 
+export async function submitCheckinRecord(
+  params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
+): Promise<SubmitCheckinResult> {
+  const messageId =
+    typeof params.goodnightMessageId === 'string' && params.goodnightMessageId.length
+      ? params.goodnightMessageId
+      : typeof params.message === 'string' && params.message.length
+      ? params.message
+      : undefined
+
+  const functionResult = await submitCheckinViaCloudFunction({
+    uid: params.uid,
+    date: params.date,
+    status: params.status,
+    tzOffset: params.tzOffset,
+    goodnightMessageId: messageId
+  })
+
+  if (functionResult) {
+    return functionResult
+  }
+
+  const document = await legacyUpsertCheckin(params)
+  return {
+    document,
+    status: 'created'
+  }
+}
+
+export async function upsertCheckin(
+  params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
+): Promise<CheckinDocument> {
+  const result = await submitCheckinRecord(params)
+  return result.document
+}
+
 export async function updateCheckinGoodnightMessage(params: {
   uid: string
   date: string
@@ -445,6 +653,11 @@ export async function fetchCheckinInfoForDate(
   uid: string,
   date: string
 ): Promise<CheckinDocument | null> {
+  const functionResult = await fetchCheckinViaCloudFunction(uid, date)
+  if (functionResult) {
+    return functionResult
+  }
+
   const db = await ensureCloud()
   const collection = getCheckinsCollection(db)
   const openid = await getCurrentOpenId()
