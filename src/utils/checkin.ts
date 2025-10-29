@@ -1,5 +1,5 @@
 import { formatMinutesToTime } from './time'
-import { CheckInMap } from './storage'
+import type { CheckInMap } from './storage'
 
 export type RecentDay = {
   key: string
@@ -26,16 +26,54 @@ export function getCheckInDayStart(date: Date): Date {
 
 export const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
 
+export function normalizeDateKey(input: string | null | undefined): string | null {
+  if (typeof input !== 'string') {
+    return null
+  }
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return null
+  }
+  const digits = /^\d{8}$/.test(trimmed) ? trimmed : trimmed.replace(/\D/g, '')
+  if (digits.length !== 8) {
+    return null
+  }
+  const year = Number(digits.slice(0, 4))
+  const month = Number(digits.slice(4, 6))
+  const day = Number(digits.slice(6, 8))
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null
+  }
+  const candidate = new Date(year, month - 1, day)
+  if (
+    candidate.getFullYear() !== year ||
+    candidate.getMonth() + 1 !== month ||
+    candidate.getDate() !== day
+  ) {
+    return null
+  }
+  const normalizedYear = String(year).padStart(4, '0')
+  const normalizedMonth = String(month).padStart(2, '0')
+  const normalizedDay = String(day).padStart(2, '0')
+  return `${normalizedYear}${normalizedMonth}${normalizedDay}`
+}
+
 export function formatDateKey(date: Date): string {
   const shifted = shiftByReset(date)
-  const year = shifted.getFullYear()
+  const year = String(shifted.getFullYear()).padStart(4, '0')
   const month = `${shifted.getMonth() + 1}`.padStart(2, '0')
   const day = `${shifted.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return `${year}${month}${day}`
 }
 
 export function parseDateKey(key: string): Date {
-  const [year, month, day] = key.split('-').map(Number)
+  const normalized = normalizeDateKey(key)
+  if (!normalized) {
+    return getCheckInDayStart(new Date())
+  }
+  const year = Number(normalized.slice(0, 4))
+  const month = Number(normalized.slice(4, 6))
+  const day = Number(normalized.slice(6, 8))
   const date = new Date(year, month - 1, day)
   date.setHours(0, 0, 0, 0)
   return new Date(date.getTime() + CHECK_IN_RESET_MS)

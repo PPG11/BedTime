@@ -1,4 +1,5 @@
 import Taro from '@tarojs/taro'
+import { normalizeDateKey } from './checkin'
 
 export type CheckInMap = Record<string, number>
 
@@ -21,11 +22,27 @@ function isRecordMap(value: unknown): value is CheckInMap {
   return Boolean(value) && typeof value === 'object'
 }
 
+function normalizeCheckInMapKeys(source: CheckInMap): CheckInMap {
+  const entries = Object.entries(source)
+  if (!entries.length) {
+    return {}
+  }
+  return entries.reduce<CheckInMap>((acc, [key, value]) => {
+    const normalizedKey = normalizeDateKey(key)
+    if (normalizedKey) {
+      acc[normalizedKey] = value
+    } else if (typeof key === 'string' && key.length) {
+      acc[key] = value
+    }
+    return acc
+  }, {})
+}
+
 export function readCheckIns(): CheckInMap {
   try {
     const stored = Taro.getStorageSync(STORAGE_KEYS.checkIns) as CheckInMap | undefined
     if (isRecordMap(stored)) {
-      return stored
+      return normalizeCheckInMapKeys(stored)
     }
   } catch (error) {
     console.warn('读取早睡打卡数据失败', error)
@@ -35,7 +52,8 @@ export function readCheckIns(): CheckInMap {
 
 export function saveCheckIns(next: CheckInMap): void {
   try {
-    Taro.setStorageSync(STORAGE_KEYS.checkIns, next)
+    const normalized = normalizeCheckInMapKeys(next)
+    Taro.setStorageSync(STORAGE_KEYS.checkIns, normalized)
   } catch (error) {
     console.warn('保存早睡打卡数据失败', error)
   }

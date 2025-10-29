@@ -9,6 +9,7 @@ import {
   computeRecommendedBedTime,
   formatCountdown,
   formatDateKey,
+  normalizeDateKey,
   formatWindowHint,
   getMinutesSinceMidnight,
   getRecentDays,
@@ -62,7 +63,12 @@ function mapCheckinsToRecord(list: CheckinDocument[]): CheckInMap {
   return list.reduce<CheckInMap>((acc, item) => {
     if (item.status === 'hit' || item.status === 'late') {
       const ts = item.ts instanceof Date ? item.ts.getTime() : new Date(item.ts).getTime()
-      acc[item.date] = ts
+      const key = normalizeDateKey(item.date)
+      if (key) {
+        acc[key] = ts
+      } else if (item.date) {
+        acc[item.date] = ts
+      }
     }
     return acc
   }, {})
@@ -111,6 +117,13 @@ export default function Index() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const todayKey = useMemo(() => formatDateKey(currentTime), [currentTime])
+  const todayLabel = useMemo(() => {
+    const normalized = normalizeDateKey(todayKey)
+    if (!normalized) {
+      return todayKey
+    }
+    return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`
+  }, [todayKey])
   const minutesNow = useMemo(() => getMinutesSinceMidnight(currentTime), [currentTime])
   const isWindowOpen = useMemo(
     () => isCheckInWindowOpen(minutesNow, settings.targetSleepMinute),
@@ -193,7 +206,10 @@ export default function Index() {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
       const checkins = await fetchCheckins(user.uid, 365)
-      setRecords(mapCheckinsToRecord(checkins))
+      console.log('checkins', checkins)
+      const record = mapCheckinsToRecord(checkins)
+      console.log('record', record)
+      setRecords(record)  
     } catch (error) {
       console.error('同步云端数据失败', error)
       Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
@@ -271,6 +287,7 @@ export default function Index() {
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
         const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
+        console.log('checkInWithCloud submitCheckinRecord start', rewardCandidate)
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: todayKey,
@@ -279,6 +296,7 @@ export default function Index() {
           goodnightMessageId: rewardCandidate?._id,
           message: rewardCandidate?._id
         })
+        console.log('checkInWithCloud submitCheckinRecord end', submitStatus)
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
@@ -357,8 +375,10 @@ export default function Index() {
       } catch (error) {
         console.warn('获取今日晚安心语失败', error)
       }
+      console.log('rewardCandidate', rewardCandidate)
 
       if (canUseCloud && userDoc) {
+        console.log('checkInWithCloud start', rewardCandidate)
         await checkInWithCloud(rewardCandidate)
         return
       }
@@ -379,7 +399,7 @@ export default function Index() {
   ])
 
   useLoad(() => {
-    void hydrateAll()
+    // void hydrateAll()
   })
 
   useDidShow(() => {
@@ -402,10 +422,10 @@ export default function Index() {
   return (
     <View className='index'>
       <HomeHero
-        displayName={displayName}
-        weekdayLabel={weekdayLabels[currentTime.getDay()]}
-        dateLabel={todayKey}
-        countdownText={countdownText}
+          displayName={displayName}
+          weekdayLabel={weekdayLabels[currentTime.getDay()]}
+          dateLabel={todayLabel}
+          countdownText={countdownText}
       />
       <CheckInCard
         windowHint={windowHint}

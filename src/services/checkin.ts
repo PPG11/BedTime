@@ -1,5 +1,5 @@
 import { COLLECTIONS } from '../config/cloud'
-import { formatDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
+import { formatDateKey, normalizeDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
 import {
   ensureCloud,
   getCurrentOpenId,
@@ -82,10 +82,11 @@ function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
       : typeof raw.message === 'string' && raw.message.length
       ? raw.message
       : undefined
+  const normalizedDate = extractDateFromCheckin(raw) ?? (typeof raw.date === 'string' ? raw.date : '')
   return {
     _id: raw._id,
     uid: userUid,
-    date: raw.date,
+    date: normalizedDate,
     status: raw.status,
     tzOffset: raw.tzOffset,
     ts: normalizeTimestamp(raw.ts),
@@ -156,17 +157,27 @@ function isDocumentMissingError(error: unknown): boolean {
 }
 
 function extractDateFromCheckin(raw: CheckinRecord): string | null {
-  if (typeof raw.date === 'string' && raw.date) {
-    return raw.date
+  const normalized = normalizeDateKey(raw.date)
+  if (normalized) {
+    return normalized
   }
 
   const segments = raw._id.split('_')
   const candidate = segments[segments.length - 1]
-  if (/^\d{8}$/.test(candidate)) {
-    return candidate
+  const normalizedCandidate = normalizeDateKey(candidate)
+  if (normalizedCandidate) {
+    return normalizedCandidate
   }
 
   return null
+}
+
+function formatLegacyDateKey(key: string): string | null {
+  const normalized = normalizeDateKey(key)
+  if (!normalized) {
+    return null
+  }
+  return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`
 }
 
 function shiftDateKey(key: string, delta: number): string {
@@ -264,10 +275,12 @@ async function submitCheckinViaCloudFunction(params: {
       payload.goodnightMessageId = params.goodnightMessageId
     }
 
+    console.log('submitCheckinViaCloudFunction start', payload)
     const response = await callCloudFunction<SubmitCheckinFunctionResponse>({
       name: 'submitCheckin',
       data: payload
     })
+    console.log('submitCheckinViaCloudFunction end', response)
 
     if (!response) {
       return null
@@ -383,7 +396,11 @@ async function resolveCheckinRecordByDate(
   date: string,
   openid: string
 ): Promise<{ id: string; record: CheckinRecord } | null> {
-  const docId = getCheckinDocId(uid, date)
+  const normalizedDate = normalizeDateKey(date) ?? date
+  const docId = getCheckinDocId(uid, normalizedDate)
+  const legacyDateKey = formatLegacyDateKey(date)
+  const legacyDocId =
+    legacyDateKey && legacyDateKey !== normalizedDate ? getCheckinDocId(uid, legacyDateKey) : null
   try {
     const snapshot = await collection.doc(docId).get()
     if (snapshot.data) {
@@ -401,15 +418,45 @@ async function resolveCheckinRecordByDate(
     }
   }
 
+  if (legacyDocId) {
+    try {
+      const legacySnapshot = await collection.doc(legacyDocId).get()
+      if (legacySnapshot.data) {
+        return {
+          id: legacyDocId,
+          record: {
+            _id: legacyDocId,
+            ...legacySnapshot.data
+          }
+        }
+      }
+    } catch (error) {
+      if (!isDocumentMissingError(error)) {
+        throw error
+      }
+    }
+  }
+
   const sameDateResult = await collection
     .where({
       _openid: openid,
-      date
+      date: normalizedDate
     })
     .limit(1)
     .get()
 
-  const existing = sameDateResult.data?.[0]
+  let existing = sameDateResult.data?.[0]
+  if (!existing && legacyDateKey) {
+    const legacyResult = await collection
+      .where({
+        _openid: openid,
+        date: legacyDateKey
+      })
+      .limit(1)
+      .get()
+    existing = legacyResult.data?.[0]
+  }
+
   if (!existing) {
     return null
   }
@@ -562,6 +609,7 @@ export async function submitCheckinRecord(
       ? params.message
       : undefined
 
+  console.log('submitCheckinRecord start', params)
   const functionResult = await submitCheckinViaCloudFunction({
     uid: params.uid,
     date: params.date,
@@ -569,6 +617,7 @@ export async function submitCheckinRecord(
     tzOffset: params.tzOffset,
     goodnightMessageId: messageId
   })
+  console.log('submitCheckinRecord end', functionResult)
 
   if (functionResult) {
     return functionResult

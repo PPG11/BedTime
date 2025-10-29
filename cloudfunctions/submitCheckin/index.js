@@ -20,6 +20,35 @@ function createDocId(uid, date) {
   return `${uid}_${date}`
 }
 
+function normalizeDate(value) {
+  if (!isNonEmptyString(value)) {
+    return null
+  }
+  const trimmed = value.trim()
+  const digits = /^\d{8}$/.test(trimmed) ? trimmed : trimmed.replace(/[^\d]/g, '')
+  if (digits.length !== 8) {
+    return null
+  }
+  const year = Number(digits.slice(0, 4))
+  const month = Number(digits.slice(4, 6))
+  const day = Number(digits.slice(6, 8))
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null
+  }
+  const candidate = new Date(Date.UTC(year, month - 1, day))
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() + 1 !== month ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null
+  }
+  const normalizedYear = String(year).padStart(4, '0')
+  const normalizedMonth = String(month).padStart(2, '0')
+  const normalizedDay = String(day).padStart(2, '0')
+  return `${normalizedYear}${normalizedMonth}${normalizedDay}`
+}
+
 function normalizeTimestamp(value) {
   if (!value) {
     return null
@@ -52,11 +81,13 @@ function normalizeRecord(docId, raw) {
     ? String(raw.uid).split('_')[0]
     : docId.split('_')[0]
   const normalizedTs = normalizeTimestamp(raw.ts) ?? new Date().toISOString()
+  const docDate = docId.split('_').pop()
+  const normalizedDate = normalizeDate(raw.date) ?? normalizeDate(docDate) ?? docDate
   const normalized = {
     _id: docId,
     uid: isNonEmptyString(raw.uid) ? raw.uid : docId,
     userUid: baseUid,
-    date: isNonEmptyString(raw.date) ? raw.date : docId.split('_').pop(),
+    date: normalizedDate,
     status: VALID_STATUS.has(raw.status) ? raw.status : 'hit',
     tzOffset: isNumber(raw.tzOffset) ? raw.tzOffset : 0,
     ts: normalizedTs
@@ -112,7 +143,8 @@ function validatePayload(event) {
   if (!isNonEmptyString(uid)) {
     throw Object.assign(new Error('缺少用户 UID'), { code: 'missing_uid' })
   }
-  if (!isNonEmptyString(date) || !/^\d{8}$/.test(date)) {
+  const normalizedDate = normalizeDate(date)
+  if (!normalizedDate) {
     throw Object.assign(new Error('缺少或非法的日期'), { code: 'bad_date' })
   }
   if (!isNonEmptyString(status) || !VALID_STATUS.has(status)) {
@@ -126,7 +158,7 @@ function validatePayload(event) {
   }
   return {
     uid: uid.trim(),
-    date: date.trim(),
+    date: normalizedDate,
     status,
     tzOffset,
     goodnightMessageId: isNonEmptyString(goodnightMessageId) ? goodnightMessageId.trim() : undefined

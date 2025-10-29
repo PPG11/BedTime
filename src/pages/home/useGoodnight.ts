@@ -232,6 +232,7 @@ export function useGoodnightInteraction({
     if (cache && cache.key === todayKey && cache.uid === effectiveUid) {
       return cache.message
     }
+    console.log('fetchRewardForToday', todayKey, effectiveUid, cache)
 
     const message = await resolveRewardMessage()
     pendingRewardRef.current = {
@@ -239,6 +240,7 @@ export function useGoodnightInteraction({
       uid: effectiveUid,
       message
     }
+    console.log('message', message)
     return message
   }, [effectiveUid, resolveRewardMessage, todayKey])
 
