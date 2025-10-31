@@ -16,10 +16,6 @@ function isNumber(value) {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
-function createDocId(uid, date) {
-  return `${uid}_${date}`
-}
-
 function normalizeDate(value) {
   if (!isNonEmptyString(value)) {
     return null
@@ -49,22 +45,6 @@ function normalizeDate(value) {
   return `${normalizedYear}${normalizedMonth}${normalizedDay}`
 }
 
-function formatLegacyDate(value) {
-  const normalized = normalizeDate(value)
-  if (!normalized) {
-    return null
-  }
-  return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`
-}
-
-function createLegacyDocId(uid, date) {
-  const legacyDate = formatLegacyDate(date)
-  if (!legacyDate) {
-    return null
-  }
-  return createDocId(uid, legacyDate)
-}
-
 function normalizeTimestamp(value) {
   if (!value) {
     return null
@@ -90,49 +70,34 @@ function normalizeTimestamp(value) {
   return null
 }
 
-function resolveUserUidFromRecord(raw, docId) {
-  if (isNonEmptyString(raw.userUid)) {
-    return raw.userUid
-  }
-  if (isNonEmptyString(raw.uid)) {
-    const [candidate] = String(raw.uid).split('_')
-    if (candidate) {
-      return candidate
-    }
-  }
-  if (isNonEmptyString(docId)) {
-    const [candidate] = docId.split('_')
-    if (candidate) {
-      return candidate
-    }
-  }
-  return ''
+function normalizeInfoList(value) {
+  return Array.isArray(value) ? value : []
 }
 
-function normalizeRecord(docId, raw) {
-  const baseUid = resolveUserUidFromRecord(raw, docId)
-  const normalizedTs = normalizeTimestamp(raw.ts) ?? new Date().toISOString()
-  const docDate = docId.split('_').pop()
-  const normalizedDate =
-    normalizeDate(raw.date) ??
-    normalizeDate(docDate) ??
-    (isNonEmptyString(raw.date) ? raw.date.trim() : docDate || '')
-  const normalized = {
-    _id: docId,
-    uid: isNonEmptyString(raw.uid) ? raw.uid : docId,
-    userUid: baseUid,
-    date: normalizedDate,
-    status: VALID_STATUS.has(raw.status) ? raw.status : 'hit',
-    tzOffset: isNumber(raw.tzOffset) ? raw.tzOffset : 0,
+function mapEntryToRecord(uid, entry, fallbackTs) {
+  const normalizedDate = normalizeDate(entry?.date) ?? ''
+  const safeDate = normalizedDate || ''
+  const status = VALID_STATUS.has(entry?.status) ? entry.status : 'hit'
+  const tzOffset = isNumber(entry?.tzOffset) ? entry.tzOffset : 0
+  const normalizedTs = normalizeTimestamp(entry?.ts) ?? fallbackTs ?? new Date().toISOString()
+  const message = isNonEmptyString(entry?.message) ? entry.message.trim() : undefined
+
+  const record = {
+    _id: safeDate ? `${uid}_${safeDate}` : `${uid}_${normalizedTs}`,
+    uid,
+    userUid: uid,
+    date: safeDate,
+    status,
+    tzOffset,
     ts: normalizedTs
   }
-  if (isNonEmptyString(raw.goodnightMessageId)) {
-    normalized.goodnightMessageId = raw.goodnightMessageId
+
+  if (message) {
+    record.goodnightMessageId = message
+    record.message = message
   }
-  if (isNonEmptyString(raw.message)) {
-    normalized.message = raw.message
-  }
-  return normalized
+
+  return record
 }
 
 function isDocumentNotFoundError(error) {
@@ -171,91 +136,60 @@ function validatePayload(event) {
   }
 }
 
-async function loadExistingRecord(docRef, docId) {
+async function ensureUserCheckinsDocument(collection, uid, openid) {
+  const docRef = collection.doc(uid)
   try {
     const snapshot = await docRef.get()
     if (snapshot && snapshot.data) {
-      return normalizeRecord(docId, snapshot.data)
+      return {
+        docRef,
+        data: snapshot.data
+      }
     }
   } catch (error) {
     if (!isDocumentNotFoundError(error)) {
       throw error
     }
   }
-  return null
-}
 
-async function loadByOpenId(collection, openid, date) {
-  if (!isNonEmptyString(openid)) {
-    return null
-  }
-  let record = null
-  const result = await collection
-    .where({
-      _openid: openid,
-      date
-    })
-    .limit(1)
-    .get()
-  if (result?.data && result.data[0]) {
-    record = result.data[0]
-  }
-  if (!record) {
-    const legacyDate = formatLegacyDate(date)
-    if (legacyDate) {
-      const legacyResult = await collection
-        .where({
-          _openid: openid,
-          date: legacyDate
-        })
-        .limit(1)
-        .get()
-      if (legacyResult?.data && legacyResult.data[0]) {
-        record = legacyResult.data[0]
-      }
+  const now = db.serverDate()
+  await docRef.set({
+    data: {
+      uid,
+      ownerOpenid: openid,
+      info: [],
+      createdAt: now,
+      updatedAt: now
+    }
+  })
+
+  return {
+    docRef,
+    data: {
+      uid,
+      ownerOpenid: openid,
+      info: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
   }
-
-  if (!record) {
-    return null
-  }
-
-  if (isNonEmptyString(record._id)) {
-    return normalizeRecord(record._id, record)
-  }
-  const resolvedUid =
-    resolveUserUidFromRecord(record, `${record.userUid || record.uid || ''}_${date}`) ||
-    record.userUid ||
-    record.uid ||
-    ''
-  const resolvedDate = normalizeDate(record.date) ?? date
-  const docId = createDocId(resolvedUid, resolvedDate)
-  return normalizeRecord(docId, record)
 }
 
 exports.main = async (event) => {
   try {
     const payload = validatePayload(event)
-    const docId = createDocId(payload.uid, payload.date)
+    const { OPENID } = cloud.getWXContext()
     const collection = db.collection('checkins')
-    const docRef = collection.doc(docId)
 
-    let record = await loadExistingRecord(docRef, docId)
-    if (!record) {
-      const legacyDocId = createLegacyDocId(payload.uid, payload.date)
-      if (legacyDocId && legacyDocId !== docId) {
-        record = await loadExistingRecord(collection.doc(legacyDocId), legacyDocId)
-      }
-    }
-    if (!record) {
-      const { OPENID } = cloud.getWXContext()
-      record = await loadByOpenId(collection, OPENID, payload.date)
-      if (!record) {
-        return {
-          ok: true,
-          code: 'not_found',
-          exists: false
-        }
+    const { data: doc } = await ensureUserCheckinsDocument(collection, payload.uid, OPENID)
+    const infoList = normalizeInfoList(doc?.info)
+    const entry = infoList.find((item) => normalizeDate(item.date) === payload.date)
+
+    if (!entry) {
+      return {
+        ok: true,
+        code: 'not_found',
+        exists: false
       }
     }
 
@@ -263,7 +197,7 @@ exports.main = async (event) => {
       ok: true,
       code: 'found',
       exists: true,
-      data: record
+      data: mapEntryToRecord(payload.uid, entry)
     }
   } catch (error) {
     console.error('[checkTodayCheckin] failed', error)

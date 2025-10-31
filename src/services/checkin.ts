@@ -5,7 +5,8 @@ import {
   getCurrentOpenId,
   callCloudFunction,
   type CloudDatabase,
-  type DbCollection
+  type DbCollection,
+  type DbDocumentHandle
 } from './cloud'
 
 export type CheckinStatus = 'hit' | 'late' | 'miss' | 'pending'
@@ -21,15 +22,36 @@ export type CheckinDocument = {
   message?: string
 }
 
-type CheckinRecord = {
-  _id: string
-  uid: string
-  userUid?: string
-  date: string
-  status: CheckinStatus
-  ts: Date | string | number | { [key: string]: unknown }
-  tzOffset: number
+type CheckinEntry = {
+  date?: string
+  status?: CheckinStatus
+  message?: string
   goodnightMessageId?: string
+  tzOffset?: number
+  ts?: Date | string | number | { [key: string]: unknown }
+}
+
+type CheckinsAggregateRecord = {
+  _id: string
+  uid?: string
+  ownerOpenid?: string
+  info?: CheckinEntry[]
+  createdAt?: Date | string | number | { [key: string]: unknown }
+  updatedAt?: Date | string | number | { [key: string]: unknown }
+}
+
+type SubmitCheckinFunctionResponse = {
+  ok?: boolean
+  code?: string
+  data?: CheckinEntry & { uid?: string }
+  message?: string
+}
+
+type CheckTodayFunctionResponse = {
+  ok?: boolean
+  code?: string
+  exists?: boolean
+  data?: CheckinEntry & { uid?: string }
   message?: string
 }
 
@@ -38,15 +60,31 @@ export type SubmitCheckinResult = {
   status: 'created' | 'already_exists'
 }
 
-function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinRecord> {
-  return db.collection<CheckinRecord>(COLLECTIONS.checkins)
+const VALID_STATUS_SET = new Set<CheckinStatus>(['hit', 'late', 'miss', 'pending'])
+
+function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinsAggregateRecord> {
+  return db.collection<CheckinsAggregateRecord>(COLLECTIONS.checkins)
 }
 
-function getCheckinDocId(uid: string, date: string): string {
-  return `${uid}_${date}`
+function normalizeStatus(value: unknown): CheckinStatus {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (VALID_STATUS_SET.has(normalized as CheckinStatus)) {
+      return normalized as CheckinStatus
+    }
+  }
+  return 'hit'
 }
 
-function normalizeTimestamp(input: CheckinRecord['ts']): Date {
+function normalizeMessage(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const trimmed = value.trim()
+  return trimmed.length ? trimmed : undefined
+}
+
+function normalizeTimestamp(input: CheckinEntry['ts']): Date {
   if (input instanceof Date) {
     return input
   }
@@ -62,7 +100,9 @@ function normalizeTimestamp(input: CheckinRecord['ts']): Date {
     const candidate =
       (input as { value?: unknown }).value ??
       (input as { time?: unknown }).time ??
-      (input as { $date?: unknown }).$date
+      (input as { $date?: unknown }).$date ??
+      (input as { $numberLong?: unknown }).$numberLong ??
+      (input as { $numberDecimal?: unknown }).$numberDecimal
     if (typeof candidate === 'number' || typeof candidate === 'string') {
       const parsed = new Date(candidate)
       if (!Number.isNaN(parsed.getTime())) {
@@ -74,67 +114,51 @@ function normalizeTimestamp(input: CheckinRecord['ts']): Date {
   return new Date()
 }
 
-function mapCheckinDocument(raw: CheckinRecord): CheckinDocument {
-  const userUid = resolveUserUid(raw)
-  const messageId =
-    typeof raw.goodnightMessageId === 'string' && raw.goodnightMessageId.length
-      ? raw.goodnightMessageId
-      : typeof raw.message === 'string' && raw.message.length
-      ? raw.message
-      : undefined
-  const normalizedDate = extractDateFromCheckin(raw) ?? (typeof raw.date === 'string' ? raw.date : '')
-  return {
-    _id: raw._id,
-    uid: userUid,
+function normalizeInfoList(record: CheckinsAggregateRecord | undefined): CheckinEntry[] {
+  if (!record || !Array.isArray(record.info)) {
+    return []
+  }
+  return record.info
+}
+
+function mapEntryToDocument(uid: string, entry: CheckinEntry, fallbackDate?: string): CheckinDocument {
+  const baseDate = entry?.date ?? fallbackDate ?? formatDateKey(new Date())
+  const normalizedDate = normalizeDateKey(baseDate) ?? formatDateKey(new Date())
+  const tzOffset = typeof entry?.tzOffset === 'number' ? entry.tzOffset : 0
+  const fallbackTimestamp =
+    entry?.ts ??
+    (() => {
+      const parsed = parseDateKey(normalizedDate)
+      parsed.setHours(22, 0, 0, 0)
+      return parsed
+    })()
+  const ts = normalizeTimestamp(fallbackTimestamp)
+  const message = normalizeMessage(entry?.message ?? entry?.goodnightMessageId)
+  const status = normalizeStatus(entry?.status)
+
+  const document: CheckinDocument = {
+    _id: `${uid}_${normalizedDate}`,
+    uid,
     date: normalizedDate,
-    status: raw.status,
-    tzOffset: raw.tzOffset,
-    ts: normalizeTimestamp(raw.ts),
-    goodnightMessageId: messageId,
-    message: messageId
-  }
-}
-
-function resolveUserUid(raw: CheckinRecord): string {
-  if (typeof raw.userUid === 'string' && raw.userUid.length) {
-    return raw.userUid
+    status,
+    tzOffset,
+    ts
   }
 
-  if (typeof raw.uid === 'string' && raw.uid.length) {
-    const [candidate] = raw.uid.split('_')
-    if (candidate && candidate.length) {
-      return candidate
-    }
-    return raw.uid
+  if (message) {
+    document.goodnightMessageId = message
+    document.message = message
   }
 
-  return ''
-}
-
-function isDuplicateKeyError(error: unknown): boolean {
-  if (!error) {
-    return false
-  }
-
-  if (typeof error === 'object') {
-    const maybeError = error as { errCode?: unknown; errMsg?: unknown; message?: unknown }
-    const errMsg = maybeError.errMsg ?? maybeError.message
-    if (typeof errMsg === 'string' && errMsg.toLowerCase().includes('duplicate key')) {
-      return true
-    }
-  }
-
-  const text = String(error)
-  return text.toLowerCase().includes('duplicate key')
+  return document
 }
 
 function isDocumentMissingError(error: unknown): boolean {
   if (!error) {
     return false
   }
-
   if (typeof error === 'object') {
-    const maybeError = error as { errMsg?: unknown; message?: unknown }
+    const maybeError = error as { errMsg?: unknown; message?: unknown; code?: unknown; errCode?: unknown }
     const errMsg = maybeError.errMsg ?? maybeError.message
     if (typeof errMsg === 'string') {
       const lower = errMsg.toLowerCase()
@@ -146,8 +170,11 @@ function isDocumentMissingError(error: unknown): boolean {
         return true
       }
     }
+    const code = maybeError.code ?? maybeError.errCode
+    if (code === 'DOCUMENT_NOT_FOUND') {
+      return true
+    }
   }
-
   const text = String(error).toLowerCase()
   return (
     text.includes('cannot find document') ||
@@ -156,105 +183,171 @@ function isDocumentMissingError(error: unknown): boolean {
   )
 }
 
-function extractDateFromCheckin(raw: CheckinRecord): string | null {
-  const normalized = normalizeDateKey(raw.date)
-  if (normalized) {
-    return normalized
-  }
-
-  const segments = raw._id.split('_')
-  const candidate = segments[segments.length - 1]
-  const normalizedCandidate = normalizeDateKey(candidate)
-  if (normalizedCandidate) {
-    return normalizedCandidate
-  }
-
-  return null
-}
-
-function formatLegacyDateKey(key: string): string | null {
-  const normalized = normalizeDateKey(key)
-  if (!normalized) {
-    return null
-  }
-  return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`
-}
-
-function shiftDateKey(key: string, delta: number): string {
-  const date = parseDateKey(key)
-  date.setTime(date.getTime() + delta * ONE_DAY_MS)
-  return formatDateKey(date)
-}
-
 function isCloudFunctionMissingError(error: unknown): boolean {
   if (!error) {
     return false
   }
 
-  if (typeof error === 'object' && error) {
-    const maybeCode = (error as { code?: unknown; errCode?: unknown }).code
-    const maybeErrCode = (error as { code?: unknown; errCode?: unknown }).errCode
-    const codes = [maybeCode, maybeErrCode]
-    for (const code of codes) {
-      if (typeof code === 'string') {
-        const normalized = code.toUpperCase()
-        if (
-          normalized.includes('FUNCTION_NOT_FOUND') ||
-          normalized.includes('FUNCTION_NOT_EXIST') ||
-          normalized.includes('INVALID_FUNCTION_NAME')
-        ) {
-          return true
-        }
+  if (typeof error === 'object') {
+    const maybeError = error as { code?: unknown; errCode?: unknown; errMsg?: unknown; message?: unknown }
+    const code = maybeError.code ?? maybeError.errCode
+    if (typeof code === 'string') {
+      const normalized = code.toUpperCase()
+      if (
+        normalized.includes('FUNCTION_NOT_FOUND') ||
+        normalized.includes('FUNCTION_NOT_EXIST') ||
+        normalized.includes('INVALID_FUNCTION_NAME')
+      ) {
+        return true
+      }
+    }
+    const errMsg = maybeError.errMsg ?? maybeError.message
+    if (typeof errMsg === 'string') {
+      const lower = errMsg.toLowerCase()
+      if (
+        lower.includes('function not found') ||
+        lower.includes('function not exist') ||
+        lower.includes('function does not exist') ||
+        lower.includes('functionname not found') ||
+        lower.includes('functionname not exist')
+      ) {
+        return true
       }
     }
   }
 
-  const candidate =
-    typeof error === 'object'
-      ? (error as { errMsg?: unknown; message?: unknown; code?: unknown; errCode?: unknown }).errMsg ??
-        (error as { errMsg?: unknown; message?: unknown }).message
-      : error
+  const text = String(error).toLowerCase()
+  return (
+    text.includes('function not found') ||
+    text.includes('function not exist') ||
+    text.includes('invalid function name')
+  )
+}
 
-  const text = String(candidate ?? '').toLowerCase()
-  if (!text) {
-    return false
+async function ensureCheckinsDocument(
+  db: CloudDatabase,
+  uid: string,
+  openid?: string
+): Promise<{
+  docRef: DbDocumentHandle<CheckinsAggregateRecord>
+  record: CheckinsAggregateRecord
+}> {
+  const collection = getCheckinsCollection(db)
+  let documentId = uid
+  let docRef = collection.doc(documentId)
+
+  try {
+    const snapshot = await docRef.get()
+    if (snapshot && snapshot.data) {
+      return {
+        docRef,
+        record: {
+          _id: documentId,
+          ...snapshot.data
+        }
+      }
+    }
+  } catch (error) {
+    if (!isDocumentMissingError(error)) {
+      throw error
+    }
   }
 
-  const keywords = [
-    'function not exist',
-    'function not found',
-    'functionname not found',
-    'functionname not exist',
-    'function does not exist',
-    'functionname not available',
-    'functionnameundefined',
-    'functionname not defined',
-    'functionnamenotfound',
-    'functionname not available',
-    'functionname not configured',
-    'functionname not exists',
-    'functionnamenotexists',
-    'functionnamenot exist',
-    'functionnamenot found',
-    'functionname not accessible'
-  ]
+  try {
+    const legacyQuery = await collection
+      .where({
+        uid
+      })
+      .limit(1)
+      .get()
+    const legacyDoc = legacyQuery?.data && legacyQuery.data[0]
+    if (legacyDoc) {
+      documentId = legacyDoc._id
+      docRef = collection.doc(documentId)
+      return {
+        docRef,
+        record: {
+          _id: documentId,
+          ...legacyDoc
+        }
+      }
+    }
+  } catch (error) {
+    if (!isDocumentMissingError(error)) {
+      throw error
+    }
+  }
 
-  return keywords.some((keyword) => text.includes(keyword))
+  try {
+    const ensureResult = await callCloudFunction<{
+      ok?: boolean
+      data?: {
+        documentId?: string
+        uid?: string
+        ownerOpenid?: string
+        info?: CheckinEntry[]
+        createdAt?: unknown
+        updatedAt?: unknown
+      }
+    }>({
+      name: 'ensureCheckinsDoc',
+      data: {
+        uid
+      }
+    })
+
+    if (ensureResult && ensureResult.ok && ensureResult.data) {
+      const resolvedId =
+        typeof ensureResult.data.documentId === 'string' && ensureResult.data.documentId.length
+          ? ensureResult.data.documentId
+          : uid
+      documentId = resolvedId
+      docRef = collection.doc(documentId)
+      return {
+        docRef,
+        record: {
+          _id: documentId,
+          uid: ensureResult.data.uid ?? documentId,
+          ownerOpenid: ensureResult.data.ownerOpenid ?? openid,
+          info: Array.isArray(ensureResult.data.info) ? ensureResult.data.info : [],
+          createdAt: ensureResult.data.createdAt,
+          updatedAt: ensureResult.data.updatedAt
+        }
+      }
+    }
+  } catch (error) {
+    if (!isCloudFunctionMissingError(error)) {
+      throw error
+    }
+  }
+
+  const snapshot = await collection.doc(documentId).get()
+  if (snapshot && snapshot.data) {
+    return {
+      docRef: collection.doc(documentId),
+      record: {
+        _id: documentId,
+        ...snapshot.data
+      }
+    }
+  }
+
+  throw new Error('无法初始化用户打卡记录')
 }
 
-type SubmitCheckinFunctionResponse = {
-  ok?: boolean
-  code?: string
-  data?: CheckinRecord
-  message?: string
-}
-
-type CheckTodayFunctionResponse = {
-  ok?: boolean
-  code?: string
-  exists?: boolean
-  data?: CheckinRecord
-  message?: string
+function mapFunctionRecord(uid: string, payload?: CheckinEntry & { uid?: string }): CheckinDocument | null {
+  if (!payload) {
+    return null
+  }
+  const entry: CheckinEntry = {
+    date: payload.date,
+    status: payload.status,
+    message: payload.message ?? payload.goodnightMessageId,
+    goodnightMessageId: payload.goodnightMessageId ?? payload.message,
+    tzOffset: payload.tzOffset,
+    ts: payload.ts
+  }
+  return mapEntryToDocument(uid, entry)
 }
 
 async function submitCheckinViaCloudFunction(params: {
@@ -275,12 +368,10 @@ async function submitCheckinViaCloudFunction(params: {
       payload.goodnightMessageId = params.goodnightMessageId
     }
 
-    console.log('submitCheckinViaCloudFunction start', payload)
     const response = await callCloudFunction<SubmitCheckinFunctionResponse>({
       name: 'submitCheckin',
       data: payload
     })
-    console.log('submitCheckinViaCloudFunction end', response)
 
     if (!response) {
       return null
@@ -295,16 +386,26 @@ async function submitCheckinViaCloudFunction(params: {
     }
 
     if (!response.data) {
+      return {
+        document: mapEntryToDocument(params.uid, {
+          date: params.date,
+          status: params.status,
+          message: params.goodnightMessageId,
+          tzOffset: params.tzOffset,
+          ts: new Date()
+        }),
+        status: response.code === 'already_exists' ? 'already_exists' : 'created'
+      }
+    }
+
+    const document = mapFunctionRecord(params.uid, response.data)
+    if (!document) {
       return null
     }
 
-    const document = mapCheckinDocument(response.data)
-    const status: SubmitCheckinResult['status'] =
-      response.code === 'already_exists' ? 'already_exists' : 'created'
-
     return {
       document,
-      status
+      status: response.code === 'already_exists' ? 'already_exists' : 'created'
     }
   } catch (error) {
     if (isCloudFunctionMissingError(error)) {
@@ -319,14 +420,12 @@ async function fetchCheckinViaCloudFunction(
   date: string
 ): Promise<CheckinDocument | null> {
   try {
-    const payload: Record<string, unknown> = {
-      uid,
-      date
-    }
-
     const response = await callCloudFunction<CheckTodayFunctionResponse>({
       name: 'checkTodayCheckin',
-      data: payload
+      data: {
+        uid,
+        date
+      }
     })
 
     if (!response) {
@@ -341,11 +440,11 @@ async function fetchCheckinViaCloudFunction(
       throw new Error(message)
     }
 
-    if (!response.exists || !response.data) {
+    if (response.exists === false || !response.data) {
       return null
     }
 
-    return mapCheckinDocument(response.data)
+    return mapFunctionRecord(uid, response.data)
   } catch (error) {
     if (isCloudFunctionMissingError(error)) {
       return null
@@ -354,249 +453,55 @@ async function fetchCheckinViaCloudFunction(
   }
 }
 
-async function tryUpdateExistingCheckin(
-  collection: DbCollection<CheckinRecord>,
-  docId: string,
-  uid: string,
-  data: Omit<CheckinRecord, '_id'>,
-  openid: string
-): Promise<CheckinDocument | null> {
-  try {
-    await collection.doc(docId).update({
-      data
-    })
-    return mapCheckinDocument({
-      _id: docId,
-      ...data
-    })
-  } catch (error) {
-    if (!isDocumentMissingError(error)) {
-      throw error
-    }
-  }
-
-  const resolved = await resolveCheckinRecordByDate(collection, uid, data.date, openid)
-  if (!resolved) {
-    return null
-  }
-
-  await collection.doc(resolved.id).update({
-    data
-  })
-
-  return mapCheckinDocument({
-    _id: resolved.id,
-    ...data
-  })
-}
-
-async function resolveCheckinRecordByDate(
-  collection: DbCollection<CheckinRecord>,
-  uid: string,
-  date: string,
-  openid: string
-): Promise<{ id: string; record: CheckinRecord } | null> {
-  const normalizedDate = normalizeDateKey(date) ?? date
-  const docId = getCheckinDocId(uid, normalizedDate)
-  const legacyDateKey = formatLegacyDateKey(date)
-  const legacyDocId =
-    legacyDateKey && legacyDateKey !== normalizedDate ? getCheckinDocId(uid, legacyDateKey) : null
-  try {
-    const snapshot = await collection.doc(docId).get()
-    if (snapshot.data) {
-      return {
-        id: docId,
-        record: {
-          _id: docId,
-          ...snapshot.data
-        }
-      }
-    }
-  } catch (error) {
-    if (!isDocumentMissingError(error)) {
-      throw error
-    }
-  }
-
-  if (legacyDocId) {
-    try {
-      const legacySnapshot = await collection.doc(legacyDocId).get()
-      if (legacySnapshot.data) {
-        return {
-          id: legacyDocId,
-          record: {
-            _id: legacyDocId,
-            ...legacySnapshot.data
-          }
-        }
-      }
-    } catch (error) {
-      if (!isDocumentMissingError(error)) {
-        throw error
-      }
-    }
-  }
-
-  const sameDateResult = await collection
-    .where({
-      _openid: openid,
-      date: normalizedDate
-    })
-    .limit(1)
-    .get()
-
-  let existing = sameDateResult.data?.[0]
-  if (!existing && legacyDateKey) {
-    const legacyResult = await collection
-      .where({
-        _openid: openid,
-        date: legacyDateKey
-      })
-      .limit(1)
-      .get()
-    existing = legacyResult.data?.[0]
-  }
-
-  if (!existing) {
-    return null
-  }
-  return {
-    id: existing._id,
-    record: existing
-  }
-}
-
-async function migrateLegacyCheckins(
-  collection: DbCollection<CheckinRecord>,
-  params: {
-    userUid: string
-    targetDate: string
-    docId: string
-    data: Omit<CheckinRecord, '_id'>
-  }
-): Promise<CheckinDocument | null> {
-  const legacyResult = await collection
-    .where({
-      uid: params.userUid
-    })
-    .limit(1000)
-    .get()
-
-  const legacyDocs = legacyResult.data ?? []
-  if (!legacyDocs.length) {
-    return null
-  }
-
-  const normalizedLegacy: Array<{ id: string; legacyDate: string }> = []
-  for (const legacy of legacyDocs) {
-    const legacyDate = extractDateFromCheckin(legacy) ?? params.targetDate
-    const migratedUid = getCheckinDocId(params.userUid, legacyDate)
-    await collection.doc(legacy._id).update({
-      data: {
-        date: legacyDate,
-        uid: migratedUid,
-        userUid: params.userUid
-      }
-    })
-    normalizedLegacy.push({
-      id: legacy._id,
-      legacyDate
-    })
-  }
-
-  const targetLegacy = normalizedLegacy.find((item) => item.legacyDate === params.targetDate)
-  if (targetLegacy) {
-    await collection.doc(targetLegacy.id).update({
-      data: params.data
-    })
-
-    return mapCheckinDocument({
-      _id: targetLegacy.id,
-      ...params.data
-    })
-  }
-
-  const hasTargetId = legacyDocs.some((item) => item._id === params.docId)
-  if (hasTargetId) {
-    await collection.doc(params.docId).update({
-      data: params.data
-    })
-
-    return mapCheckinDocument({
-      _id: params.docId,
-      ...params.data
-    })
-  }
-
-  return null
-}
-
-async function legacyUpsertCheckin(
-  params: Omit<CheckinDocument, '_id' | 'ts'> & { ts?: Date }
-): Promise<CheckinDocument> {
+async function appendCheckinEntry(params: {
+  uid: string
+  date: string
+  status: CheckinStatus
+  tzOffset: number
+  goodnightMessageId?: string
+}): Promise<SubmitCheckinResult> {
   const db = await ensureCloud()
-  const docId = getCheckinDocId(params.uid, params.date)
-  const now = db.serverDate ? db.serverDate() : new Date()
-  const data: Omit<CheckinRecord, '_id'> = {
-    uid: docId,
-    userUid: params.uid,
-    date: params.date,
+  const openid = await getCurrentOpenId()
+
+  const { docRef, record } = await ensureCheckinsDocument(db, params.uid, openid)
+  const infoList = normalizeInfoList(record)
+  const normalizedDate = normalizeDateKey(params.date) ?? params.date
+  const existing = infoList.find((entry) => normalizeDateKey(entry.date ?? '') === normalizedDate)
+  if (existing) {
+    return {
+      document: mapEntryToDocument(params.uid, existing, normalizedDate),
+      status: 'already_exists'
+    }
+  }
+
+  const serverDate = db.serverDate ? db.serverDate() : new Date()
+  const message = params.goodnightMessageId
+  const entry: CheckinEntry = {
+    date: normalizedDate,
     status: params.status,
+    message,
+    goodnightMessageId: message,
     tzOffset: params.tzOffset,
-    ts: params.ts ?? now,
-    goodnightMessageId: params.goodnightMessageId ?? params.message,
-    message: params.message ?? params.goodnightMessageId
+    ts: serverDate
   }
 
-  if (process.env.NODE_ENV !== 'production') {
-    console.debug('upsertCheckin', { docId, payload: data })
-  }
+  const command = db.command
 
-  const collection = getCheckinsCollection(db)
-  try {
-    await collection.doc(docId).set({
-      data
-    })
-  } catch (error) {
-    if (!isDuplicateKeyError(error)) {
-      throw error
+  await docRef.update({
+    data: {
+      ownerOpenid: openid,
+      updatedAt: serverDate,
+      info: command.push([entry])
     }
-
-    const openid = await getCurrentOpenId()
-    const resolved = await tryUpdateExistingCheckin(collection, docId, params.uid, data, openid)
-    if (resolved) {
-      return resolved
-    }
-
-    const migrated = await migrateLegacyCheckins(collection, {
-      userUid: params.uid,
-      targetDate: params.date,
-      docId,
-      data
-    })
-    if (migrated) {
-      return migrated
-    }
-
-    try {
-      await collection.doc(docId).set({
-        data
-      })
-    } catch (finalError) {
-      if (isDuplicateKeyError(finalError)) {
-        const fallback = await tryUpdateExistingCheckin(collection, docId, params.uid, data, openid)
-        if (fallback) {
-          return fallback
-        }
-      }
-      throw finalError
-    }
-  }
-
-  return mapCheckinDocument({
-    _id: docId,
-    ...data
   })
+
+  return {
+    document: mapEntryToDocument(params.uid, {
+      ...entry,
+      ts: new Date()
+    }),
+    status: 'created'
+  }
 }
 
 export async function submitCheckinRecord(
@@ -609,7 +514,6 @@ export async function submitCheckinRecord(
       ? params.message
       : undefined
 
-  console.log('submitCheckinRecord start', params)
   const functionResult = await submitCheckinViaCloudFunction({
     uid: params.uid,
     date: params.date,
@@ -617,17 +521,17 @@ export async function submitCheckinRecord(
     tzOffset: params.tzOffset,
     goodnightMessageId: messageId
   })
-  console.log('submitCheckinRecord end', functionResult)
-
   if (functionResult) {
     return functionResult
   }
 
-  const document = await legacyUpsertCheckin(params)
-  return {
-    document,
-    status: 'created'
-  }
+  return appendCheckinEntry({
+    uid: params.uid,
+    date: params.date,
+    status: params.status,
+    tzOffset: params.tzOffset,
+    goodnightMessageId: messageId
+  })
 }
 
 export async function upsertCheckin(
@@ -643,59 +547,59 @@ export async function updateCheckinGoodnightMessage(params: {
   goodnightMessageId: string
 }): Promise<CheckinDocument | null> {
   const db = await ensureCloud()
-  const collection = getCheckinsCollection(db)
   const openid = await getCurrentOpenId()
-
-  const resolved = await resolveCheckinRecordByDate(collection, params.uid, params.date, openid)
-  if (!resolved) {
+  const { docRef, record } = await ensureCheckinsDocument(db, params.uid, openid)
+  const infoList = normalizeInfoList(record)
+  const normalizedDate = normalizeDateKey(params.date) ?? params.date
+  const index = infoList.findIndex(
+    (entry) => normalizeDateKey(entry.date ?? '') === normalizedDate
+  )
+  if (index === -1) {
     return null
   }
 
-  const { id, record } = resolved
-  const messageValue = params.goodnightMessageId
-  const nextRecord: CheckinRecord = {
-    ...record,
-    goodnightMessageId: messageValue,
-    message: messageValue
+  const updatedEntry: CheckinEntry = {
+    ...infoList[index],
+    date: normalizedDate,
+    message: params.goodnightMessageId,
+    goodnightMessageId: params.goodnightMessageId
   }
 
-  try {
-    await collection.doc(id).update({
-      data: {
-        goodnightMessageId: messageValue,
-        message: messageValue
-      }
-    })
-  } catch (error) {
-    if (!isDocumentMissingError(error)) {
-      throw error
+  const updatedInfo = [...infoList]
+  updatedInfo[index] = updatedEntry
+  const serverDate = db.serverDate ? db.serverDate() : new Date()
+
+  await docRef.update({
+    data: {
+      updatedAt: serverDate,
+      info: updatedInfo
     }
-    const { _id: _ignored, ...rest } = nextRecord
-    await collection.doc(id).set({
-      data: rest
-    })
-  }
+  })
 
-  return mapCheckinDocument({
-    ...nextRecord,
-    _id: id
+  return mapEntryToDocument(params.uid, {
+    ...updatedEntry,
+    ts: updatedEntry.ts ?? new Date()
   })
 }
 
 export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
-  const capped = Math.max(1, Math.min(1000, limit))
+  console.log('fetchCheckins start', uid, limit, openid)
+  const { record } = await ensureCheckinsDocument(db, uid, openid)
+  console.log('fetchCheckins record', record)
+  const infoList = normalizeInfoList(record)
+  console.log('fetchCheckins infoList', infoList)
+  const sorted = infoList
+    .slice()
+    .sort((a, b) => {
+      const dateA = normalizeDateKey(a.date ?? '') ?? ''
+      const dateB = normalizeDateKey(b.date ?? '') ?? ''
+      return dateB.localeCompare(dateA)
+    })
+    .slice(0, Math.max(1, Math.min(1000, limit)))
 
-  const result = await getCheckinsCollection(db)
-    .where({ _openid: openid })
-    .orderBy('date', 'desc')
-    .limit(capped)
-    .get()
-
-  return (result.data ?? [])
-    .filter((raw) => resolveUserUid(raw) === uid)
-    .map(mapCheckinDocument)
+  return sorted.map((entry) => mapEntryToDocument(uid, entry))
 }
 
 export async function fetchCheckinInfoForDate(
@@ -708,13 +612,15 @@ export async function fetchCheckinInfoForDate(
   }
 
   const db = await ensureCloud()
-  const collection = getCheckinsCollection(db)
   const openid = await getCurrentOpenId()
-  const resolved = await resolveCheckinRecordByDate(collection, uid, date, openid)
-  if (!resolved) {
+  const { record } = await ensureCheckinsDocument(db, uid, openid)
+  const normalizedDate = normalizeDateKey(date) ?? date
+  const infoList = normalizeInfoList(record)
+  const entry = infoList.find((item) => normalizeDateKey(item.date ?? '') === normalizedDate)
+  if (!entry) {
     return null
   }
-  return mapCheckinDocument(resolved.record)
+  return mapEntryToDocument(uid, entry, normalizedDate)
 }
 
 export async function fetchCheckinsInRange(
@@ -724,22 +630,23 @@ export async function fetchCheckinsInRange(
 ): Promise<CheckinDocument[]> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
-  const [from, to] = startDate <= endDate ? [startDate, endDate] : [endDate, startDate]
-  const rangeCondition = db.command.and([db.command.gte(from), db.command.lte(to)])
+  const { record } = await ensureCheckinsDocument(db, uid, openid)
+  const infoList = normalizeInfoList(record)
+  const normalizedStart = normalizeDateKey(startDate) ?? startDate
+  const normalizedEnd = normalizeDateKey(endDate) ?? endDate
+  const [from, to] =
+    normalizedStart <= normalizedEnd ? [normalizedStart, normalizedEnd] : [normalizedEnd, normalizedStart]
 
-  const result = await getCheckinsCollection(db)
-    .where({
-      _openid: openid,
-      date: rangeCondition
+  return infoList
+    .filter((entry) => {
+      const date = normalizeDateKey(entry.date ?? '')
+      if (!date) {
+        return false
+      }
+      return date >= from && date <= to
     })
-    .orderBy('date', 'asc')
-    .limit(1000)
-    .get()
-
-  return (result.data ?? [])
-    .filter((raw) => resolveUserUid(raw) === uid)
-    .map(mapCheckinDocument)
-    .filter((item) => item.date >= from && item.date <= to)
+    .map((entry) => mapEntryToDocument(uid, entry))
+    .sort((a, b) => a.date.localeCompare(b.date))
 }
 
 export function computeHitStreak(records: CheckinDocument[], todayKey: string): number {
@@ -759,4 +666,10 @@ export function computeHitStreak(records: CheckinDocument[], todayKey: string): 
     cursor = shiftDateKey(cursor, -1)
   }
   return streak
+}
+
+function shiftDateKey(key: string, delta: number): string {
+  const date = parseDateKey(key)
+  date.setTime(date.getTime() + delta * ONE_DAY_MS)
+  return formatDateKey(date)
 }

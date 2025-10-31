@@ -5,6 +5,7 @@ cloud.init({
 })
 
 const db = cloud.database()
+const _ = db.command
 
 const VALID_STATUS = new Set(['hit', 'late', 'miss', 'pending'])
 
@@ -14,10 +15,6 @@ function isNonEmptyString(value) {
 
 function isNumber(value) {
   return typeof value === 'number' && Number.isFinite(value)
-}
-
-function createDocId(uid, date) {
-  return `${uid}_${date}`
 }
 
 function normalizeDate(value) {
@@ -62,7 +59,7 @@ function normalizeTimestamp(value) {
   }
   if (typeof value === 'string') {
     const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
   }
   if (typeof value === 'object') {
     const candidate =
@@ -74,47 +71,63 @@ function normalizeTimestamp(value) {
   return null
 }
 
-function normalizeRecord(docId, raw) {
-  const baseUid = isNonEmptyString(raw.userUid)
-    ? raw.userUid
-    : isNonEmptyString(raw.uid)
-    ? String(raw.uid).split('_')[0]
-    : docId.split('_')[0]
-  const normalizedTs = normalizeTimestamp(raw.ts) ?? new Date().toISOString()
-  const docDate = docId.split('_').pop()
-  const normalizedDate = normalizeDate(raw.date) ?? normalizeDate(docDate) ?? docDate
-  const normalized = {
-    _id: docId,
-    uid: isNonEmptyString(raw.uid) ? raw.uid : docId,
-    userUid: baseUid,
-    date: normalizedDate,
-    status: VALID_STATUS.has(raw.status) ? raw.status : 'hit',
-    tzOffset: isNumber(raw.tzOffset) ? raw.tzOffset : 0,
-    ts: normalizedTs
-  }
-  if (isNonEmptyString(raw.goodnightMessageId)) {
-    normalized.goodnightMessageId = raw.goodnightMessageId
-  }
-  if (isNonEmptyString(raw.message)) {
-    normalized.message = raw.message
-  }
-  return normalized
+function normalizeInfoList(value) {
+  return Array.isArray(value) ? value : []
 }
 
-function isDuplicateKeyError(error) {
-  if (!error || typeof error !== 'object') {
-    return false
+function mapEntryToRecord(uid, entry, fallbackTs) {
+  const normalizedDate = normalizeDate(entry?.date) ?? ''
+  const safeDate = normalizedDate || ''
+  const status = VALID_STATUS.has(entry?.status) ? entry.status : 'hit'
+  const tzOffset = isNumber(entry?.tzOffset) ? entry.tzOffset : 0
+  const normalizedTs = normalizeTimestamp(entry?.ts) ?? fallbackTs ?? new Date().toISOString()
+  const message = isNonEmptyString(entry?.message) ? entry.message.trim() : undefined
+
+  const record = {
+    _id: safeDate ? `${uid}_${safeDate}` : `${uid}_${normalizedTs}`,
+    uid,
+    userUid: uid,
+    date: safeDate,
+    status,
+    tzOffset,
+    ts: normalizedTs
   }
-  const maybeCode = error.code ?? error.errCode
-  if (maybeCode === 11000 || maybeCode === 'DATABASE_REALTIME_LISTENER_DUP_FAIL') {
-    return true
+
+  if (message) {
+    record.goodnightMessageId = message
+    record.message = message
   }
-  const message = error.errMsg ?? error.message
-  if (typeof message === 'string') {
-    const lower = message.toLowerCase()
-    return lower.includes('duplicate key') || lower.includes('already exists')
+
+  return record
+}
+
+function validatePayload(event) {
+  if (!event || typeof event !== 'object') {
+    throw Object.assign(new Error('缺少打卡参数'), { code: 'bad_payload' })
   }
-  return false
+  const { uid, date, status, tzOffset, goodnightMessageId, message } = event
+  if (!isNonEmptyString(uid)) {
+    throw Object.assign(new Error('缺少用户 UID'), { code: 'missing_uid' })
+  }
+  const normalizedDate = normalizeDate(date)
+  if (!normalizedDate) {
+    throw Object.assign(new Error('缺少或非法的日期'), { code: 'bad_date' })
+  }
+  if (!isNonEmptyString(status) || !VALID_STATUS.has(status)) {
+    throw Object.assign(new Error('非法的打卡状态'), { code: 'bad_status' })
+  }
+  const normalizedMessage = isNonEmptyString(goodnightMessageId)
+    ? goodnightMessageId.trim()
+    : isNonEmptyString(message)
+    ? message.trim()
+    : undefined
+  return {
+    uid: uid.trim(),
+    date: normalizedDate,
+    status,
+    tzOffset: isNumber(tzOffset) ? tzOffset : 0,
+    goodnightMessageId: normalizedMessage
+  }
 }
 
 function isDocumentNotFoundError(error) {
@@ -132,106 +145,96 @@ function isDocumentNotFoundError(error) {
     )
   }
   const code = error.code ?? error.errCode
-  return code === 'DATABASE_REALTIME_LISTENER_INVALIDDOCID' || code === 'DOCUMENT_NOT_FOUND'
+  return code === 'DOCUMENT_NOT_FOUND'
 }
 
-function validatePayload(event) {
-  if (!event || typeof event !== 'object') {
-    throw Object.assign(new Error('缺少打卡参数'), { code: 'bad_payload' })
-  }
-  const { uid, date, status, tzOffset, goodnightMessageId } = event
-  if (!isNonEmptyString(uid)) {
-    throw Object.assign(new Error('缺少用户 UID'), { code: 'missing_uid' })
-  }
-  const normalizedDate = normalizeDate(date)
-  if (!normalizedDate) {
-    throw Object.assign(new Error('缺少或非法的日期'), { code: 'bad_date' })
-  }
-  if (!isNonEmptyString(status) || !VALID_STATUS.has(status)) {
-    throw Object.assign(new Error('非法的打卡状态'), { code: 'bad_status' })
-  }
-  if (!isNumber(tzOffset)) {
-    throw Object.assign(new Error('缺少时区偏移量'), { code: 'bad_tz_offset' })
-  }
-  if (goodnightMessageId !== undefined && goodnightMessageId !== null && !isNonEmptyString(goodnightMessageId)) {
-    throw Object.assign(new Error('非法的晚安心语 ID'), { code: 'bad_message_id' })
-  }
-  return {
-    uid: uid.trim(),
-    date: normalizedDate,
-    status,
-    tzOffset,
-    goodnightMessageId: isNonEmptyString(goodnightMessageId) ? goodnightMessageId.trim() : undefined
-  }
-}
-
-async function loadExistingRecord(docRef, docId) {
+async function ensureUserCheckinsDocument(collection, uid, openid) {
+  const docRef = collection.doc(uid)
   try {
     const snapshot = await docRef.get()
     if (snapshot && snapshot.data) {
-      return normalizeRecord(docId, snapshot.data)
+      return {
+        docRef,
+        data: snapshot.data
+      }
     }
   } catch (error) {
     if (!isDocumentNotFoundError(error)) {
       throw error
     }
   }
-  return null
+
+  const now = db.serverDate()
+  await docRef.set({
+    data: {
+      uid,
+      ownerOpenid: openid,
+      info: [],
+      createdAt: now,
+      updatedAt: now
+    }
+  })
+
+  return {
+    docRef,
+    data: {
+      uid,
+      ownerOpenid: openid,
+      info: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  }
 }
 
 exports.main = async (event) => {
   try {
     const payload = validatePayload(event)
-    const docId = createDocId(payload.uid, payload.date)
+    const { OPENID } = cloud.getWXContext()
     const collection = db.collection('checkins')
-    const docRef = collection.doc(docId)
 
-    const existing = await loadExistingRecord(docRef, docId)
-    if (existing) {
+    const { docRef, data: existingDoc } = await ensureUserCheckinsDocument(
+      collection,
+      payload.uid,
+      OPENID
+    )
+
+    const infoList = normalizeInfoList(existingDoc?.info)
+    const existingEntry = infoList.find((entry) => normalizeDate(entry.date) === payload.date)
+    if (existingEntry) {
       return {
         ok: true,
         code: 'already_exists',
-        data: existing
+        data: mapEntryToRecord(payload.uid, existingEntry)
       }
     }
 
-    const record = {
-      uid: docId,
-      userUid: payload.uid,
+    const nowIso = new Date().toISOString()
+    const newEntryForDb = {
       date: payload.date,
       status: payload.status,
+      message: payload.goodnightMessageId,
       tzOffset: payload.tzOffset,
       ts: db.serverDate()
     }
-    if (payload.goodnightMessageId) {
-      record.goodnightMessageId = payload.goodnightMessageId
-      record.message = payload.goodnightMessageId
+
+    await docRef.update({
+      data: {
+        ownerOpenid: OPENID,
+        updatedAt: db.serverDate(),
+        info: _.push([newEntryForDb])
+      }
+    })
+
+    const responseEntry = {
+      ...newEntryForDb,
+      ts: nowIso
     }
 
-    try {
-      await docRef.set({
-        data: record
-      })
-    } catch (error) {
-      if (!isDuplicateKeyError(error)) {
-        throw error
-      }
-      const fallback = await loadExistingRecord(docRef, docId)
-      if (fallback) {
-        return {
-          ok: true,
-          code: 'already_exists',
-          data: fallback
-        }
-      }
-      throw error
-    }
-
-    const created = await loadExistingRecord(docRef, docId)
     return {
       ok: true,
       code: 'created',
-      data: created || normalizeRecord(docId, record)
+      data: mapEntryToRecord(payload.uid, responseEntry)
     }
   } catch (error) {
     console.error('[submitCheckin] failed', error)

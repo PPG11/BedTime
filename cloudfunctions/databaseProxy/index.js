@@ -30,13 +30,10 @@ const USER_ALLOWED_FIELDS = new Set([
 
 const CHECKIN_ALLOWED_FIELDS = new Set([
   'uid',
-  'userUid',
-  'date',
-  'status',
-  'tzOffset',
-  'ts',
-  'goodnightMessageId',
-  'message'
+  'ownerOpenid',
+  'info',
+  'createdAt',
+  'updatedAt'
 ])
 
 const PUBLIC_PROFILE_FIELDS = new Set([
@@ -308,38 +305,10 @@ function createAccessGuard(db, openid) {
     if (!isNonEmptyString(docId)) {
       throw new Error('缺少文档 ID')
     }
-    if (docId.startsWith(`${userUid}_`)) {
-      return { userUid }
+    if (docId !== userUid) {
+      throw new Error('无权访问打卡记录')
     }
-
-    try {
-      const snapshot = await db.collection('checkins').doc(docId).get()
-      const data = snapshot?.data
-      if (!data) {
-        throw new Error('打卡记录不存在')
-      }
-      const ownerUid = isNonEmptyString(data.userUid)
-        ? data.userUid
-        : isNonEmptyString(data.uid)
-        ? data.uid.split('_')[0]
-        : ''
-      const ownerDocUid = isNonEmptyString(data.uid) ? data.uid : ''
-      const ownerOpenid = isNonEmptyString(data._openid) ? data._openid : ''
-      if (
-        ownerUid === userUid ||
-        (ownerDocUid && ownerDocUid.startsWith(`${userUid}_`)) ||
-        ownerOpenid === openid
-      ) {
-        return { userUid }
-      }
-    } catch (error) {
-      if (isDocumentNotFoundError(error)) {
-        throw new Error('无权访问打卡记录')
-      }
-      throw error
-    }
-
-    throw new Error('无权访问打卡记录')
+    return { userUid }
   }
 
   async function ensureInviteOwnership(docId) {
@@ -425,12 +394,9 @@ function createAccessGuard(db, openid) {
           return { collection, id, data }
         }
         case 'checkins': {
-          const { userUid } = await ensureCheckinDocAccess(id)
+          await ensureCheckinDocAccess(id)
           if (data.uid !== undefined && data.uid !== id) {
             throw new Error('禁止修改打卡记录编号')
-          }
-          if (data.userUid !== undefined && data.userUid !== userUid) {
-            throw new Error('禁止修改打卡记录所属用户')
           }
           return {
             collection,
@@ -438,8 +404,7 @@ function createAccessGuard(db, openid) {
             data: {
               ...data,
               uid: id,
-              userUid,
-              _openid: openid
+              ownerOpenid: openid
             }
           }
         }
@@ -547,18 +512,18 @@ function createAccessGuard(db, openid) {
           return { collection, id, data }
         }
         case 'checkins': {
-          const { userUid } = await ensureCheckinDocAccess(id)
+          await ensureCheckinDocAccess(id)
           if (data.uid !== undefined && data.uid !== id) {
             throw new Error('禁止修改打卡记录编号')
-          }
-          if (data.userUid !== undefined && data.userUid !== userUid) {
-            throw new Error('禁止修改打卡记录所属用户')
           }
           if (data.uid !== undefined) {
             data.uid = id
           }
-          if (data.userUid !== undefined) {
-            data.userUid = userUid
+          if (data.ownerOpenid !== undefined && data.ownerOpenid !== openid) {
+            throw new Error('禁止修改打卡记录所属用户身份')
+          }
+          if (data.ownerOpenid === undefined) {
+            data.ownerOpenid = openid
           }
           return { collection, id, data }
         }
@@ -681,8 +646,9 @@ function createAccessGuard(db, openid) {
           const userUid = await requireUserUid()
           if (
             queryHasValue(query, '_openid', openid) ||
-            queryHasValue(query, 'userUid', userUid) ||
-            queryHasValue(query, 'uid', userUid)
+            queryHasValue(query, 'ownerOpenid', openid) ||
+            queryHasValue(query, 'uid', userUid) ||
+            queryHasValue(query, '_id', userUid)
           ) {
             return { ...event, query }
           }
@@ -736,7 +702,13 @@ function createAccessGuard(db, openid) {
           throw new Error('无权统计其他用户的好友邀请')
         }
         case 'checkins': {
-          if (queryHasValue(query, '_openid', openid)) {
+          const userUid = await requireUserUid()
+          if (
+            queryHasValue(query, '_openid', openid) ||
+            queryHasValue(query, 'ownerOpenid', openid) ||
+            queryHasValue(query, 'uid', userUid) ||
+            queryHasValue(query, '_id', userUid)
+          ) {
             return { ...event, query }
           }
           throw new Error('无权统计其他用户的打卡记录')

@@ -205,11 +205,12 @@ export default function Index() {
       } catch (error) {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
+      console.log('todayKey', todayKey)
       const checkins = await fetchCheckins(user.uid, 365)
       console.log('checkins', checkins)
       const record = mapCheckinsToRecord(checkins)
       console.log('record', record)
-      setRecords(record)  
+      setRecords(record)
     } catch (error) {
       console.error('同步云端数据失败', error)
       Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
@@ -287,7 +288,6 @@ export default function Index() {
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
         const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
-        console.log('checkInWithCloud submitCheckinRecord start', rewardCandidate)
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: todayKey,
@@ -296,7 +296,6 @@ export default function Index() {
           goodnightMessageId: rewardCandidate?._id,
           message: rewardCandidate?._id
         })
-        console.log('checkInWithCloud submitCheckinRecord end', submitStatus)
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
@@ -375,10 +374,7 @@ export default function Index() {
       } catch (error) {
         console.warn('获取今日晚安心语失败', error)
       }
-      console.log('rewardCandidate', rewardCandidate)
-
       if (canUseCloud && userDoc) {
-        console.log('checkInWithCloud start', rewardCandidate)
         await checkInWithCloud(rewardCandidate)
         return
       }
@@ -399,7 +395,7 @@ export default function Index() {
   ])
 
   useLoad(() => {
-    // void hydrateAll()
+    void hydrateAll()
   })
 
   useDidShow(() => {
@@ -422,10 +418,10 @@ export default function Index() {
   return (
     <View className='index'>
       <HomeHero
-          displayName={displayName}
-          weekdayLabel={weekdayLabels[currentTime.getDay()]}
-          dateLabel={todayLabel}
-          countdownText={countdownText}
+        displayName={displayName}
+        weekdayLabel={weekdayLabels[currentTime.getDay()]}
+        dateLabel={todayLabel}
+        countdownText={countdownText}
       />
       <CheckInCard
         windowHint={windowHint}

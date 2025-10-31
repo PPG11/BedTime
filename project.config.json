@@ -12,5 +12,6 @@
     "postcss": false,
     "minified": false
   },
-  "compileType": "miniprogram"
+  "compileType": "miniprogram",
+  "cloudfunctionTemplateRoot": "cloudfunctionTemplate/"
 }

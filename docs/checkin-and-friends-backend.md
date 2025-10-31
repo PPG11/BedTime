@@ -7,7 +7,7 @@
 | 集合 | 作用 | 关键字段 |
 | ---- | ---- | -------- |
 | `users` | 保存用户主档信息及好友关系缓存 | `uid`、`nickname`、`tzOffset`、`targetHM`、`buddyList`、`incomingRequests`、`outgoingRequests`、`createdAt`、`updatedAt` |
-| `checkins` | 记录用户每日打卡状态 | `_id`（`uid_date` 组合）、`uid`、`userUid`、`date`、`status`、`ts`、`tzOffset`、`goodnightMessageId` / `message` |
+| `checkins` | 以用户维度聚合打卡状态 | `_id`（用户 UID）、`uid`、`ownerOpenid`、`info[]`（`date`、`status`、`message`、`tzOffset`、`ts`）、`createdAt`、`updatedAt` |
 | `public_profiles` | 好友列表展示所需的公开资料与状态 | `_id`、`uid`、`nickname`、`sleeptime`、`streak`、`todayStatus`、`updatedAt` |
 | `friend_invites` | 好友邀请单与状态流转 | `_id`（`invite_sender_recipient` 组合）、`senderUid`、`senderOpenId`、`recipientUid`、`recipientOpenId`、`status`、`createdAt`、`updatedAt` |
 
@@ -17,26 +17,24 @@
 
 ### 数据模型
 
-打卡服务以 `CheckinDocument` 描述存储结构：`uid` 和 `date` 拼出 `_id`，同时保存时区偏移、打卡状态以及晚安心语关联信息。【F:src/services/checkin.ts†L10-L87】
+打卡服务以 `CheckinDocument` 描述单日打卡记录，但云端存储按用户聚合：`checkins` 集合以用户 UID 作为 `_id`，并在 `info` 数组内保存每日的 `date`、`status`、`message` 与时间戳等信息。【F:src/services/checkin.ts】
 
 ### 写入流程（`upsertCheckin`）
 
-1. 组合文档 ID：`uid_date`，并拼出完整负载，默认时间戳使用云端 `serverDate()`。【F:src/services/checkin.ts†L307-L321】
-2. 首次尝试使用 `set` 写入，如命中唯一键冲突则进入兼容逻辑。【F:src/services/checkin.ts†L328-L336】
-3. 先依据 `_id` 或同日 `_openid` 记录尝试 `update`，避免重复创建。【F:src/services/checkin.ts†L164-L240】
-4. 若仍未找到既有文档，会执行 `migrateLegacyCheckins`：批量校正旧数据的 `uid`/`date` 字段后再更新目标日期，保证历史数据迁移到新命名规范。【F:src/services/checkin.ts†L242-L305】
-5. 兜底再次 `set` 写入；若仍冲突则重复查找并 `update`，最终返回归一化的 `CheckinDocument`。【F:src/services/checkin.ts†L338-L373】
+1. 确保当前用户在 `checkins` 集合中存在以 UID 为 `_id` 的文档，如缺失则初始化空的 `info` 数组。
+2. 检查 `info` 中是否已有目标日期，若存在则直接返回该日的打卡记录。
+3. 若当日尚未打卡，则把新条目（`date`、`status`、`message`、`tzOffset`、`ts`）追加到 `info`，并返回归一化后的 `CheckinDocument`。【F:src/services/checkin.ts】
 
 ### 晚安心语同步
 
-`updateCheckinGoodnightMessage` 会按用户 UID + 日期查找已存在的打卡记录，统一更新 `goodnightMessageId` 与 `message` 字段，若文档缺失则新建补齐，保证两字段保持互为备用引用。【F:src/services/checkin.ts†L375-L417】
+`updateCheckinGoodnightMessage` 会在用户聚合文档的 `info` 数组中定位目标日期，更新对应条目的 `message` / `goodnightMessageId` 字段，保持两者同步。【F:src/services/checkin.ts】
 
 ### 查询能力
 
-- `fetchCheckins`：按当前小程序用户的 `_openid` 查询指定 UID 的最近打卡列表，限制最多 1000 条并按日期降序返回。【F:src/services/checkin.ts†L420-L434】
-- `fetchCheckinInfoForDate`：利用 `_id` 或 `_openid` + `date` 精确匹配单日记录，返回标准化结果。【F:src/services/checkin.ts†L436-L448】
-- `fetchCheckinsInRange`：构建日期范围查询，结合 `_openid` 限制和二次过滤确保返回值严格落在指定区间。【F:src/services/checkin.ts†L450-L472】
-- `computeHitStreak`：基于日期键回溯连续打卡天数，供前端展示 streak 信息。【F:src/services/checkin.ts†L475-L491】
+- `fetchCheckins`：确保用户聚合文档存在后，读取 `info` 数组并按日期降序映射为 `CheckinDocument` 列表，默认最多返回 1000 条。【F:src/services/checkin.ts】
+- `fetchCheckinInfoForDate`：优先通过云函数查询指定日期的打卡记录，若云函数不可用则在本地聚合文档中检索该日期。【F:src/services/checkin.ts】
+- `fetchCheckinsInRange`：在聚合文档的 `info` 中筛出日期位于区间内的条目并排序返回。【F:src/services/checkin.ts】
+- `computeHitStreak`：基于日期键回溯连续打卡天数，供前端展示 streak 信息。【F:src/services/checkin.ts】
 
 ## 好友体系流程
 
