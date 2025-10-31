@@ -247,6 +247,7 @@ async function fetchCheckinPageViaCloud(
     const response = await callCloudFunction<CheckinRangeFunctionResponse>({
       name: 'checkinRange',
       data: {
+        uid,
         from: options.from,
         to: options.to,
         limit: options.limit,
@@ -595,6 +596,7 @@ async function fetchCheckinViaCloudFunction(
     const response = await callCloudFunction<CheckinRangeFunctionResponse>({
       name: 'checkinRange',
       data: {
+        uid,
         from: normalizedDate,
         to: normalizedDate,
         limit: 1
