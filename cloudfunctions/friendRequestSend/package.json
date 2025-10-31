@@ -1,0 +1,9 @@
+{
+  "name": "friend-request-send",
+  "version": "1.0.0",
+  "description": "Send friend request",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

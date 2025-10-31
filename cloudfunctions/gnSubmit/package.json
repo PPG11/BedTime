@@ -1,0 +1,9 @@
+{
+  "name": "gn-submit",
+  "version": "1.0.0",
+  "description": "Submit daily goodnight message",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

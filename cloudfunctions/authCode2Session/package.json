@@ -1,0 +1,9 @@
+{
+  "name": "auth-code2session",
+  "version": "1.0.0",
+  "description": "Exchange js_code for openid",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

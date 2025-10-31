@@ -1,0 +1,9 @@
+{
+  "name": "gn-get-random",
+  "version": "1.0.0",
+  "description": "Get random goodnight message",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "friends-page",
+  "version": "1.0.0",
+  "description": "List friends with pagination",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "slot-rollup",
+  "version": "1.0.0",
+  "description": "Aggregate daily slot performance",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}

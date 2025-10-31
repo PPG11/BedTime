@@ -1,104 +1,81 @@
-# 云函数配置说明
+# 云函数与数据库重构说明
 
-## 概述
+本目录包含微信小程序·云开发（TCB）环境的云函数实现。新版后端按照以下目标设计：
 
-BedTime 应用支持两种模式运行：
-1. **云开发模式**：使用微信云开发存储用户数据和好友信息，支持多设备同步
-2. **本地模式**：数据仅存储在本地，不需要配置云开发
+- **统一入口**：客户端所有读写均调用云函数，杜绝直接访问数据库。
+- **高可维护性**：数据结构清晰，核心业务流程具备幂等保障。
+- **性能与安全**：针对高频查询建立主键或二级索引，所有写入路径均校验 `OPENID`。
 
-## 云开发模式配置步骤
+## 数据库结构
 
-### 1. 开通微信云开发
+| 集合 | 主键 | 说明 |
+| --- | --- | --- |
+| `users` | `_id = openid` | 用户档案与统计摘要 |
+| `checkins` | `_id = {uid}#{yyyymmdd}` | 每日打卡记录（每日一条） |
+| `goodnight_messages` | `_id` | 晚安心语，含随机抽取所需字段 |
+| `gn_reactions_dedupe` | `_id = {userId}#{messageId}` | 投票去重表 |
+| `gn_reaction_events` | `_id` | 点赞异步增量队列 |
+| `friend_requests` | `_id` | 好友申请记录 |
+| `friendships` | `_id = {minUid}#{maxUid}` | 好友无向边 |
+| `slot_daily` | `_id = {slotKey}#{yyyymmdd}` | 打卡时段聚合指标 |
 
-1. 在微信开发者工具中打开项目
-2. 点击「云开发」按钮
-3. 按照提示开通云开发服务
-4. 记录下你的云开发环境 ID（env-xxxxx）
+### 关键字段约定
 
-### 2. 配置环境变量
+- 日期统一使用 `yyyymmdd` 字符串，按用户时区 `tzOffset` 计算。
+- `uid` 为 8–10 位短码，在 `users` 集合内唯一。
+- `slotKey` 为 `HH:00` 或 `HH:30`，由目标睡觉时间量化而来。
+- `checkins.status` 仅允许 `hit` 或 `pending`。
+- 晚安心语随机抽取使用字段：`status`, `slotKey`, `rand`, `score`。
 
-在项目根目录的 `.env` 或构建配置中设置：
+### 建议索引
 
-```bash
-TARO_APP_CLOUD_ENV=你的云开发环境ID
-```
+| 集合 | 索引 |
+| --- | --- |
+| `users` | `uid` 唯一索引 |
+| `goodnight_messages` | `(userId ASC, date ASC)` 唯一；`(status ASC, slotKey ASC, rand ASC)`；`score` 单列 |
+| `gn_reaction_events` | `(status ASC, createdAt ASC)` |
+| `friend_requests` | `(toUid ASC, fromUid ASC)` |
+| `slot_daily` | `(slotKey ASC, date ASC)` |
+| `checkins` | 仅使用主键 `_id` 进行范围查询 |
 
-或者直接修改 `src/config/cloud.ts` 文件：
+## 云函数一览
 
-```typescript
-export const CLOUD_ENV_ID = '你的云开发环境ID'
-```
+| 名称 | 描述 |
+| --- | --- |
+| `authCode2Session` | 交换 `js_code` 获取 `openid` |
+| `userEnsure` | 确保用户档案存在并返回摘要 |
+| `checkinSubmit` | 提交当日打卡，幂等返回已有记录 |
+| `checkinRange` | 按 `_id` 范围分页读取打卡历史 |
+| `friendRequestSend` | 发送好友申请（去重校验） |
+| `friendRequestUpdate` | 接收方处理申请，接受时写入好友边 |
+| `friendFinish` | 发送方确认结果，幂等补写好友边 |
+| `friendRemove` | 按边主键删除好友，幂等 |
+| `friendsPage` | 分页返回好友列表与基础状态 |
+| `gnSubmit` | 提交当日晚安心语，唯一约束 `(userId,date)` |
+| `gnGetRandom` | 按两段式随机算法抽取晚安心语 |
+| `gnReact` | 点赞/点踩写入去重表并入队增量事件 |
+| `gnReactionsConsume` | 定时消费增量队列并合并写回 |
+| `slotRollup` | 统计昨日各 `slotKey` 的参与与命中率 |
 
-### 3. 创建数据库集合
+## 触发器建议
 
-在微信开发者工具的「云开发控制台」→「数据库」中创建以下集合：
+| 函数 | 类型 | 示例 Cron |
+| --- | --- | --- |
+| `gnReactionsConsume` | 定时触发 | `*/30 * * * * *`（每 30 秒） |
+| `slotRollup` | 定时触发 | `0 1 * * *`（每天 01:00） |
 
-- `users` - 用户信息
-- `checkins` - 打卡记录
-- `public_profiles` - 公开的用户资料（用于好友功能）
+## 部署提示
 
-### 4. 部署云函数
+1. 确认已在项目入口初始化云开发：`Taro.cloud.init({ env })`，云函数内使用 `cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })`。
+2. 按上表创建集合并配置权限：除 `slot_daily` 外全部仅云函数可读写。
+3. 为 `users.uid` 等字段创建索引以保证高并发读写性能。
+4. 在微信开发者工具中依次右键上传各函数，选择「云端安装依赖」。
+5. 若从旧结构迁移，请补齐 `uid`、合并旧打卡记录，并补全 `goodnight_messages` 缺失字段。
 
-在微信开发者工具中：
+## 返回值约定
 
-1. 右键点击 `cloudfunctions/login` 文件夹
-2. 选择「上传并部署：云端安装依赖」
-3. 等待部署完成
+- 成功：`{ code: 'OK', ...payload }`
+- 常见错误码：`INVALID_ARG`、`UNAUTHORIZED`、`NOT_FOUND`、`ALREADY_EXISTS`、`RATE_LIMITED`、`INTERNAL`
+- 幂等情况例如重复打卡、重复投稿时，返回 `code: 'ALREADY_EXISTS'` 并附带已有记录或 `messageId`。
 
-### 5. 配置数据库权限
-
-在云开发控制台的「数据库」→「集合权限」中：
-
-- `users`: 仅创建者可读写
-- `checkins`: 仅创建者可读写
-- `public_profiles`: 所有人可读，仅创建者可写
-
-## 本地模式
-
-如果你不想使用云开发功能：
-
-1. **不需要配置任何东西**
-2. 应用会自动检测云开发是否可用
-3. 如果云开发不可用，会自动使用本地存储模式
-4. 本地模式下，所有数据存储在小程序的本地缓存中
-
-## 问题排查
-
-### 页面显示空白
-
-如果页面只显示导航栏，内容全白：
-
-1. 检查控制台是否有错误信息
-2. 确认云函数 `login` 已正确部署
-3. 如果不使用云开发，应用会自动回退到本地模式，稍等片刻即可
-
-### 云函数调用失败
-
-提示"云端同步失败，使用本地模式"时：
-
-1. 检查云开发环境 ID 是否正确配置
-2. 确认云函数已部署
-3. 检查网络连接
-4. 本地模式仍可正常使用，只是数据不会同步到云端
-
-## 云函数说明
-
-### login
-
-**功能**：获取用户的 openid，用于标识用户身份
-
-**输入**：无
-
-**输出**：
-```javascript
-{
-  openid: string,  // 用户唯一标识
-  appid: string,   // 小程序 appid
-  unionid: string  // 开放平台 unionid（如果有）
-}
-```
-
-## 后续扩展
-
-如果需要更多云开发功能，可以在 `cloudfunctions` 目录下创建新的云函数。
-
+更多细节可参考各函数源码及 `common/` 目录中的共享工具模块。

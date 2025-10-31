@@ -1,0 +1,9 @@
+{
+  "name": "friend-finish",
+  "version": "1.0.0",
+  "description": "Finalize friend request from sender side",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}
