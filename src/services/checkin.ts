@@ -369,6 +369,8 @@ async function ensureCheckinsDocument(
   const collection = getCheckinsCollection(db)
   let documentId = uid
   let docRef = collection.doc(documentId)
+  const normalizedOwnerOpenid =
+    typeof openid === 'string' && openid.trim().length ? openid.trim() : undefined
 
   try {
     const snapshot = await docRef.get()
@@ -395,15 +397,51 @@ async function ensureCheckinsDocument(
       })
       .limit(1)
       .get()
-    const legacyDoc = legacyQuery?.data && legacyQuery.data[0]
-    if (legacyDoc) {
-      documentId = legacyDoc._id
-      docRef = collection.doc(documentId)
+    const legacyDoc = Array.isArray(legacyQuery?.data) ? legacyQuery.data[0] : null
+    if (legacyDoc && Array.isArray((legacyDoc as CheckinsAggregateRecord).info)) {
+      const legacyRecord = legacyDoc as CheckinsAggregateRecord
+      const legacyInfo = legacyRecord.info ?? []
+      const legacyOwner =
+        typeof legacyRecord.ownerOpenid === 'string' && legacyRecord.ownerOpenid.length
+          ? legacyRecord.ownerOpenid
+          : normalizedOwnerOpenid
+
+      if (typeof legacyDoc._id === 'string' && legacyDoc._id === documentId) {
+        return {
+          docRef,
+          record: {
+            ...(legacyDoc as CheckinsAggregateRecord),
+            _id: documentId
+          }
+        }
+      }
+
+      const serverDateForLegacy = db.serverDate ? db.serverDate() : new Date()
+      const payload: Partial<CheckinsAggregateRecord> = {
+        uid,
+        info: legacyInfo,
+        createdAt: legacyRecord.createdAt ?? serverDateForLegacy,
+        updatedAt: serverDateForLegacy
+      }
+      if (legacyOwner) {
+        payload.ownerOpenid = legacyOwner
+      }
+
+      await docRef.set({
+        data: payload
+      })
+
       return {
         docRef,
         record: {
-          ...(legacyDoc as CheckinsAggregateRecord),
-          _id: documentId
+          _id: documentId,
+          uid,
+          ownerOpenid: legacyOwner,
+          info: legacyInfo,
+          createdAt:
+            legacyRecord.createdAt instanceof Date ? legacyRecord.createdAt : new Date(),
+          updatedAt:
+            legacyRecord.updatedAt instanceof Date ? legacyRecord.updatedAt : new Date()
         }
       }
     }
@@ -468,7 +506,32 @@ async function ensureCheckinsDocument(
     }
   }
 
-  throw new Error('无法初始化用户打卡记录')
+  const serverDate = db.serverDate ? db.serverDate() : new Date()
+  const payload: Partial<CheckinsAggregateRecord> = {
+    uid,
+    info: [],
+    createdAt: serverDate,
+    updatedAt: serverDate
+  }
+  if (normalizedOwnerOpenid) {
+    payload.ownerOpenid = normalizedOwnerOpenid
+  }
+
+  await docRef.set({
+    data: payload
+  })
+
+  return {
+    docRef,
+    record: {
+      _id: documentId,
+      uid,
+      ownerOpenid: normalizedOwnerOpenid,
+      info: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  }
 }
 
 async function submitCheckinViaCloudFunction(params: {

@@ -57,6 +57,59 @@ exports.main = async (event, context) => {
     }
 
     if (!existing) {
+      let legacyRecord = null
+      try {
+        const legacySnapshot = await collection.where({ uid: user.uid }).limit(1).get()
+        const legacyCandidate = Array.isArray(legacySnapshot?.data) ? legacySnapshot.data[0] : null
+        if (legacyCandidate && Array.isArray(legacyCandidate.info)) {
+          legacyRecord = legacyCandidate
+        }
+      } catch (error) {
+        const message = error && typeof error.errMsg === 'string' ? error.errMsg : ''
+        if (!/not exist|not found|fail/i.test(message)) {
+          throw error
+        }
+      }
+
+      if (legacyRecord) {
+        const infoList = Array.isArray(legacyRecord.info) ? legacyRecord.info : []
+        const owner =
+          legacyRecord && typeof legacyRecord.ownerOpenid === 'string' && legacyRecord.ownerOpenid
+            ? legacyRecord.ownerOpenid
+            : openid
+        const createdAtValue = legacyRecord.createdAt || db.serverDate()
+        const updatedAtValue = db.serverDate()
+
+        await docRef.set({
+          data: {
+            uid: user.uid,
+            ownerOpenid: owner,
+            info: infoList,
+            createdAt: createdAtValue,
+            updatedAt: updatedAtValue
+          }
+        })
+
+        const legacyId = legacyRecord && typeof legacyRecord._id === 'string' ? legacyRecord._id : ''
+        if (legacyId && legacyId !== docId) {
+          try {
+            await collection.doc(legacyId).remove()
+          } catch (cleanupError) {
+            console.warn('ensureCheckinsDoc failed to remove legacy record', cleanupError)
+          }
+        }
+
+        existing = {
+          uid: user.uid,
+          ownerOpenid: owner,
+          info: infoList,
+          createdAt: legacyRecord.createdAt || new Date(),
+          updatedAt: new Date()
+        }
+      }
+    }
+
+    if (!existing) {
       const now = db.serverDate()
       await docRef.set({
         data: {
@@ -68,16 +121,12 @@ exports.main = async (event, context) => {
         }
       })
 
-      return {
-        ok: true,
-        data: {
-          documentId: docId,
-          uid: user.uid,
-          ownerOpenid: openid,
-          info: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
+      existing = {
+        uid: user.uid,
+        ownerOpenid: openid,
+        info: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     }
 
