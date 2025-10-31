@@ -1,9 +1,10 @@
 import { COLLECTIONS } from '../config/cloud'
 import { formatDateKey, normalizeDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
 import {
+  callCloudFunction,
   ensureCloud,
   getCurrentOpenId,
-  callCloudFunction,
+  type CloudCommand,
   type CloudDatabase,
   type DbCollection,
   type DbDocumentHandle
@@ -40,18 +41,30 @@ type CheckinsAggregateRecord = {
   updatedAt?: Date | string | number | { [key: string]: unknown }
 }
 
-type SubmitCheckinFunctionResponse = {
-  ok?: boolean
-  code?: string
-  data?: CheckinEntry & { uid?: string }
-  message?: string
+type CloudCheckinRecord = {
+  _id?: string
+  uid?: string
+  date?: string
+  status?: string
+  gnMsgId?: string | null
+  tzOffset?: number
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
-type CheckTodayFunctionResponse = {
-  ok?: boolean
+type CheckinSubmitFunctionResponse = {
   code?: string
-  exists?: boolean
-  data?: CheckinEntry & { uid?: string }
+  message?: string
+  date?: string
+  status?: string
+  gnMsgId?: string | null
+  record?: CloudCheckinRecord
+}
+
+type CheckinRangeFunctionResponse = {
+  code?: string
+  list?: CloudCheckinRecord[]
+  nextCursor?: string | null
   message?: string
 }
 
@@ -137,7 +150,7 @@ function mapEntryToDocument(uid: string, entry: CheckinEntry, fallbackDate?: str
   const status = normalizeStatus(entry?.status)
 
   const document: CheckinDocument = {
-    _id: `${uid}_${normalizedDate}`,
+    _id: `${uid}#${normalizedDate}`,
     uid,
     date: normalizedDate,
     status,
@@ -151,6 +164,126 @@ function mapEntryToDocument(uid: string, entry: CheckinEntry, fallbackDate?: str
   }
 
   return document
+}
+
+function mapCloudCheckinRecord(
+  uid: string,
+  record: CloudCheckinRecord | null | undefined,
+  defaults: { date?: string; status?: CheckinStatus; tzOffset?: number } = {}
+): CheckinDocument | null {
+  if (!record) {
+    return null
+  }
+
+  const resolvedUid =
+    typeof record.uid === 'string' && record.uid.trim().length ? record.uid.trim() : uid
+  const resolvedDate =
+    normalizeDateKey(
+      typeof record.date === 'string' && record.date.trim().length
+        ? record.date.trim()
+        : defaults.date ?? ''
+    ) ?? defaults.date
+
+  if (!resolvedDate) {
+    return null
+  }
+
+  const resolvedStatus = normalizeStatus(record.status ?? defaults.status ?? 'hit')
+  const resolvedId =
+    typeof record._id === 'string' && record._id.trim().length
+      ? record._id.trim()
+      : `${resolvedUid}#${resolvedDate}`
+
+  const timestampSource =
+    (record.createdAt as CheckinEntry['ts']) ??
+    (record.updatedAt as CheckinEntry['ts']) ??
+    ((record as unknown as { ts?: CheckinEntry['ts'] }).ts ?? new Date())
+  const ts = normalizeTimestamp(timestampSource)
+
+  const messageId =
+    typeof record.gnMsgId === 'string' && record.gnMsgId.trim().length
+      ? record.gnMsgId.trim()
+      : undefined
+  const tzOffset =
+    typeof record.tzOffset === 'number'
+      ? record.tzOffset
+      : typeof defaults.tzOffset === 'number'
+      ? defaults.tzOffset
+      : 0
+
+  return {
+    _id: resolvedId,
+    uid: resolvedUid,
+    date: resolvedDate,
+    status: resolvedStatus,
+    ts,
+    tzOffset,
+    goodnightMessageId: messageId,
+    message: messageId
+  }
+}
+
+function mapCloudCheckinList(
+  uid: string,
+  list: CloudCheckinRecord[] | undefined,
+  defaults: { tzOffset?: number } = {}
+): CheckinDocument[] {
+  if (!Array.isArray(list) || !list.length) {
+    return []
+  }
+
+  const mapped = list
+    .map((item) => mapCloudCheckinRecord(uid, item, { tzOffset: defaults.tzOffset }))
+    .filter((item): item is CheckinDocument => Boolean(item))
+
+  return mapped
+}
+
+async function fetchCheckinPageViaCloud(
+  uid: string,
+  options: { limit: number; from?: string; to?: string; cursor?: string }
+): Promise<{ documents: CheckinDocument[]; nextCursor: string | null } | null> {
+  try {
+    const response = await callCloudFunction<CheckinRangeFunctionResponse>({
+      name: 'checkinRange',
+      data: {
+        from: options.from,
+        to: options.to,
+        limit: options.limit,
+        cursor: options.cursor
+      }
+    })
+
+    if (!response) {
+      return { documents: [], nextCursor: null }
+    }
+
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+    if (code !== 'OK') {
+      if (code === 'NOT_FOUND') {
+        return { documents: [], nextCursor: null }
+      }
+
+      const message =
+        typeof response.message === 'string' && response.message.length
+          ? response.message
+          : '查询打卡记录失败'
+      throw new Error(message)
+    }
+
+    const documents = mapCloudCheckinList(uid, response.list)
+    const nextCursor =
+      typeof response.nextCursor === 'string' && response.nextCursor.length
+        ? response.nextCursor
+        : null
+
+    return { documents, nextCursor }
+  } catch (error) {
+    if (isCloudFunctionMissingError(error)) {
+      return null
+    }
+    throw error
+  }
 }
 
 function isDocumentMissingError(error: unknown): boolean {
@@ -239,11 +372,12 @@ async function ensureCheckinsDocument(
   try {
     const snapshot = await docRef.get()
     if (snapshot && snapshot.data) {
+      const snapshotData = snapshot.data as CheckinsAggregateRecord
       return {
         docRef,
         record: {
-          _id: documentId,
-          ...snapshot.data
+          ...snapshotData,
+          _id: documentId
         }
       }
     }
@@ -267,8 +401,8 @@ async function ensureCheckinsDocument(
       return {
         docRef,
         record: {
-          _id: documentId,
-          ...legacyDoc
+          ...(legacyDoc as CheckinsAggregateRecord),
+          _id: documentId
         }
       }
     }
@@ -310,8 +444,8 @@ async function ensureCheckinsDocument(
           uid: ensureResult.data.uid ?? documentId,
           ownerOpenid: ensureResult.data.ownerOpenid ?? openid,
           info: Array.isArray(ensureResult.data.info) ? ensureResult.data.info : [],
-          createdAt: ensureResult.data.createdAt,
-          updatedAt: ensureResult.data.updatedAt
+          createdAt: ensureResult.data.createdAt as CheckinEntry['ts'],
+          updatedAt: ensureResult.data.updatedAt as CheckinEntry['ts']
         }
       }
     }
@@ -323,31 +457,17 @@ async function ensureCheckinsDocument(
 
   const snapshot = await collection.doc(documentId).get()
   if (snapshot && snapshot.data) {
+    const snapshotData = snapshot.data as CheckinsAggregateRecord
     return {
       docRef: collection.doc(documentId),
       record: {
-        _id: documentId,
-        ...snapshot.data
+        ...snapshotData,
+        _id: documentId
       }
     }
   }
 
   throw new Error('无法初始化用户打卡记录')
-}
-
-function mapFunctionRecord(uid: string, payload?: CheckinEntry & { uid?: string }): CheckinDocument | null {
-  if (!payload) {
-    return null
-  }
-  const entry: CheckinEntry = {
-    date: payload.date,
-    status: payload.status,
-    message: payload.message ?? payload.goodnightMessageId,
-    goodnightMessageId: payload.goodnightMessageId ?? payload.message,
-    tzOffset: payload.tzOffset,
-    ts: payload.ts
-  }
-  return mapEntryToDocument(uid, entry)
 }
 
 async function submitCheckinViaCloudFunction(params: {
@@ -359,17 +479,11 @@ async function submitCheckinViaCloudFunction(params: {
 }): Promise<SubmitCheckinResult | null> {
   try {
     const payload: Record<string, unknown> = {
-      uid: params.uid,
-      date: params.date,
-      status: params.status,
-      tzOffset: params.tzOffset
-    }
-    if (params.goodnightMessageId) {
-      payload.goodnightMessageId = params.goodnightMessageId
+      status: params.status
     }
 
-    const response = await callCloudFunction<SubmitCheckinFunctionResponse>({
-      name: 'submitCheckin',
+    const response = await callCloudFunction<CheckinSubmitFunctionResponse>({
+      name: 'checkinSubmit',
       data: payload
     })
 
@@ -377,15 +491,75 @@ async function submitCheckinViaCloudFunction(params: {
       return null
     }
 
-    if (response.ok === false) {
-      const message =
-        typeof response.message === 'string' && response.message.length
-          ? response.message
-          : '提交打卡失败'
-      throw new Error(message)
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+
+    if (code === 'OK') {
+      const responseDate =
+        typeof response.date === 'string' && response.date.trim().length
+          ? response.date.trim()
+          : undefined
+      const resolvedDate = normalizeDateKey(responseDate ?? params.date) ?? params.date
+      const responseStatus =
+        typeof response.status === 'string' && response.status.trim().length
+          ? response.status.trim()
+          : undefined
+      const resolvedStatus = normalizeStatus(responseStatus ?? params.status)
+
+      const record: CloudCheckinRecord = {
+        _id: `${params.uid}#${resolvedDate}`,
+        uid: params.uid,
+        date: resolvedDate,
+        status: resolvedStatus,
+        gnMsgId:
+          typeof response.gnMsgId === 'string' && response.gnMsgId.length
+            ? response.gnMsgId
+            : params.goodnightMessageId ?? null,
+        tzOffset: params.tzOffset,
+        createdAt: new Date()
+      }
+
+      const document =
+        mapCloudCheckinRecord(params.uid, record, {
+          date: resolvedDate,
+          status: resolvedStatus,
+          tzOffset: params.tzOffset
+        }) ??
+        mapEntryToDocument(params.uid, {
+          date: resolvedDate,
+          status: resolvedStatus,
+          message: params.goodnightMessageId,
+          tzOffset: params.tzOffset,
+          ts: new Date()
+        })
+
+      return {
+        document,
+        status: 'created'
+      }
     }
 
-    if (!response.data) {
+    if (code === 'ALREADY_EXISTS') {
+      const existing = mapCloudCheckinRecord(params.uid, response.record, {
+        date: params.date,
+        status: params.status,
+        tzOffset: params.tzOffset
+      })
+
+      if (existing) {
+        return {
+          document: existing,
+          status: 'already_exists'
+        }
+      }
+
+      const fallback = await fetchCheckinViaCloudFunction(params.uid, params.date)
+      if (fallback) {
+        return {
+          document: fallback,
+          status: 'already_exists'
+        }
+      }
+
       return {
         document: mapEntryToDocument(params.uid, {
           date: params.date,
@@ -394,19 +568,16 @@ async function submitCheckinViaCloudFunction(params: {
           tzOffset: params.tzOffset,
           ts: new Date()
         }),
-        status: response.code === 'already_exists' ? 'already_exists' : 'created'
+        status: 'already_exists'
       }
     }
 
-    const document = mapFunctionRecord(params.uid, response.data)
-    if (!document) {
-      return null
-    }
-
-    return {
-      document,
-      status: response.code === 'already_exists' ? 'already_exists' : 'created'
-    }
+    const message =
+      typeof (response as { message?: unknown }).message === 'string' &&
+      (response as { message?: string }).message
+        ? (response as { message: string }).message
+        : '提交打卡失败'
+    throw new Error(message)
   } catch (error) {
     if (isCloudFunctionMissingError(error)) {
       return null
@@ -420,11 +591,13 @@ async function fetchCheckinViaCloudFunction(
   date: string
 ): Promise<CheckinDocument | null> {
   try {
-    const response = await callCloudFunction<CheckTodayFunctionResponse>({
-      name: 'checkTodayCheckin',
+    const normalizedDate = normalizeDateKey(date) ?? date
+    const response = await callCloudFunction<CheckinRangeFunctionResponse>({
+      name: 'checkinRange',
       data: {
-        uid,
-        date
+        from: normalizedDate,
+        to: normalizedDate,
+        limit: 1
       }
     })
 
@@ -432,7 +605,12 @@ async function fetchCheckinViaCloudFunction(
       return null
     }
 
-    if (response.ok === false) {
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+    if (code !== 'OK') {
+      if (code === 'NOT_FOUND') {
+        return null
+      }
+
       const message =
         typeof response.message === 'string' && response.message.length
           ? response.message
@@ -440,11 +618,11 @@ async function fetchCheckinViaCloudFunction(
       throw new Error(message)
     }
 
-    if (response.exists === false || !response.data) {
-      return null
-    }
+    const document = mapCloudCheckinRecord(uid, response.list?.[0], {
+      date: normalizedDate
+    })
 
-    return mapFunctionRecord(uid, response.data)
+    return document
   } catch (error) {
     if (isCloudFunctionMissingError(error)) {
       return null
@@ -485,14 +663,20 @@ async function appendCheckinEntry(params: {
     ts: serverDate
   }
 
-  const command = db.command
+  const command = db.command as CloudCommand & { push?: (values: unknown[]) => unknown }
+  const updateData: Record<string, unknown> = {
+    ownerOpenid: openid,
+    updatedAt: serverDate
+  }
+
+  if (typeof command.push === 'function') {
+    updateData.info = command.push([entry])
+  } else {
+    updateData.info = [...infoList, entry]
+  }
 
   await docRef.update({
-    data: {
-      ownerOpenid: openid,
-      updatedAt: serverDate,
-      info: command.push([entry])
-    }
+    data: updateData
   })
 
   return {
@@ -546,11 +730,28 @@ export async function updateCheckinGoodnightMessage(params: {
   date: string
   goodnightMessageId: string
 }): Promise<CheckinDocument | null> {
+  const normalizedDate = normalizeDateKey(params.date) ?? params.date
+
+  try {
+    const page = await fetchCheckinPageViaCloud(params.uid, {
+      from: normalizedDate,
+      to: normalizedDate,
+      limit: 1
+    })
+
+    if (page !== null) {
+      return page.documents[0] ?? null
+    }
+  } catch (error) {
+    if (!isCloudFunctionMissingError(error)) {
+      throw error
+    }
+  }
+
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
   const { docRef, record } = await ensureCheckinsDocument(db, params.uid, openid)
   const infoList = normalizeInfoList(record)
-  const normalizedDate = normalizeDateKey(params.date) ?? params.date
   const index = infoList.findIndex(
     (entry) => normalizeDateKey(entry.date ?? '') === normalizedDate
   )
@@ -583,13 +784,49 @@ export async function updateCheckinGoodnightMessage(params: {
 }
 
 export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
+  const normalizedLimit = Math.max(1, Math.min(1000, limit))
+  const documents: CheckinDocument[] = []
+
+  try {
+    let remaining = normalizedLimit
+    let cursor: string | null = null
+    let usedCloud = false
+
+    while (remaining > 0) {
+      const batchLimit = Math.min(50, remaining)
+      const page = await fetchCheckinPageViaCloud(uid, {
+        limit: batchLimit,
+        cursor: cursor ?? undefined
+      })
+
+      if (page === null) {
+        break
+      }
+
+      usedCloud = true
+      documents.push(...page.documents)
+
+      if (!page.nextCursor || page.documents.length < batchLimit) {
+        break
+      }
+
+      cursor = page.nextCursor
+      remaining -= page.documents.length
+    }
+
+    if (usedCloud) {
+      return documents
+    }
+  } catch (error) {
+    if (!isCloudFunctionMissingError(error)) {
+      throw error
+    }
+  }
+
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
-  console.log('fetchCheckins start', uid, limit, openid)
   const { record } = await ensureCheckinsDocument(db, uid, openid)
-  console.log('fetchCheckins record', record)
   const infoList = normalizeInfoList(record)
-  console.log('fetchCheckins infoList', infoList)
   const sorted = infoList
     .slice()
     .sort((a, b) => {
@@ -597,7 +834,7 @@ export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDo
       const dateB = normalizeDateKey(b.date ?? '') ?? ''
       return dateB.localeCompare(dateA)
     })
-    .slice(0, Math.max(1, Math.min(1000, limit)))
+    .slice(0, normalizedLimit)
 
   return sorted.map((entry) => mapEntryToDocument(uid, entry))
 }
@@ -628,14 +865,51 @@ export async function fetchCheckinsInRange(
   startDate: string,
   endDate: string
 ): Promise<CheckinDocument[]> {
-  const db = await ensureCloud()
-  const openid = await getCurrentOpenId()
-  const { record } = await ensureCheckinsDocument(db, uid, openid)
-  const infoList = normalizeInfoList(record)
   const normalizedStart = normalizeDateKey(startDate) ?? startDate
   const normalizedEnd = normalizeDateKey(endDate) ?? endDate
   const [from, to] =
     normalizedStart <= normalizedEnd ? [normalizedStart, normalizedEnd] : [normalizedEnd, normalizedStart]
+
+  try {
+    const documents: CheckinDocument[] = []
+    let cursor: string | null = null
+    let usedCloud = false
+
+    while (true) {
+      const page = await fetchCheckinPageViaCloud(uid, {
+        from,
+        to,
+        limit: 50,
+        cursor: cursor ?? undefined
+      })
+
+      if (page === null) {
+        break
+      }
+
+      usedCloud = true
+      documents.push(...page.documents)
+
+      if (!page.nextCursor || page.documents.length === 0) {
+        break
+      }
+
+      cursor = page.nextCursor
+    }
+
+    if (usedCloud) {
+      return documents.sort((a, b) => a.date.localeCompare(b.date))
+    }
+  } catch (error) {
+    if (!isCloudFunctionMissingError(error)) {
+      throw error
+    }
+  }
+
+  const db = await ensureCloud()
+  const openid = await getCurrentOpenId()
+  const { record } = await ensureCheckinsDocument(db, uid, openid)
+  const infoList = normalizeInfoList(record)
 
   return infoList
     .filter((entry) => {
