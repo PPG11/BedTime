@@ -1,0 +1,9 @@
+{
+  "name": "user-ensure",
+  "version": "1.0.0",
+  "description": "Ensure user profile exists",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "^2.11.0"
+  }
+}
