@@ -44,23 +44,37 @@ exports.main = async (event, context) => {
     }
 
     const friendUids = edges.map((edge) => (edge.aUid === user.uid ? edge.bUid : edge.aUid))
-    const usersCollection = db.collection('users')
-    const usersSnapshot = await usersCollection
-      .where({ uid: _.in(friendUids) })
-      .field({
-        uid: true,
-        nickname: true,
-        targetHM: true,
-        slotKey: true,
-        todayStatus: true,
-        streak: true,
-        totalDays: true
-      })
-      .get()
-
     const mapping = new Map()
-    for (const item of usersSnapshot.data || []) {
-      mapping.set(item.uid, item)
+
+    const uniqueFriendUids = Array.from(new Set(friendUids.filter(Boolean)))
+    if (uniqueFriendUids.length > 0) {
+      const CHUNK_LIMIT = 10
+      const usersCollection = db.collection('users')
+      const queries = []
+      for (let i = 0; i < uniqueFriendUids.length; i += CHUNK_LIMIT) {
+        const chunk = uniqueFriendUids.slice(i, i + CHUNK_LIMIT)
+        queries.push(
+          usersCollection
+            .where({ uid: _.in(chunk) })
+            .field({
+              uid: true,
+              nickname: true,
+              targetHM: true,
+              slotKey: true,
+              todayStatus: true,
+              streak: true,
+              totalDays: true
+            })
+            .get()
+        )
+      }
+
+      const snapshots = await Promise.all(queries)
+      for (const snap of snapshots) {
+        for (const item of snap.data || []) {
+          mapping.set(item.uid, item)
+        }
+      }
     }
 
     const list = edges

@@ -14,19 +14,36 @@ function normalizeDateInput(value) {
   return null
 }
 
+const MAX_IN_SIZE = 10
+
+function chunkArray(values, size) {
+  const chunks = []
+  for (let i = 0; i < values.length; i += size) {
+    chunks.push(values.slice(i, i + size))
+  }
+  return chunks
+}
+
 async function fetchUserProfiles(db, uids) {
-  if (uids.length === 0) {
+  const uniqueUids = Array.from(new Set(uids.filter(Boolean)))
+  if (uniqueUids.length === 0) {
     return new Map()
   }
   const _ = db.command
-  const snapshot = await db
-    .collection('users')
-    .where({ uid: _.in(uids) })
-    .field({ uid: true, slotKey: true })
-    .get()
+  const queries = chunkArray(uniqueUids, MAX_IN_SIZE).map((chunk) =>
+    db
+      .collection('users')
+      .where({ uid: _.in(chunk) })
+      .field({ uid: true, slotKey: true })
+      .get()
+  )
+
+  const snapshots = await Promise.all(queries)
   const map = new Map()
-  for (const doc of snapshot.data || []) {
-    map.set(doc.uid, doc)
+  for (const snapshot of snapshots) {
+    for (const doc of snapshot.data || []) {
+      map.set(doc.uid, doc)
+    }
   }
   return map
 }
@@ -53,7 +70,7 @@ exports.main = async (event) => {
         break
       }
 
-      const uids = Array.from(new Set(records.map((item) => item.uid).filter(Boolean)))
+      const uids = records.map((item) => item.uid)
       const profiles = await fetchUserProfiles(db, uids)
 
       for (const record of records) {
