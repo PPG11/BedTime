@@ -8,7 +8,6 @@ import {
   submitGoodnightMessage,
   updateCheckinGoodnightMessage,
   voteGoodnightMessage,
-  type GoodnightVoteType,
   type UserDocument
 } from '../../services'
 import {
@@ -22,7 +21,8 @@ import {
 import {
   GOODNIGHT_ERROR_ALREADY_SUBMITTED,
   GOODNIGHT_MESSAGE_MAX_LENGTH,
-  type GoodnightMessage
+  type GoodnightMessage,
+  type GoodnightVoteType
 } from '../../types/goodnight'
 
 type UseGoodnightInteractionParams = {

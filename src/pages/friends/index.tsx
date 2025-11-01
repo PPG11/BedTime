@@ -131,7 +131,7 @@ function buildFriendItems(
 
 export default function Friends() {
   const [friendItems, setFriendItems] = useState<FriendListItem[]>([])
-  const [friendAliases, setFriendAliases] = useState<FriendProfile[]>([])
+  const [, setFriendAliases] = useState<FriendProfile[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequestItem[]>([])
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')

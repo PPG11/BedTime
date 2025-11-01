@@ -25,7 +25,7 @@ export function FriendForm({
             className='friends__input'
             value={uidInput}
             placeholder='输入好友的 8 位 UID'
-            maxLength={8}
+            maxlength={8}
             onInput={(event) => onUidInputChange(event.detail.value)}
           />
         </View>
@@ -35,7 +35,7 @@ export function FriendForm({
             className='friends__input'
             value={aliasInput}
             placeholder='帮好友起个称呼'
-            maxLength={16}
+            maxlength={16}
             onInput={(event) => onAliasInputChange(event.detail.value)}
           />
         </View>
