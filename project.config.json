@@ -10,7 +10,7 @@
     "enhance": true,
     "compileHotReLoad": false,
     "postcss": false,
-    "minified": false
+    "minified": true
   },
   "compileType": "miniprogram",
   "cloudfunctionTemplateRoot": "cloudfunctionTemplate/"

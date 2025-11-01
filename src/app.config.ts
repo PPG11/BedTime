@@ -4,6 +4,7 @@ export default {
     'pages/friends/index',
     'pages/profile/index'
   ],
+  lazyCodeLoading: 'requiredComponents',
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#fff',
