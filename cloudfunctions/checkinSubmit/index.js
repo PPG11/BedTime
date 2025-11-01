@@ -18,19 +18,40 @@ exports.main = async (event, context) => {
       throw createError('INVALID_ARG', '非法的打卡状态')
     }
 
+    const requestedGnMsgId =
+      typeof event?.gnMsgId === 'string' && event.gnMsgId.trim().length
+        ? event.gnMsgId.trim()
+        : null
+
     const user = await ensureUser(openid)
+    const db = getDb()
     const today = getTodayFromOffset(user.tzOffset)
     const docId = buildDocId(user.uid, today)
 
     const existing = await getCheckin(user.uid, today)
     if (existing) {
+      const hasExistingGnMsgId =
+        typeof existing.gnMsgId === 'string' && existing.gnMsgId.trim().length > 0
+      let record = existing
+      if (requestedGnMsgId && !hasExistingGnMsgId) {
+        try {
+          await db.collection('checkins').doc(docId).update({
+            data: {
+              gnMsgId: requestedGnMsgId
+            }
+          })
+          record = Object.assign({}, existing, { gnMsgId: requestedGnMsgId })
+        } catch (patchError) {
+          console.warn('checkinSubmit patch existing gnMsgId failed', patchError)
+        }
+      }
       return {
         code: 'ALREADY_EXISTS',
-        record: existing,
+        record,
         summary: {
-          date: existing.date,
-          status: existing.status,
-          gnMsgId: existing.gnMsgId || null,
+          date: record.date,
+          status: record.status,
+          gnMsgId: record.gnMsgId || null,
           streak: user.streak,
           totalDays: user.totalDays,
           todayStatus: user.todayStatus,
@@ -39,17 +60,19 @@ exports.main = async (event, context) => {
       }
     }
 
-    let messageId = null
-    try {
-      const message = await pickRandomMessage({
-        avoidUserId: openid,
-        slotKey: user.slotKey,
-        minScore: typeof event?.minScore === 'number' ? event.minScore : -2
-      })
-      messageId = message?._id || null
-    } catch (messageError) {
-      console.warn('checkinSubmit pick message failed', messageError)
-      messageId = null
+    let messageId = requestedGnMsgId
+    if (!messageId) {
+      try {
+        const message = await pickRandomMessage({
+          avoidUserId: openid,
+          slotKey: user.slotKey,
+          minScore: typeof event?.minScore === 'number' ? event.minScore : -2
+        })
+        messageId = message?._id || null
+      } catch (messageError) {
+        console.warn('checkinSubmit pick message failed', messageError)
+        messageId = null
+      }
     }
 
     const record = {
@@ -58,7 +81,7 @@ exports.main = async (event, context) => {
       date: today,
       status,
       gnMsgId: messageId,
-      createdAt: getDb().serverDate()
+      createdAt: db.serverDate()
     }
 
     try {
@@ -67,13 +90,38 @@ exports.main = async (event, context) => {
       const msg = error?.errMsg || ''
       if (/already exist/i.test(msg)) {
         const latest = await getCheckin(user.uid, today)
+        let record = latest
+        const hasLatestGnMsgId =
+          latest && typeof latest.gnMsgId === 'string' && latest.gnMsgId.trim().length > 0
+        if (latest && requestedGnMsgId && !hasLatestGnMsgId) {
+          try {
+            await db.collection('checkins').doc(docId).update({
+              data: {
+                gnMsgId: requestedGnMsgId
+              }
+            })
+            record = Object.assign({}, latest, { gnMsgId: requestedGnMsgId })
+          } catch (patchError) {
+            console.warn('checkinSubmit patch latest gnMsgId failed', patchError)
+          }
+        }
+        const summaryRecord =
+          record ||
+          Object.assign(
+            {
+              date: today,
+              status,
+              gnMsgId: requestedGnMsgId || null
+            },
+            latest || {}
+          )
         return {
           code: 'ALREADY_EXISTS',
-          record: latest,
+          record: summaryRecord,
           summary: {
-            date: latest.date,
-            status: latest.status,
-            gnMsgId: latest.gnMsgId || null,
+            date: summaryRecord.date,
+            status: summaryRecord.status,
+            gnMsgId: summaryRecord.gnMsgId || null,
             streak: user.streak,
             totalDays: user.totalDays,
             todayStatus: user.todayStatus,
@@ -84,7 +132,6 @@ exports.main = async (event, context) => {
       throw error
     }
 
-    const db = getDb()
     const summary = computeCheckinSummary(user, status, today)
     await db.collection('users').doc(openid).update({
       data: summary

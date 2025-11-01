@@ -566,8 +566,15 @@ async function submitCheckinViaCloudFunction(params: {
   goodnightMessageId?: string
 }): Promise<SubmitCheckinResult | null> {
   try {
+    const requestGnMsgId =
+      typeof params.goodnightMessageId === 'string' && params.goodnightMessageId.trim().length
+        ? params.goodnightMessageId.trim()
+        : undefined
     const payload: Record<string, unknown> = {
       status: params.status
+    }
+    if (requestGnMsgId) {
+      payload.gnMsgId = requestGnMsgId
     }
 
     console.log('callCloudFunction', payload)
@@ -603,7 +610,7 @@ async function submitCheckinViaCloudFunction(params: {
         gnMsgId:
           typeof response.gnMsgId === 'string' && response.gnMsgId.length
             ? response.gnMsgId
-            : params.goodnightMessageId ?? null,
+            : requestGnMsgId ?? null,
         tzOffset: params.tzOffset,
         createdAt: new Date()
       }
@@ -617,7 +624,7 @@ async function submitCheckinViaCloudFunction(params: {
         mapEntryToDocument(params.uid, {
           date: resolvedDate,
           status: resolvedStatus,
-          message: params.goodnightMessageId,
+          message: requestGnMsgId,
           tzOffset: params.tzOffset,
           ts: new Date()
         })
@@ -654,7 +661,7 @@ async function submitCheckinViaCloudFunction(params: {
         document: mapEntryToDocument(params.uid, {
           date: params.date,
           status: params.status,
-          message: params.goodnightMessageId,
+          message: requestGnMsgId,
           tzOffset: params.tzOffset,
           ts: new Date()
         }),
