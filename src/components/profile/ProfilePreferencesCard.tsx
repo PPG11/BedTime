@@ -26,7 +26,7 @@ export function ProfilePreferencesCard({
           placeholder='输入你的称呼'
           onInput={onNameInput}
           onBlur={onNameBlur}
-          maxLength={20}
+          maxlength={20}
         />
       </View>
       <View className='profile__field'>
