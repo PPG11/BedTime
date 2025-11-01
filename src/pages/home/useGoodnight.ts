@@ -31,6 +31,7 @@ type UseGoodnightInteractionParams = {
   effectiveUid: string | null
   todayKey: string
   hasCheckedInToday: boolean
+  prefetchedGoodnightId?: string | null
 }
 
 type PresentRewardOptions = {
@@ -62,7 +63,8 @@ export function useGoodnightInteraction({
   userDoc,
   effectiveUid,
   todayKey,
-  hasCheckedInToday
+  hasCheckedInToday,
+  prefetchedGoodnightId = null
 }: UseGoodnightInteractionParams): UseGoodnightInteractionResult {
   const [input, setInput] = useState('')
   const [submittedMessage, setSubmittedMessage] = useState<GoodnightMessage | null>(null)
@@ -97,17 +99,33 @@ export function useGoodnightInteraction({
 
       if (canUseCloud && userDoc) {
         if (hasCheckedInToday) {
-          try {
-            const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-            const messageId = checkin?.goodnightMessageId ?? checkin?.message
-            if (messageId) {
-              const message = await fetchGoodnightMessageById(messageId)
+          let resolvedMessageId =
+            typeof prefetchedGoodnightId === 'string' && prefetchedGoodnightId.trim().length
+              ? prefetchedGoodnightId.trim()
+              : null
+          if (!resolvedMessageId) {
+            try {
+              const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
+              const candidate =
+                typeof checkin?.goodnightMessageId === 'string' && checkin.goodnightMessageId.trim().length
+                  ? checkin.goodnightMessageId.trim()
+                  : typeof checkin?.message === 'string' && checkin.message.trim().length
+                  ? checkin.message.trim()
+                  : null
+              resolvedMessageId = candidate
+            } catch (error) {
+              console.warn('加载今日打卡详情失败', error)
+            }
+          }
+          if (resolvedMessageId) {
+            try {
+              const message = await fetchGoodnightMessageById(resolvedMessageId)
               if (message) {
                 return message
               }
+            } catch (error) {
+              console.warn('加载今日晚安心语详情失败', error)
             }
-          } catch (error) {
-            console.warn('加载今日晚安心语失败', error)
           }
         }
         try {
@@ -124,7 +142,7 @@ export function useGoodnightInteraction({
       }
       return pickRandomLocalGoodnightMessage(effectiveUid)
     },
-    [canUseCloud, effectiveUid, hasCheckedInToday, todayKey, userDoc]
+    [canUseCloud, effectiveUid, hasCheckedInToday, prefetchedGoodnightId, todayKey, userDoc]
   )
 
   const loadSubmittedMessage = useCallback(async () => {

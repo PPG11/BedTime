@@ -68,9 +68,29 @@ type CheckinRangeFunctionResponse = {
   message?: string
 }
 
+type CheckinStatusFunctionResponse = {
+  code?: string
+  message?: string
+  checkedIn?: boolean
+  date?: string
+  status?: string | null
+  gnMsgId?: string | null
+  timestamp?: CheckinEntry['ts']
+  createdAt?: CheckinEntry['ts']
+  updatedAt?: CheckinEntry['ts']
+}
+
 export type SubmitCheckinResult = {
   document: CheckinDocument
   status: 'created' | 'already_exists'
+}
+
+export type TodayCheckinStatus = {
+  checkedIn: boolean
+  date: string
+  status: CheckinStatus | null
+  goodnightMessageId: string | null
+  timestamp: Date | null
 }
 
 const VALID_STATUS_SET = new Set<CheckinStatus>(['hit', 'late', 'miss', 'pending'])
@@ -721,6 +741,70 @@ async function fetchCheckinViaCloudFunction(
     })
 
     return document
+  } catch (error) {
+    if (isCloudFunctionMissingError(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
+export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | null> {
+  try {
+    const response = await callCloudFunction<CheckinStatusFunctionResponse>({
+      name: 'checkinStatus'
+    })
+
+    if (!response) {
+      return null
+    }
+
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+    if (code !== 'OK') {
+      if (code === 'NOT_FOUND') {
+        return {
+          checkedIn: false,
+          date: '',
+          status: null,
+          goodnightMessageId: null,
+          timestamp: null
+        }
+      }
+
+      const message =
+        typeof response.message === 'string' && response.message.length
+          ? response.message
+          : '查询今日打卡状态失败'
+      throw new Error(message)
+    }
+
+    const checkedIn = Boolean(response.checkedIn)
+    const rawDate =
+      typeof response.date === 'string' && response.date.trim().length
+        ? response.date.trim()
+        : ''
+    const date = (normalizeDateKey(rawDate) ?? rawDate) || ''
+    const status = checkedIn ? normalizeStatus(response.status) : null
+    const goodnightMessageId =
+      typeof response.gnMsgId === 'string' && response.gnMsgId.trim().length
+        ? response.gnMsgId.trim()
+        : null
+    let timestamp: Date | null = null
+    if (checkedIn) {
+      const timestampSource =
+        response.timestamp ?? response.createdAt ?? response.updatedAt ?? null
+      if (timestampSource) {
+        timestamp = normalizeTimestamp(timestampSource)
+      }
+    }
+
+    return {
+      checkedIn,
+      date,
+      status,
+      goodnightMessageId,
+      timestamp
+    }
   } catch (error) {
     if (isCloudFunctionMissingError(error)) {
       return null

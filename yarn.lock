@@ -5146,6 +5146,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"checkin-status@workspace:cloudfunctions/checkinStatus":
+  version: 0.0.0-use.local
+  resolution: "checkin-status@workspace:cloudfunctions/checkinStatus"
+  dependencies:
+    common: "file:../common"
+    wx-server-sdk: "npm:^3.0.1"
+  languageName: unknown
+  linkType: soft
+
 "checkin-submit@workspace:cloudfunctions/checkinSubmit":
   version: 0.0.0-use.local
   resolution: "checkin-submit@workspace:cloudfunctions/checkinSubmit"
@@ -5399,6 +5408,13 @@ __metadata:
 "common@file:../common::locator=checkin-range%40workspace%3Acloudfunctions%2FcheckinRange":
   version: 0.1.0
   resolution: "common@file:../common#../common::hash=71bcd7&locator=checkin-range%40workspace%3Acloudfunctions%2FcheckinRange"
+  checksum: 10c0/4e54a9e63500b862e6f12717d3b427d1a14307c2c40cba26a3390d72a6ac37f0c893c05bc2578ce795e479d28a6e3c38e7fe505484a2417c6b63e8dcf520c3ae
+  languageName: node
+  linkType: hard
+
+"common@file:../common::locator=checkin-status%40workspace%3Acloudfunctions%2FcheckinStatus":
+  version: 0.1.0
+  resolution: "common@file:../common#../common::hash=71bcd7&locator=checkin-status%40workspace%3Acloudfunctions%2FcheckinStatus"
   checksum: 10c0/4e54a9e63500b862e6f12717d3b427d1a14307c2c40cba26a3390d72a6ac37f0c893c05bc2578ce795e479d28a6e3c38e7fe505484a2417c6b63e8dcf520c3ae
   languageName: node
   linkType: hard

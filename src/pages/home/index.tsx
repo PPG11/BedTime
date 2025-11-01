@@ -38,9 +38,11 @@ import {
   UserDocument,
   ensureCurrentUser,
   fetchCheckins,
+  fetchTodayCheckinStatus,
   refreshPublicProfile,
   supportsCloud,
-  submitCheckinRecord
+  submitCheckinRecord,
+  type TodayCheckinStatus
 } from '../../services'
 import { GoodnightMessageCard } from '../../components/home/GoodnightMessageCard'
 import { GoodnightMessageModal } from '../../components/home/GoodnightMessageModal'
@@ -111,6 +113,7 @@ export default function Index() {
     targetSleepMinute: DEFAULT_SLEEP_MINUTE
   })
   const [userDoc, setUserDoc] = useState<UserDocument | null>(null)
+  const [todayStatus, setTodayStatus] = useState<TodayCheckinStatus | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [canUseCloud] = useState(() => supportsCloud())
   const [localUid] = useState(() => readUserUid())
@@ -137,8 +140,20 @@ export default function Index() {
     const diff = recommendedBedTime.getTime() - currentTime.getTime()
     return formatCountdown(diff)
   }, [currentTime, recommendedBedTime])
-  const todayRecord = useMemo(() => records[todayKey] ?? null, [records, todayKey])
-  const hasCheckedInToday = Boolean(todayRecord)
+  const todayRecord = useMemo(() => {
+    const stored = records[todayKey]
+    if (typeof stored === 'number' && stored > 0) {
+      return stored
+    }
+    if (todayStatus?.checkedIn && todayStatus.timestamp) {
+      return todayStatus.timestamp.getTime()
+    }
+    return null
+  }, [records, todayKey, todayStatus])
+  const hasCheckedInToday = useMemo(
+    () => Boolean(todayStatus?.checkedIn) || typeof todayRecord === 'number',
+    [todayRecord, todayStatus]
+  )
   const windowHint = useMemo(
     () =>
       formatWindowHint(
@@ -196,6 +211,13 @@ export default function Index() {
     try {
       const user = await ensureCurrentUser()
       setUserDoc(user)
+      let statusResult: TodayCheckinStatus | null = null
+      try {
+        statusResult = await fetchTodayCheckinStatus()
+      } catch (error) {
+        console.warn('查询今日打卡状态失败', error)
+      }
+      setTodayStatus(statusResult)
       setSettings({
         name: user.nickname || DEFAULT_USER_NAME,
         targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
@@ -210,11 +232,19 @@ export default function Index() {
       console.log('checkins', checkins)
       const record = mapCheckinsToRecord(checkins)
       console.log('record', record)
+      if (
+        statusResult?.checkedIn &&
+        statusResult.timestamp instanceof Date &&
+        !record[todayKey]
+      ) {
+        record[todayKey] = statusResult.timestamp.getTime()
+      }
       setRecords(record)
     } catch (error) {
       console.error('同步云端数据失败', error)
       Taro.showToast({ title: '云端同步失败，请稍后再试', icon: 'none', duration: 2000 })
       setUserDoc(null)
+      setTodayStatus(null)
       setRecords({})
     } finally {
       setIsSyncing(false)
@@ -228,6 +258,7 @@ export default function Index() {
     }
 
     setUserDoc(null)
+    setTodayStatus(null)
     setRecords(readCheckIns())
     setSettings(readSettings())
   }, [canUseCloud, hydrateFromCloud])
@@ -272,11 +303,12 @@ export default function Index() {
     userDoc,
     effectiveUid,
     todayKey,
-    hasCheckedInToday
+    hasCheckedInToday,
+    prefetchedGoodnightId: todayStatus?.goodnightMessageId ?? null
   })
 
   const checkInWithCloud = useCallback(
-    async (rewardCandidate: GoodnightMessage | null) => {
+    async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
       if (!userDoc) {
         return
       }
@@ -287,12 +319,10 @@ export default function Index() {
           typeof latestUser.tzOffset === 'number'
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
-        const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
-        console.log('checkinStatus', checkinStatus)
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: todayKey,
-          status: checkinStatus,
+          status,
           tzOffset,
           goodnightMessageId: rewardCandidate?._id,
           message: rewardCandidate?._id
@@ -302,6 +332,19 @@ export default function Index() {
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
+        const resolvedMessageId =
+          typeof created.goodnightMessageId === 'string' && created.goodnightMessageId.trim().length
+            ? created.goodnightMessageId.trim()
+            : typeof created.message === 'string' && created.message.trim().length
+            ? created.message.trim()
+            : rewardCandidate?._id ?? null
+        setTodayStatus({
+          checkedIn: true,
+          date: created.date,
+          status: created.status,
+          goodnightMessageId: resolvedMessageId,
+          timestamp: created.ts instanceof Date ? created.ts : new Date(created.ts)
+        })
         setUserDoc(latestUser)
         if (submitStatus === 'created') {
           try {
@@ -332,7 +375,6 @@ export default function Index() {
       }
     },
     [
-      isLateNow,
       persistRecords,
       presentGoodnightReward,
       records,
@@ -344,11 +386,18 @@ export default function Index() {
   )
 
   const checkInLocally = useCallback(
-    async (rewardCandidate: GoodnightMessage | null) => {
+    async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
       const now = new Date()
       const key = formatDateKey(now)
       const updated = { ...records, [key]: now.getTime() }
       persistRecords(updated)
+      setTodayStatus({
+        checkedIn: true,
+        date: key,
+        status,
+        goodnightMessageId: rewardCandidate?._id ?? null,
+        timestamp: now
+      })
       Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
       await presentGoodnightReward({
         message: rewardCandidate,
@@ -377,12 +426,13 @@ export default function Index() {
       } catch (error) {
         console.warn('获取今日晚安心语失败', error)
       }
+      const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
       if (canUseCloud && userDoc) {
-        await checkInWithCloud(rewardCandidate)
+        await checkInWithCloud(checkinStatus, rewardCandidate)
         return
       }
 
-      await checkInLocally(rewardCandidate)
+      await checkInLocally(checkinStatus, rewardCandidate)
     } finally {
       setIsSyncing(false)
     }
@@ -392,6 +442,7 @@ export default function Index() {
     checkInWithCloud,
     fetchRewardForToday,
     hasCheckedInToday,
+    isLateNow,
     isSyncing,
     isWindowOpen,
     userDoc
