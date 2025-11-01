@@ -1,6 +1,6 @@
-const { initCloud, getDb } = require('../common/cloud')
-const { formatDateFromMs } = require('../common/time')
-const { success, failure } = require('../common/response')
+const { initCloud, getDb } = require('common/cloud')
+const { formatDateFromMs } = require('common/time')
+const { success, failure } = require('common/response')
 
 initCloud()
 

@@ -4,6 +4,7 @@
   "description": "Query check-in history",
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "^2.11.0"
+    "common": "file:../common",
+    "wx-server-sdk": "^3.0.1"
   }
 }

@@ -1,7 +1,6 @@
 {
-  "name": "gn-react",
+  "name": "ensureCheckinsDoc",
   "version": "1.0.0",
-  "description": "Handle goodnight reactions",
   "main": "index.js",
   "dependencies": {
     "common": "file:../common",

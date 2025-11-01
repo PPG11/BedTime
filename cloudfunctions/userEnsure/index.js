@@ -1,6 +1,6 @@
-const { initCloud, getOpenId } = require('../common/cloud')
-const { ensureUser, toUserResponse } = require('../common/users')
-const { success, failure } = require('../common/response')
+const { initCloud, getOpenId } = require('common/cloud')
+const { ensureUser, toUserResponse } = require('common/users')
+const { success, failure } = require('common/response')
 
 initCloud()
 

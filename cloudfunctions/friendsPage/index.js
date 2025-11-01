@@ -1,7 +1,7 @@
-const { initCloud, getOpenId, getDb } = require('../common/cloud')
-const { ensureUser } = require('../common/users')
-const { FRIENDSHIPS_COLLECTION } = require('../common/friends')
-const { success, failure } = require('../common/response')
+const { initCloud, getOpenId, getDb } = require('common/cloud')
+const { ensureUser } = require('common/users')
+const { FRIENDSHIPS_COLLECTION } = require('common/friends')
+const { success, failure } = require('common/response')
 
 initCloud()
 

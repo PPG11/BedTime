@@ -1,6 +1,6 @@
-const { cloud, initCloud } = require('../common/cloud')
-const { createError } = require('../common/errors')
-const { success, failure } = require('../common/response')
+const { cloud, initCloud } = require('common/cloud')
+const { createError } = require('common/errors')
+const { success, failure } = require('common/response')
 
 initCloud()
 

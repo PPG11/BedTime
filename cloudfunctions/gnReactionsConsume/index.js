@@ -1,6 +1,6 @@
-const { initCloud, getDb } = require('../common/cloud')
-const { success, failure } = require('../common/response')
-const { COLLECTION: GN_COLLECTION } = require('../common/goodnight')
+const { initCloud, getDb } = require('common/cloud')
+const { success, failure } = require('common/response')
+const { COLLECTION: GN_COLLECTION } = require('common/goodnight')
 
 initCloud()
 

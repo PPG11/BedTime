@@ -2,6 +2,9 @@
   "name": "BedTime",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "cloudfunctions/*"
+  ],
   "description": "Doctor July's Bed Time",
   "templateInfo": {
     "name": "youshu",
@@ -21,7 +24,9 @@
     "dev:swan": "npm run build:swan -- --watch",
     "dev:alipay": "npm run build:alipay -- --watch",
     "dev:tt": "npm run build:tt -- --watch",
-    "dev:qq": "npm run build:qq -- --watch"
+    "dev:qq": "npm run build:qq -- --watch",
+    "upload:cloudfunctions": "node scripts/upload-cloudfunctions.js",
+    "upload:cloudfunctions:sh": "bash scripts/upload-cloudfunctions.sh"
   },
   "browserslist": [
     "defaults and fully supports es6-module",

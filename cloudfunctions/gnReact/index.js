@@ -1,7 +1,7 @@
-const { initCloud, getOpenId, getDb } = require('../common/cloud')
-const { ensureUser } = require('../common/users')
-const { createError } = require('../common/errors')
-const { success, failure } = require('../common/response')
+const { initCloud, getOpenId, getDb } = require('common/cloud')
+const { ensureUser } = require('common/users')
+const { createError } = require('common/errors')
+const { success, failure } = require('common/response')
 
 initCloud()
 

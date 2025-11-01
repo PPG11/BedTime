@@ -1,6 +1,6 @@
-const { initCloud, getDb, getOpenId } = require('../common/cloud')
-const { ensureUser } = require('../common/users')
-const { createError, normalizeError } = require('../common/errors')
+const { initCloud, getDb, getOpenId } = require('common/cloud')
+const { ensureUser } = require('common/users')
+const { createError, normalizeError } = require('common/errors')
 
 initCloud()
 

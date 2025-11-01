@@ -1,10 +1,10 @@
-const { initCloud, getOpenId, getDb } = require('../common/cloud')
-const { ensureUser, computeCheckinSummary } = require('../common/users')
-const { getTodayFromOffset } = require('../common/time')
-const { buildDocId, getCheckin, createCheckin } = require('../common/checkins')
-const { pickRandomMessage } = require('../common/goodnight')
-const { createError } = require('../common/errors')
-const { success, failure } = require('../common/response')
+const { initCloud, getOpenId, getDb } = require('common/cloud')
+const { ensureUser, computeCheckinSummary } = require('common/users')
+const { getTodayFromOffset } = require('common/time')
+const { buildDocId, getCheckin, createCheckin } = require('common/checkins')
+const { pickRandomMessage } = require('common/goodnight')
+const { createError } = require('common/errors')
+const { success, failure } = require('common/response')
 
 initCloud()
 

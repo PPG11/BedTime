@@ -1,0 +1,7 @@
+{
+  "name": "common",
+  "version": "0.1.0",
+  "description": "Shared utilities for BedTime cloud functions",
+  "main": "cloud.js",
+  "license": "UNLICENSED"
+}

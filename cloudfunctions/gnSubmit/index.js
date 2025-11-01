@@ -1,9 +1,9 @@
-const { initCloud, getOpenId, getDb } = require('../common/cloud')
-const { ensureUser, quantizeSlotKey } = require('../common/users')
-const { getTodayFromOffset } = require('../common/time')
-const { createError } = require('../common/errors')
-const { success, failure } = require('../common/response')
-const { COLLECTION: GN_COLLECTION } = require('../common/goodnight')
+const { initCloud, getOpenId, getDb } = require('common/cloud')
+const { ensureUser, quantizeSlotKey } = require('common/users')
+const { getTodayFromOffset } = require('common/time')
+const { createError } = require('common/errors')
+const { success, failure } = require('common/response')
+const { COLLECTION: GN_COLLECTION } = require('common/goodnight')
 
 initCloud()
 
