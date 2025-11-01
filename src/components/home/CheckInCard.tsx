@@ -23,24 +23,40 @@ export function CheckInCard({
   onCheckIn,
   disabled = false
 }: CheckInCardProps) {
+  const statusClasses = ['checkin-card__status']
+  if (hasCheckedInToday) {
+    statusClasses.push(isLateCheckIn ? 'checkin-card__status--late' : 'checkin-card__status--hit')
+  } else if (isLateNow) {
+    statusClasses.push('checkin-card__status--late')
+  }
+
+  const timestampClasses = ['checkin-card__timestamp']
+  if (hasCheckedInToday) {
+    timestampClasses.push(
+      isLateCheckIn ? 'checkin-card__timestamp--late' : 'checkin-card__timestamp--hit'
+    )
+  }
+
+  const statusText = hasCheckedInToday
+    ? isLateCheckIn
+      ? '⌛ 今日稍晚完成打卡，今晚早点休息'
+      : '✨ 今日按时完成打卡，继续保持'
+    : windowHint
+
+  const timestampText = lastCheckInTime
+    ? hasCheckedInToday
+      ? isLateCheckIn
+        ? `已在 ${lastCheckInTime} 完成打卡（晚于目标时间）`
+        : `已在 ${lastCheckInTime} 完成打卡（吻合目标时间）`
+      : `已在 ${lastCheckInTime} 完成打卡`
+    : `目标入睡时间 ${targetTimeText} 之前完成打卡`
+
   return (
     <View className='checkin-card'>
       <Text className='checkin-card__title'>今日早睡打卡</Text>
       <Text className='checkin-card__note'>💤 柔柔提醒：睡前给自己温柔拥抱</Text>
-      <Text className={`checkin-card__status ${isLateNow ? 'checkin-card__status--late' : ''}`}>
-        {windowHint}
-      </Text>
-      {lastCheckInTime ? (
-        <Text
-          className={`checkin-card__timestamp ${
-            isLateCheckIn ? 'checkin-card__timestamp--late' : ''
-          }`}
-        >
-          已在 {lastCheckInTime} 完成打卡{isLateCheckIn ? '（晚于目标时间）' : ''}
-        </Text>
-      ) : (
-        <Text className='checkin-card__timestamp'>目标入睡时间 {targetTimeText} 之前完成打卡</Text>
-      )}
+      <Text className={statusClasses.join(' ')}>{statusText}</Text>
+      <Text className={timestampClasses.join(' ')}>{timestampText}</Text>
       <Button
         className='checkin-card__button'
         type='primary'

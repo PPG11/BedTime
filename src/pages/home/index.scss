@@ -189,6 +189,10 @@
   z-index: 1;
 }
 
+.checkin-card__status--hit {
+  color: #1fa97a;
+}
+
 .checkin-card__status--late {
   color: #ff8a9b;
 }
@@ -198,6 +202,10 @@
   color: #8f8dbc;
   white-space: nowrap;
   z-index: 1;
+}
+
+.checkin-card__timestamp--hit {
+  color: #1fa97a;
 }
 
 .checkin-card__timestamp--late {

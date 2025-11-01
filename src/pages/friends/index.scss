@@ -266,6 +266,16 @@
     background: rgba(111, 99, 255, 0.16);
     color: #6f63ff;
 
+    &--hit {
+      background: rgba(95, 217, 188, 0.22);
+      color: #1fa97a;
+    }
+
+    &--late {
+      background: rgba(255, 212, 142, 0.26);
+      color: #d48a1f;
+    }
+
     &--miss {
       background: rgba(255, 193, 166, 0.24);
       color: #d8733f;

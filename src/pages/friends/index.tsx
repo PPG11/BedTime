@@ -21,8 +21,8 @@ import {
 import './index.scss'
 
 const statusLabels: Record<CheckinStatus, string> = {
-  hit: '今日已按时休息',
-  late: '今日稍晚休息',
+  hit: '✅ 今日按时完成打卡',
+  late: '⌛ 今日稍晚完成打卡',
   miss: '今日尚未达标',
   pending: '等待打卡'
 }
