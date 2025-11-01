@@ -15,6 +15,38 @@ export type GoodnightMessageDocument = GoodnightMessage
 
 type GoodnightMessageRecord = Omit<GoodnightMessage, '_id'>
 
+type CacheEntry<T> = {
+  timestamp: number
+  value: T
+}
+
+const MESSAGE_CACHE_TTL = 60 * 1000
+const RANDOM_CACHE_TTL = 60 * 1000
+const goodnightMessageCache = new Map<string, CacheEntry<GoodnightMessage | null>>()
+const randomMessageCache = new Map<string, CacheEntry<GoodnightMessage[]>>()
+
+function isCacheFresh<T>(entry: CacheEntry<T> | null | undefined, ttl: number): entry is CacheEntry<T> {
+  if (!entry) {
+    return false
+  }
+  return Date.now() - entry.timestamp < ttl
+}
+
+function setCacheEntry<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  store.set(key, {
+    timestamp: Date.now(),
+    value
+  })
+}
+
+function invalidateRandomCache(key?: string): void {
+  if (!key) {
+    randomMessageCache.clear()
+    return
+  }
+  randomMessageCache.delete(key)
+}
+
 function getGoodnightMessagesCollection(
   db: CloudDatabase
 ): DbCollection<GoodnightMessageDocument> {
@@ -89,11 +121,18 @@ export async function fetchGoodnightMessageForDate(
   uid: string,
   date: string
 ): Promise<GoodnightMessage | null> {
-  const db = await ensureCloud()
   const docId = getGoodnightMessageId(uid, date)
+  const cached = goodnightMessageCache.get(docId)
+  if (isCacheFresh(cached, MESSAGE_CACHE_TTL)) {
+    return cached.value
+  }
+
+  const db = await ensureCloud()
   const doc = getGoodnightMessagesCollection(db).doc(docId)
   const snapshot = await getSnapshotOrNull(doc)
-  return snapshot ? mapSnapshot(docId, snapshot) : null
+  const message = snapshot ? mapSnapshot(docId, snapshot) : null
+  setCacheEntry(goodnightMessageCache, docId, message)
+  return message
 }
 
 export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMessage | null> {
@@ -101,10 +140,17 @@ export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMe
     return null
   }
 
+  const cached = goodnightMessageCache.get(id)
+  if (isCacheFresh(cached, MESSAGE_CACHE_TTL)) {
+    return cached.value
+  }
+
   const db = await ensureCloud()
   const doc = getGoodnightMessagesCollection(db).doc(id)
   const snapshot = await getSnapshotOrNull(doc)
-  return snapshot ? mapSnapshot(id, snapshot) : null
+  const message = snapshot ? mapSnapshot(id, snapshot) : null
+  setCacheEntry(goodnightMessageCache, id, message)
+  return message
 }
 
 export async function submitGoodnightMessage(params: {
@@ -143,12 +189,26 @@ export async function submitGoodnightMessage(params: {
     }
   })
 
-  return mapGoodnightMessage(docId, data)
+  const message = mapGoodnightMessage(docId, data)
+  setCacheEntry(goodnightMessageCache, docId, message)
+  invalidateRandomCache()
+  return message
 }
 
 export async function fetchRandomGoodnightMessage(
   excludeUid?: string
 ): Promise<GoodnightMessage | null> {
+  const cacheKey = excludeUid ?? '__all__'
+  const cached = randomMessageCache.get(cacheKey)
+  if (isCacheFresh(cached, RANDOM_CACHE_TTL)) {
+    const pool = cached.value
+    if (!pool.length) {
+      return null
+    }
+    const randomIndex = Math.floor(Math.random() * pool.length)
+    return pool[randomIndex]
+  }
+
   const db = await ensureCloud()
   const collection = getGoodnightMessagesCollection(db)
   const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
@@ -166,9 +226,12 @@ export async function fetchRandomGoodnightMessage(
     .filter((item) => !excludeUid || item.uid !== excludeUid)
 
   if (!candidates.length) {
+    setCacheEntry(randomMessageCache, cacheKey, [])
     return null
   }
 
+  setCacheEntry(randomMessageCache, cacheKey, candidates)
+  candidates.forEach((item) => setCacheEntry(goodnightMessageCache, item._id, item))
   const randomIndex = Math.floor(Math.random() * candidates.length)
   return candidates[randomIndex]
 }
@@ -184,6 +247,7 @@ export async function voteGoodnightMessage(
   const current = mapSnapshot(id, snapshot)
 
   if (!current) {
+    setCacheEntry(goodnightMessageCache, id, null)
     return null
   }
 
@@ -197,9 +261,12 @@ export async function voteGoodnightMessage(
     }
   })
 
-  return {
+  const updated: GoodnightMessage = {
     ...current,
     likes: nextLikes,
     dislikes: nextDislikes
   }
+  setCacheEntry(goodnightMessageCache, id, updated)
+  invalidateRandomCache()
+  return updated
 }

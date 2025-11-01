@@ -8,6 +8,22 @@ const { execSync, spawnSync } = require('child_process');
 const projectRoot = path.resolve(__dirname, '..');
 const cloudfunctionsDir = __dirname;
 const skipDirs = new Set(['common', 'node_modules']);
+const OUTPUT_PREFIX = '   - ';
+let cachedEnvId;
+let cachedCliCommand;
+
+function isCacheValid(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function logSection(title, items, { formatter = (value) => value } = {}) {
+  if (!items.length) {
+    return;
+  }
+  console.info(title);
+  items.forEach((item) => console.info(`${OUTPUT_PREFIX}${formatter(item)}`));
+  console.info('');
+}
 
 function parseArgs(argv) {
   const options = new Set();
@@ -25,53 +41,62 @@ function parseArgs(argv) {
 }
 
 function resolveCloudEnvId() {
-  let envId = process.env.CLOUD_ENV_ID;
-  if (envId) {
-    return envId;
+  if (isCacheValid(cachedEnvId)) {
+    return cachedEnvId;
   }
 
-  const cloudConfigPath = path.join(projectRoot, 'src', 'config', 'cloud.ts');
-  if (fs.existsSync(cloudConfigPath)) {
-    try {
-      const content = fs.readFileSync(cloudConfigPath, 'utf8');
-      const match = content.match(/CLOUD_ENV_ID\s*=\s*['"]([^'"]+)['"]/);
-      if (match && match[1]) {
-        envId = match[1];
+  let envId = process.env.CLOUD_ENV_ID;
+  if (!envId) {
+    const cloudConfigPath = path.join(projectRoot, 'src', 'config', 'cloud.ts');
+    if (fs.existsSync(cloudConfigPath)) {
+      try {
+        const content = fs.readFileSync(cloudConfigPath, 'utf8');
+        const match = content.match(/CLOUD_ENV_ID\s*=\s*['"]([^'"]+)['"]/);
+        if (match && match[1]) {
+          envId = match[1];
+        }
+      } catch (error) {
+        // fall through
       }
-    } catch (error) {
-      // fall through
     }
   }
 
-  return envId || null;
+  cachedEnvId = envId || null;
+  return cachedEnvId;
 }
 
 function resolveCliCommand() {
-  const customCli = process.env.WECHAT_CLI_PATH;
-  if (customCli && fs.existsSync(customCli)) {
-    return customCli;
+  if (isCacheValid(cachedCliCommand)) {
+    return cachedCliCommand;
   }
 
-  const platform = os.platform();
-  if (platform === 'darwin') {
+  const customCli = process.env.WECHAT_CLI_PATH;
+  if (customCli && fs.existsSync(customCli)) {
+    cachedCliCommand = customCli;
+    return cachedCliCommand;
+  }
+
+  if (os.platform() === 'darwin') {
     const candidates = [
       '/Applications/wechatwebdevtools.app/Contents/MacOS/cli',
       '/Applications/微信web开发者工具.app/Contents/MacOS/cli'
     ];
 
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
+    const matched = candidates.find((candidate) => fs.existsSync(candidate));
+    if (matched) {
+      cachedCliCommand = matched;
+      return cachedCliCommand;
     }
   }
 
   try {
     execSync('which cli', { stdio: 'ignore' });
-    return 'cli';
+    cachedCliCommand = 'cli';
   } catch (error) {
-    return null;
+    cachedCliCommand = null;
   }
+
+  return cachedCliCommand;
 }
 
 function discoverFunctions() {
@@ -91,53 +116,31 @@ function discoverFunctions() {
     });
 }
 
-function uploadBatch(functionNames, { cliCommand, envId, remoteNpm }) {
-  const args = [
+function createDeployArgs({ envId, remoteNpm, project, names, cliCommand }) {
+  const baseArgs = [
     'cloud',
     'functions',
     'deploy',
     '--env',
     envId,
     '--project',
-    projectRoot,
-    '--names',
-    ...functionNames
+    project
   ];
 
+  if (names.length === 1) {
+    baseArgs.push('--name', names[0]);
+  } else {
+    baseArgs.push('--names', ...names);
+  }
+
   if (remoteNpm) {
-    args.push('--remote-npm-install');
+    baseArgs.push('--remote-npm-install');
   }
 
-  const result = spawnSync(cliCommand, args, {
-    cwd: projectRoot,
-    stdio: 'inherit',
-    env: process.env
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  return typeof result.status === 'number' ? result.status === 0 : false;
+  return { cliCommand, args: baseArgs };
 }
 
-function uploadSingle(functionName, { cliCommand, envId, remoteNpm }) {
-  const args = [
-    'cloud',
-    'functions',
-    'deploy',
-    '--env',
-    envId,
-    '--project',
-    projectRoot,
-    '--name',
-    functionName
-  ];
-
-  if (remoteNpm) {
-    args.push('--remote-npm-install');
-  }
-
+function runDeploy({ cliCommand, args }) {
   const result = spawnSync(cliCommand, args, {
     cwd: projectRoot,
     stdio: 'inherit',
@@ -180,26 +183,19 @@ function main() {
   const validTargets = targets.filter((item) => item.hasIndex || item.hasPackageJson);
   const invalidTargets = targets.filter((item) => !validTargets.includes(item));
 
-  if (unknownNames.length > 0) {
-    console.log('⚠️  Unknown cloud function directories (skipped):');
-    unknownNames.forEach((name) => console.log(`   - ${name}`));
-    console.log('');
-  }
-
-  if (invalidTargets.length > 0) {
-    console.log('⏭️  Skipping invalid cloud function directories (need index.js or package.json):');
-    invalidTargets.forEach((item) => console.log(`   - ${item.name}`));
-    console.log('');
-  }
+  logSection('⚠️  Unknown cloud function directories (skipped):', unknownNames);
+  logSection('⏭️  Skipping invalid cloud function directories (need index.js or package.json):', invalidTargets, {
+    formatter: (item) => item.name
+  });
 
   if (validTargets.length === 0) {
-    console.log('No valid cloud functions to upload.');
+    console.info('No valid cloud functions to upload.');
     process.exit(0);
   }
 
-  console.log('📦 Ready to upload the following cloud functions:');
-  validTargets.forEach((item) => console.log(`   - ${item.name}`));
-  console.log('');
+  logSection('📦 Ready to upload the following cloud functions:', validTargets, {
+    formatter: (item) => item.name
+  });
 
   const envId = resolveCloudEnvId();
   if (!envId) {
@@ -230,12 +226,11 @@ function main() {
     if (remoteNpm) {
       previewArgs.push('--remote-npm-install');
     }
-    console.log('Dry run enabled; command preview:');
-    console.log(`  ${previewArgs.join(' ')}`);
+    console.info('Dry run enabled; command preview:');
+    console.info(`  ${previewArgs.join(' ')}`);
     return;
   }
 
-  const optionsForUpload = { cliCommand, envId, remoteNpm };
   let successCount = 0;
   let failCount = 0;
   let batchAttempted = false;
@@ -243,26 +238,37 @@ function main() {
   if (!sequentialOnly && validTargets.length > 1) {
     try {
       batchAttempted = true;
-      const ok = uploadBatch(
-        validTargets.map((item) => item.name),
-        optionsForUpload
-      );
+      const batchOptions = createDeployArgs({
+        envId,
+        remoteNpm,
+        project: projectRoot,
+        names: validTargets.map((item) => item.name),
+        cliCommand
+      });
+      const ok = runDeploy(batchOptions);
       if (ok) {
         successCount = validTargets.length;
       } else {
-        console.log('\n⚠️  Batch upload failed; retrying sequentially...\n');
+        console.info('\n⚠️  Batch upload failed; retrying sequentially...\n');
       }
     } catch (error) {
-      console.log('\n⚠️  Batch upload error; retrying sequentially...');
+      console.info('\n⚠️  Batch upload error; retrying sequentially...');
       console.error(`   ${error.message}`);
-      console.log('');
+      console.info('');
     }
   }
 
   if (successCount !== validTargets.length) {
     validTargets.forEach((item) => {
       try {
-        const ok = uploadSingle(item.name, optionsForUpload);
+        const singleOptions = createDeployArgs({
+          envId,
+          remoteNpm,
+          project: projectRoot,
+          names: [item.name],
+          cliCommand
+        });
+        const ok = runDeploy(singleOptions);
         if (ok) {
           successCount += 1;
         } else {
@@ -275,16 +281,16 @@ function main() {
     });
   }
 
-  console.log('\n' + '='.repeat(40));
-  console.log(`✅ Success: ${successCount}`);
-  console.log(`❌ Failed: ${failCount}`);
-  console.log(`📦 Total: ${validTargets.length}`);
+  console.info('\n' + '='.repeat(40));
+  console.info(`✅ Success: ${successCount}`);
+  console.info(`❌ Failed: ${failCount}`);
+  console.info(`📦 Total: ${validTargets.length}`);
   if (batchAttempted) {
-    console.log('🚚 Mode: batch first, sequential fallback');
+    console.info('🚚 Mode: batch first, sequential fallback');
   } else {
-    console.log('🚚 Mode: sequential');
+    console.info('🚚 Mode: sequential');
   }
-  console.log('='.repeat(40));
+  console.info('='.repeat(40));
 
   if (failCount > 0) {
     process.exitCode = 1;

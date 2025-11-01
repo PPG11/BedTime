@@ -62,18 +62,18 @@ function main() {
   const dependents = collectDependents();
 
   if (dependents.length === 0) {
-    console.log('No cloud functions depend on the common workspace.');
+    console.info('No cloud functions depend on the common workspace.');
     return;
   }
 
-  console.log('Updating cloud functions that depend on common:');
+  console.info('Updating cloud functions that depend on common:');
   dependents.forEach(({ dirName, packageName }) => {
     const display = dirName === packageName ? dirName : `${dirName} (${packageName})`;
-    console.log(`  • ${display}`);
+    console.info(`  • ${display}`);
   });
 
   if (dryRun) {
-    console.log('\nDry run enabled; skipping materialisation.');
+    console.info('\nDry run enabled; skipping materialisation.');
     return;
   }
 
@@ -83,7 +83,7 @@ function main() {
       focusArgs.push('--production');
     }
 
-    console.log(`\nRunning: yarn ${focusArgs.join(' ')}`);
+    console.info(`\nRunning: yarn ${focusArgs.join(' ')}`);
 
     const result = spawnSync('yarn', focusArgs, {
       cwd: workspaceRoot,
@@ -152,7 +152,7 @@ function main() {
   for (const { dirName, packageJson } of dependents) {
     const visited = new Set();
     const targetDir = path.join(functionsRoot, dirName);
-    console.log(`\nMaterialising dependencies for ${dirName}...`);
+    console.info(`\nMaterialising dependencies for ${dirName}...`);
 
     const nodeModulesDir = path.join(targetDir, 'node_modules');
     if (fs.existsSync(nodeModulesDir)) {
@@ -187,7 +187,7 @@ function main() {
       const destPath = path.join(nodeModulesDir, depName);
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
       fs.cpSync(sourcePath, destPath, { recursive: true });
-      console.log(`  • ${depName}`);
+      console.info(`  • ${depName}`);
 
       const depPkgJsonPath = path.join(sourcePath, 'package.json');
       const depPkgJson = fs.existsSync(depPkgJsonPath)

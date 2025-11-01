@@ -95,6 +95,81 @@ export type TodayCheckinStatus = {
 
 const VALID_STATUS_SET = new Set<CheckinStatus>(['hit', 'late', 'miss', 'pending'])
 
+type CacheEntry<T> = {
+  timestamp: number
+  value: T
+}
+
+const CHECKIN_LIST_CACHE_TTL = 30 * 1000
+const CHECKIN_INFO_CACHE_TTL = 30 * 1000
+const TODAY_STATUS_CACHE_TTL = 15 * 1000
+
+const checkinListCache = new Map<string, CacheEntry<CheckinDocument[]>>()
+const checkinListInflight = new Map<string, Promise<CheckinDocument[]>>()
+const checkinInfoCache = new Map<string, CacheEntry<CheckinDocument | null>>()
+const checkinInfoInflight = new Map<string, Promise<CheckinDocument | null>>()
+let todayStatusCache: CacheEntry<TodayCheckinStatus | null> | null = null
+let todayStatusInflight: Promise<TodayCheckinStatus | null> | null = null
+
+function isCacheFresh<T>(entry: CacheEntry<T> | null | undefined, ttl: number): entry is CacheEntry<T> {
+  if (!entry) {
+    return false
+  }
+  return Date.now() - entry.timestamp < ttl
+}
+
+function setCacheEntry<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  store.set(key, {
+    timestamp: Date.now(),
+    value
+  })
+}
+
+function makeListCacheKey(uid: string, limit: number): string {
+  return `${uid}:${limit}`
+}
+
+function makeInfoCacheKey(uid: string, normalizedDate: string): string {
+  return `${uid}:${normalizedDate}`
+}
+
+function invalidateCheckinInfos(uid: string, normalizedDate?: string): void {
+  for (const key of checkinInfoCache.keys()) {
+    if (key.startsWith(`${uid}:`) && (!normalizedDate || key === `${uid}:${normalizedDate}`)) {
+      checkinInfoCache.delete(key)
+    }
+  }
+  for (const key of checkinInfoInflight.keys()) {
+    if (key.startsWith(`${uid}:`) && (!normalizedDate || key === `${uid}:${normalizedDate}`)) {
+      checkinInfoInflight.delete(key)
+    }
+  }
+}
+
+function invalidateCheckinLists(uid: string): void {
+  for (const key of checkinListCache.keys()) {
+    if (key.startsWith(`${uid}:`)) {
+      checkinListCache.delete(key)
+    }
+  }
+  for (const key of checkinListInflight.keys()) {
+    if (key.startsWith(`${uid}:`)) {
+      checkinListInflight.delete(key)
+    }
+  }
+}
+
+function invalidateTodayStatusCache(): void {
+  todayStatusCache = null
+  todayStatusInflight = null
+}
+
+function invalidateCheckinCaches(uid: string, normalizedDate?: string): void {
+  invalidateCheckinLists(uid)
+  invalidateCheckinInfos(uid, normalizedDate)
+  invalidateTodayStatusCache()
+}
+
 function getCheckinsCollection(db: CloudDatabase): DbCollection<CheckinsAggregateRecord> {
   return db.collection<CheckinsAggregateRecord>(COLLECTIONS.checkins)
 }
@@ -596,13 +671,10 @@ async function submitCheckinViaCloudFunction(params: {
     if (requestGnMsgId) {
       payload.gnMsgId = requestGnMsgId
     }
-
-    console.log('callCloudFunction', payload)
     const response = await callCloudFunction<CheckinSubmitFunctionResponse>({
       name: 'checkinSubmit',
       data: payload
     })
-    console.log('response', response)
 
     if (!response) {
       return null
@@ -707,110 +779,165 @@ async function fetchCheckinViaCloudFunction(
   uid: string,
   date: string
 ): Promise<CheckinDocument | null> {
-  try {
-    const normalizedDate = normalizeDateKey(date) ?? date
-    const response = await callCloudFunction<CheckinRangeFunctionResponse>({
-      name: 'checkinRange',
-      data: {
-        uid,
-        from: normalizedDate,
-        to: normalizedDate,
-        limit: 1
-      }
-    })
+  const normalizedDate = normalizeDateKey(date) ?? date
+  const cacheKey = makeInfoCacheKey(uid, normalizedDate)
+  const cached = checkinInfoCache.get(cacheKey)
+  if (isCacheFresh(cached, CHECKIN_INFO_CACHE_TTL)) {
+    return cached.value
+  }
 
-    if (!response) {
-      return null
-    }
+  const inflight = checkinInfoInflight.get(cacheKey)
+  if (inflight) {
+    return inflight
+  }
 
-    const code = typeof response.code === 'string' ? response.code : 'OK'
-    if (code !== 'OK') {
-      if (code === 'NOT_FOUND') {
+  const request = (async () => {
+    try {
+      const response = await callCloudFunction<CheckinRangeFunctionResponse>({
+        name: 'checkinRange',
+        data: {
+          uid,
+          from: normalizedDate,
+          to: normalizedDate,
+          limit: 1
+        }
+      })
+
+      if (!response) {
+        setCacheEntry(checkinInfoCache, cacheKey, null)
         return null
       }
 
-      const message =
-        typeof response.message === 'string' && response.message.length
-          ? response.message
-          : '查询打卡状态失败'
-      throw new Error(message)
-    }
+      const code = typeof response.code === 'string' ? response.code : 'OK'
+      if (code !== 'OK') {
+        if (code === 'NOT_FOUND') {
+          setCacheEntry(checkinInfoCache, cacheKey, null)
+          return null
+        }
 
-    const document = mapCloudCheckinRecord(uid, response.list?.[0], {
-      date: normalizedDate
-    })
+        const message =
+          typeof response.message === 'string' && response.message.length
+            ? response.message
+            : '查询打卡状态失败'
+        throw new Error(message)
+      }
 
-    return document
-  } catch (error) {
-    if (isCloudFunctionMissingError(error)) {
-      return null
+      const document = mapCloudCheckinRecord(uid, response.list?.[0], {
+        date: normalizedDate
+      })
+      setCacheEntry(checkinInfoCache, cacheKey, document ?? null)
+      return document ?? null
+    } catch (error) {
+      if (isCloudFunctionMissingError(error)) {
+        setCacheEntry(checkinInfoCache, cacheKey, null)
+        return null
+      }
+      checkinInfoCache.delete(cacheKey)
+      throw error
+    } finally {
+      checkinInfoInflight.delete(cacheKey)
     }
-    throw error
-  }
+  })()
+
+  checkinInfoInflight.set(cacheKey, request)
+  return request
 }
 
 export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | null> {
-  try {
-    const response = await callCloudFunction<CheckinStatusFunctionResponse>({
-      name: 'checkinStatus'
-    })
+  if (isCacheFresh(todayStatusCache, TODAY_STATUS_CACHE_TTL)) {
+    return todayStatusCache.value
+  }
 
-    if (!response) {
-      return null
-    }
+  if (todayStatusInflight) {
+    return todayStatusInflight
+  }
 
-    const code = typeof response.code === 'string' ? response.code : 'OK'
-    if (code !== 'OK') {
-      if (code === 'NOT_FOUND') {
-        return {
-          checkedIn: false,
-          date: '',
-          status: null,
-          goodnightMessageId: null,
-          timestamp: null
+  todayStatusInflight = (async () => {
+    try {
+      const response = await callCloudFunction<CheckinStatusFunctionResponse>({
+        name: 'checkinStatus'
+      })
+
+      if (!response) {
+        todayStatusCache = {
+          timestamp: Date.now(),
+          value: null
+        }
+        return null
+      }
+
+      const code = typeof response.code === 'string' ? response.code : 'OK'
+      if (code !== 'OK') {
+        if (code === 'NOT_FOUND') {
+          const value: TodayCheckinStatus = {
+            checkedIn: false,
+            date: '',
+            status: null,
+            goodnightMessageId: null,
+            timestamp: null
+          }
+          todayStatusCache = {
+            timestamp: Date.now(),
+            value
+          }
+          return value
+        }
+
+        const message =
+          typeof response.message === 'string' && response.message.length
+            ? response.message
+            : '查询今日打卡状态失败'
+        throw new Error(message)
+      }
+
+      const checkedIn = Boolean(response.checkedIn)
+      const rawDate =
+        typeof response.date === 'string' && response.date.trim().length
+          ? response.date.trim()
+          : ''
+      const date = (normalizeDateKey(rawDate) ?? rawDate) || ''
+      const status = checkedIn ? normalizeStatus(response.status) : null
+      const goodnightMessageId =
+        typeof response.gnMsgId === 'string' && response.gnMsgId.trim().length
+          ? response.gnMsgId.trim()
+          : null
+      let timestamp: Date | null = null
+      if (checkedIn) {
+        const timestampSource =
+          response.timestamp ?? response.createdAt ?? response.updatedAt ?? null
+        if (timestampSource) {
+          timestamp = normalizeTimestamp(timestampSource)
         }
       }
 
-      const message =
-        typeof response.message === 'string' && response.message.length
-          ? response.message
-          : '查询今日打卡状态失败'
-      throw new Error(message)
-    }
-
-    const checkedIn = Boolean(response.checkedIn)
-    const rawDate =
-      typeof response.date === 'string' && response.date.trim().length
-        ? response.date.trim()
-        : ''
-    const date = (normalizeDateKey(rawDate) ?? rawDate) || ''
-    const status = checkedIn ? normalizeStatus(response.status) : null
-    const goodnightMessageId =
-      typeof response.gnMsgId === 'string' && response.gnMsgId.trim().length
-        ? response.gnMsgId.trim()
-        : null
-    let timestamp: Date | null = null
-    if (checkedIn) {
-      const timestampSource =
-        response.timestamp ?? response.createdAt ?? response.updatedAt ?? null
-      if (timestampSource) {
-        timestamp = normalizeTimestamp(timestampSource)
+      const value: TodayCheckinStatus = {
+        checkedIn,
+        date,
+        status,
+        goodnightMessageId,
+        timestamp
       }
+      todayStatusCache = {
+        timestamp: Date.now(),
+        value
+      }
+      return value
+    } catch (error) {
+      if (isCloudFunctionMissingError(error)) {
+        todayStatusCache = {
+          timestamp: Date.now(),
+          value: null
+        }
+        return null
+      }
+      todayStatusCache = null
+      throw error
+    } finally {
+      todayStatusInflight = null
     }
+  })()
 
-    return {
-      checkedIn,
-      date,
-      status,
-      goodnightMessageId,
-      timestamp
-    }
-  } catch (error) {
-    if (isCloudFunctionMissingError(error)) {
-      return null
-    }
-    throw error
-  }
+  return todayStatusInflight
 }
 
 async function appendCheckinEntry(params: {
@@ -879,8 +1006,6 @@ export async function submitCheckinRecord(
       : typeof params.message === 'string' && params.message.length
       ? params.message
       : undefined
-
-  console.log('submitCheckinViaCloudFunction', params)
   const functionResult = await submitCheckinViaCloudFunction({
     uid: params.uid,
     date: params.date,
@@ -888,18 +1013,20 @@ export async function submitCheckinRecord(
     tzOffset: params.tzOffset,
     goodnightMessageId: messageId
   })
-  console.log('functionResult', functionResult)
   if (functionResult) {
+    invalidateCheckinCaches(params.uid, normalizeDateKey(params.date) ?? params.date)
     return functionResult
   }
 
-  return appendCheckinEntry({
+  const appended = await appendCheckinEntry({
     uid: params.uid,
     date: params.date,
     status: params.status,
     tzOffset: params.tzOffset,
     goodnightMessageId: messageId
   })
+  invalidateCheckinCaches(params.uid, normalizeDateKey(params.date) ?? params.date)
+  return appended
 }
 
 export async function upsertCheckin(
@@ -961,73 +1088,108 @@ export async function updateCheckinGoodnightMessage(params: {
     }
   })
 
-  return mapEntryToDocument(params.uid, {
+  const document = mapEntryToDocument(params.uid, {
     ...updatedEntry,
     ts: updatedEntry.ts ?? new Date()
   })
+  invalidateCheckinCaches(params.uid, normalizedDate)
+  return document
 }
 
 export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
   const normalizedLimit = Math.max(1, Math.min(1000, limit))
-  const documents: CheckinDocument[] = []
-
-  try {
-    let remaining = normalizedLimit
-    let cursor: string | null = null
-    let usedCloud = false
-
-    while (remaining > 0) {
-      const batchLimit = Math.min(50, remaining)
-      const page = await fetchCheckinPageViaCloud(uid, {
-        limit: batchLimit,
-        cursor: cursor ?? undefined
-      })
-
-      if (page === null) {
-        break
-      }
-
-      usedCloud = true
-      documents.push(...page.documents)
-
-      if (!page.nextCursor || page.documents.length < batchLimit) {
-        break
-      }
-
-      cursor = page.nextCursor
-      remaining -= page.documents.length
-    }
-
-    if (usedCloud) {
-      return documents
-    }
-  } catch (error) {
-    if (!isCloudFunctionMissingError(error)) {
-      throw error
-    }
+  const cacheKey = makeListCacheKey(uid, normalizedLimit)
+  const cached = checkinListCache.get(cacheKey)
+  if (isCacheFresh(cached, CHECKIN_LIST_CACHE_TTL)) {
+    return cached.value
   }
 
-  const db = await ensureCloud()
-  const openid = await getCurrentOpenId()
-  const { record } = await ensureCheckinsDocument(db, uid, openid)
-  const infoList = normalizeInfoList(record)
-  const sorted = infoList
-    .slice()
-    .sort((a, b) => {
-      const dateA = normalizeDateKey(a.date ?? '') ?? ''
-      const dateB = normalizeDateKey(b.date ?? '') ?? ''
-      return dateB.localeCompare(dateA)
-    })
-    .slice(0, normalizedLimit)
+  const inflight = checkinListInflight.get(cacheKey)
+  if (inflight) {
+    return inflight
+  }
 
-  return sorted.map((entry) => mapEntryToDocument(uid, entry))
+  const request = (async () => {
+    try {
+      const documents: CheckinDocument[] = []
+      let usedCloud = false
+
+      try {
+        let remaining = normalizedLimit
+        let cursor: string | null = null
+
+        while (remaining > 0) {
+          const batchLimit = Math.min(50, remaining)
+          const page = await fetchCheckinPageViaCloud(uid, {
+            limit: batchLimit,
+            cursor: cursor ?? undefined
+          })
+
+          if (page === null) {
+            break
+          }
+
+          usedCloud = true
+          documents.push(...page.documents)
+
+          if (!page.nextCursor || page.documents.length < batchLimit) {
+            break
+          }
+
+          cursor = page.nextCursor
+          remaining -= page.documents.length
+        }
+
+        if (usedCloud) {
+          setCacheEntry(checkinListCache, cacheKey, documents)
+          return documents
+        }
+      } catch (error) {
+        if (!isCloudFunctionMissingError(error)) {
+          throw error
+        }
+      }
+
+      const db = await ensureCloud()
+      const openid = await getCurrentOpenId()
+      const { record } = await ensureCheckinsDocument(db, uid, openid)
+      const infoList = normalizeInfoList(record)
+      const sorted = infoList
+        .slice()
+        .sort((a, b) => {
+          const dateA = normalizeDateKey(a.date ?? '') ?? ''
+          const dateB = normalizeDateKey(b.date ?? '') ?? ''
+          return dateB.localeCompare(dateA)
+        })
+        .slice(0, normalizedLimit)
+
+      const mapped = sorted.map((entry) => mapEntryToDocument(uid, entry))
+      setCacheEntry(checkinListCache, cacheKey, mapped)
+      return mapped
+    } catch (error) {
+      checkinListCache.delete(cacheKey)
+      throw error
+    } finally {
+      checkinListInflight.delete(cacheKey)
+    }
+  })()
+
+  checkinListInflight.set(cacheKey, request)
+  return request
 }
 
 export async function fetchCheckinInfoForDate(
   uid: string,
   date: string
 ): Promise<CheckinDocument | null> {
-  const functionResult = await fetchCheckinViaCloudFunction(uid, date)
+  const normalizedDate = normalizeDateKey(date) ?? date
+  const cacheKey = makeInfoCacheKey(uid, normalizedDate)
+  const cached = checkinInfoCache.get(cacheKey)
+  if (isCacheFresh(cached, CHECKIN_INFO_CACHE_TTL)) {
+    return cached.value
+  }
+
+  const functionResult = await fetchCheckinViaCloudFunction(uid, normalizedDate)
   if (functionResult) {
     return functionResult
   }
@@ -1035,13 +1197,15 @@ export async function fetchCheckinInfoForDate(
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
   const { record } = await ensureCheckinsDocument(db, uid, openid)
-  const normalizedDate = normalizeDateKey(date) ?? date
   const infoList = normalizeInfoList(record)
   const entry = infoList.find((item) => normalizeDateKey(item.date ?? '') === normalizedDate)
   if (!entry) {
+    setCacheEntry(checkinInfoCache, cacheKey, null)
     return null
   }
-  return mapEntryToDocument(uid, entry, normalizedDate)
+  const document = mapEntryToDocument(uid, entry, normalizedDate)
+  setCacheEntry(checkinInfoCache, cacheKey, document)
+  return document
 }
 
 export async function fetchCheckinsInRange(

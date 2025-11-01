@@ -227,11 +227,8 @@ export default function Index() {
       } catch (error) {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
-      console.log('todayKey', todayKey)
       const checkins = await fetchCheckins(user.uid, 365)
-      console.log('checkins', checkins)
       const record = mapCheckinsToRecord(checkins)
-      console.log('record', record)
       if (
         statusResult?.checkedIn &&
         statusResult.timestamp instanceof Date &&
@@ -327,8 +324,6 @@ export default function Index() {
           goodnightMessageId: rewardCandidate?._id,
           message: rewardCandidate?._id
         })
-        console.log('created', created)
-        console.log('submitStatus', submitStatus)
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
