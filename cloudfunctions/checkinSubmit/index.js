@@ -8,7 +8,7 @@ const { success, failure } = require('common/response')
 
 initCloud()
 
-const VALID_STATUS = new Set(['hit', 'pending'])
+const VALID_STATUS = new Set(['hit', 'late'])
 
 exports.main = async (event, context) => {
   try {

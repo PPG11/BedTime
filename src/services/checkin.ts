@@ -416,32 +416,56 @@ async function ensureCheckinsDocument(
         }
       }
 
-      const serverDateForLegacy = db.serverDate ? db.serverDate() : new Date()
-      const payload: Partial<CheckinsAggregateRecord> = {
-        uid,
-        info: legacyInfo,
-        createdAt: legacyRecord.createdAt ?? serverDateForLegacy,
-        updatedAt: serverDateForLegacy
-      }
-      if (legacyOwner) {
-        payload.ownerOpenid = legacyOwner
+      const legacyDocumentId =
+        typeof legacyDoc._id === 'string' && legacyDoc._id.length ? legacyDoc._id : documentId
+      if (legacyDocumentId !== documentId) {
+        documentId = legacyDocumentId
+        docRef = collection.doc(documentId)
       }
 
-      await docRef.set({
-        data: payload
-      })
+      const serverDateForLegacy = db.serverDate ? db.serverDate() : new Date()
+      const resolvedOwner =
+        typeof legacyRecord.ownerOpenid === 'string' && legacyRecord.ownerOpenid.length
+          ? legacyRecord.ownerOpenid
+          : legacyOwner
+      const normalizedCreatedAt =
+        legacyRecord.createdAt instanceof Date ? legacyRecord.createdAt : serverDateForLegacy
+      const normalizedUpdatedAt =
+        legacyRecord.updatedAt instanceof Date ? legacyRecord.updatedAt : serverDateForLegacy
+
+      const shouldUpdateOwner =
+        typeof resolvedOwner === 'string' && resolvedOwner.length
+          ? resolvedOwner !== legacyRecord.ownerOpenid
+          : false
+      const shouldUpdateCreatedAt = !(legacyRecord.createdAt instanceof Date)
+      const shouldUpdateUpdatedAt = !(legacyRecord.updatedAt instanceof Date)
+
+      if (shouldUpdateOwner || shouldUpdateCreatedAt || shouldUpdateUpdatedAt) {
+        const updatePayload: Partial<CheckinsAggregateRecord> = {}
+        if (shouldUpdateOwner && resolvedOwner) {
+          updatePayload.ownerOpenid = resolvedOwner
+        }
+        if (shouldUpdateCreatedAt) {
+          updatePayload.createdAt = normalizedCreatedAt
+        }
+        if (shouldUpdateUpdatedAt) {
+          updatePayload.updatedAt = normalizedUpdatedAt
+        }
+
+        await docRef.update({
+          data: updatePayload
+        })
+      }
 
       return {
         docRef,
         record: {
           _id: documentId,
           uid,
-          ownerOpenid: legacyOwner,
+          ownerOpenid: resolvedOwner,
           info: legacyInfo,
-          createdAt:
-            legacyRecord.createdAt instanceof Date ? legacyRecord.createdAt : new Date(),
-          updatedAt:
-            legacyRecord.updatedAt instanceof Date ? legacyRecord.updatedAt : new Date()
+          createdAt: normalizedCreatedAt,
+          updatedAt: normalizedUpdatedAt
         }
       }
     }
@@ -546,10 +570,12 @@ async function submitCheckinViaCloudFunction(params: {
       status: params.status
     }
 
+    console.log('callCloudFunction', payload)
     const response = await callCloudFunction<CheckinSubmitFunctionResponse>({
       name: 'checkinSubmit',
       data: payload
     })
+    console.log('response', response)
 
     if (!response) {
       return null
@@ -763,6 +789,7 @@ export async function submitCheckinRecord(
       ? params.message
       : undefined
 
+  console.log('submitCheckinViaCloudFunction', params)
   const functionResult = await submitCheckinViaCloudFunction({
     uid: params.uid,
     date: params.date,
@@ -770,6 +797,7 @@ export async function submitCheckinRecord(
     tzOffset: params.tzOffset,
     goodnightMessageId: messageId
   })
+  console.log('functionResult', functionResult)
   if (functionResult) {
     return functionResult
   }

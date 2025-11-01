@@ -96,19 +96,20 @@ export function useGoodnightInteraction({
       }
 
       if (canUseCloud && userDoc) {
-        try {
-          const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-          const messageId = checkin?.goodnightMessageId ?? checkin?.message
-          if (messageId) {
-            const message = await fetchGoodnightMessageById(messageId)
-            if (message) {
-              return message
+        if (hasCheckedInToday) {
+          try {
+            const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
+            const messageId = checkin?.goodnightMessageId ?? checkin?.message
+            if (messageId) {
+              const message = await fetchGoodnightMessageById(messageId)
+              if (message) {
+                return message
+              }
             }
+          } catch (error) {
+            console.warn('加载今日晚安心语失败', error)
           }
-        } catch (error) {
-          console.warn('加载今日晚安心语失败', error)
         }
-
         try {
           return await fetchRandomGoodnightMessage(effectiveUid)
         } catch (error) {
@@ -123,7 +124,7 @@ export function useGoodnightInteraction({
       }
       return pickRandomLocalGoodnightMessage(effectiveUid)
     },
-    [canUseCloud, effectiveUid, todayKey, userDoc]
+    [canUseCloud, effectiveUid, hasCheckedInToday, todayKey, userDoc]
   )
 
   const loadSubmittedMessage = useCallback(async () => {

@@ -32,7 +32,10 @@ async function getCheckin(uid, date) {
 
 async function createCheckin(record) {
   const db = getDb()
-  await db.collection(COLLECTION).doc(record._id).create({ data: record })
+  const docRef = db.collection(COLLECTION).doc(record._id)
+  const data = { ...record }
+  delete data._id
+  await docRef.set({ data })
   return record
 }
 

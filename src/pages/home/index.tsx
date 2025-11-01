@@ -288,6 +288,7 @@ export default function Index() {
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
         const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
+        console.log('checkinStatus', checkinStatus)
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: todayKey,
@@ -296,6 +297,8 @@ export default function Index() {
           goodnightMessageId: rewardCandidate?._id,
           message: rewardCandidate?._id
         })
+        console.log('created', created)
+        console.log('submitStatus', submitStatus)
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
         persistRecords({ ...records, [todayKey]: timestamp })
