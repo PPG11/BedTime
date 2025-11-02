@@ -3,6 +3,7 @@ import { View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro'
 import {
   RecentDay,
+  type CheckInWindowOptions,
   computeBestStreak,
   computeCompletionRate,
   computeCurrentStreak,
@@ -61,15 +62,19 @@ const sleepTips = [
   '建立固定的睡前仪式，例如阅读或轻度伸展。'
 ]
 
-function mapCheckinsToRecord(list: CheckinDocument[]): CheckInMap {
+function mapCheckinsToRecord(list: CheckinDocument[], windowOptions: CheckInWindowOptions): CheckInMap {
   return list.reduce<CheckInMap>((acc, item) => {
     if (item.status === 'hit' || item.status === 'late') {
-      const ts = item.ts instanceof Date ? item.ts.getTime() : new Date(item.ts).getTime()
-      const key = normalizeDateKey(item.date)
+      const rawTs = item.ts instanceof Date ? item.ts : new Date(item.ts)
+      const ts = rawTs.getTime()
+      let key: string | null = null
+      if (!Number.isNaN(ts)) {
+        key = formatDateKey(new Date(ts), windowOptions)
+      } else {
+        key = normalizeDateKey(item.date)
+      }
       if (key) {
-        acc[key] = ts
-      } else if (item.date) {
-        acc[item.date] = ts
+        acc[key] = Number.isNaN(ts) ? Date.now() : ts
       }
     }
     return acc
@@ -91,18 +96,26 @@ type HomeStats = {
   completion: number
 }
 
-function createHomeStats(records: CheckInMap, currentTime: Date): HomeStats {
+function createHomeStats(
+  records: CheckInMap,
+  currentTime: Date,
+  windowOptions: CheckInWindowOptions
+): HomeStats {
   const now = new Date(currentTime)
   return {
     total: Object.keys(records).length,
-    streak: computeCurrentStreak(records, now),
-    best: computeBestStreak(records),
-    completion: computeCompletionRate(records, now)
+    streak: computeCurrentStreak(records, now, windowOptions),
+    best: computeBestStreak(records, windowOptions),
+    completion: computeCompletionRate(records, now, windowOptions)
   }
 }
 
-function createRecentCheckIns(records: CheckInMap, currentTime: Date): RecentDay[] {
-  return getRecentDays(records, currentTime, 7)
+function createRecentCheckIns(
+  records: CheckInMap,
+  currentTime: Date,
+  windowOptions: CheckInWindowOptions
+): RecentDay[] {
+  return getRecentDays(records, currentTime, 7, windowOptions)
 }
 
 export default function Index() {
@@ -119,7 +132,16 @@ export default function Index() {
   const [localUid] = useState(() => readUserUid())
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const todayKey = useMemo(() => formatDateKey(currentTime), [currentTime])
+  const windowOptions = useMemo<CheckInWindowOptions>(
+    () => ({ targetSleepMinute: settings.targetSleepMinute }),
+    [settings.targetSleepMinute]
+  )
+
+  const todayKey = useMemo(
+    () => formatDateKey(currentTime, windowOptions),
+    [currentTime, windowOptions]
+  )
+  const previousTodayKeyRef = useRef(todayKey)
   const todayLabel = useMemo(() => {
     const normalized = normalizeDateKey(todayKey)
     if (!normalized) {
@@ -129,12 +151,12 @@ export default function Index() {
   }, [todayKey])
   const minutesNow = useMemo(() => getMinutesSinceMidnight(currentTime), [currentTime])
   const isWindowOpen = useMemo(
-    () => isCheckInWindowOpen(minutesNow, settings.targetSleepMinute),
-    [minutesNow, settings.targetSleepMinute]
+    () => isCheckInWindowOpen(minutesNow, settings.targetSleepMinute, windowOptions),
+    [minutesNow, settings.targetSleepMinute, windowOptions]
   )
   const recommendedBedTime = useMemo(
-    () => computeRecommendedBedTime(currentTime, settings.targetSleepMinute),
-    [currentTime, settings.targetSleepMinute]
+    () => computeRecommendedBedTime(currentTime, settings.targetSleepMinute, windowOptions),
+    [currentTime, settings.targetSleepMinute, windowOptions]
   )
   const countdownText = useMemo(() => {
     const diff = recommendedBedTime.getTime() - currentTime.getTime()
@@ -160,18 +182,22 @@ export default function Index() {
         currentTime,
         recommendedBedTime,
         isWindowOpen,
-        settings.targetSleepMinute
+        settings.targetSleepMinute,
+        windowOptions
       ),
-    [currentTime, isWindowOpen, recommendedBedTime, settings.targetSleepMinute]
+    [currentTime, isWindowOpen, recommendedBedTime, settings.targetSleepMinute, windowOptions]
   )
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),
     [settings.targetSleepMinute]
   )
-  const stats = useMemo(() => createHomeStats(records, currentTime), [records, currentTime])
+  const stats = useMemo(
+    () => createHomeStats(records, currentTime, windowOptions),
+    [records, currentTime, windowOptions]
+  )
   const recentDays = useMemo(
-    () => createRecentCheckIns(records, currentTime),
-    [records, currentTime]
+    () => createRecentCheckIns(records, currentTime, windowOptions),
+    [records, currentTime, windowOptions]
   )
   const lastCheckInTime = useMemo(() => {
     if (!todayRecord) {
@@ -185,10 +211,11 @@ export default function Index() {
     }
     const targetForRecord = computeRecommendedBedTime(
       new Date(todayRecord),
-      settings.targetSleepMinute
+      settings.targetSleepMinute,
+      windowOptions
     )
     return todayRecord > targetForRecord.getTime()
-  }, [settings.targetSleepMinute, todayRecord])
+  }, [settings.targetSleepMinute, todayRecord, windowOptions])
   const isLateNow = useMemo(
     () => currentTime.getTime() > recommendedBedTime.getTime(),
     [currentTime, recommendedBedTime]
@@ -211,6 +238,10 @@ export default function Index() {
     try {
       const user = await ensureCurrentUser()
       setUserDoc(user)
+      const targetSleepMinute = parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
+      const cloudWindowOptions: CheckInWindowOptions = { targetSleepMinute }
+      const now = new Date()
+      const cloudTodayKey = formatDateKey(now, cloudWindowOptions)
       let statusResult: TodayCheckinStatus | null = null
       try {
         statusResult = await fetchTodayCheckinStatus()
@@ -220,21 +251,21 @@ export default function Index() {
       setTodayStatus(statusResult)
       setSettings({
         name: user.nickname || DEFAULT_USER_NAME,
-        targetSleepMinute: parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
+        targetSleepMinute
       })
       try {
-        await refreshPublicProfile(user, todayKey)
+        await refreshPublicProfile(user, cloudTodayKey)
       } catch (error) {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
       const checkins = await fetchCheckins(user.uid, 365)
-      const record = mapCheckinsToRecord(checkins)
+      const record = mapCheckinsToRecord(checkins, cloudWindowOptions)
       if (
         statusResult?.checkedIn &&
         statusResult.timestamp instanceof Date &&
-        !record[todayKey]
+        !record[cloudTodayKey]
       ) {
-        record[todayKey] = statusResult.timestamp.getTime()
+        record[cloudTodayKey] = statusResult.timestamp.getTime()
       }
       setRecords(record)
     } catch (error) {
@@ -259,6 +290,19 @@ export default function Index() {
     setRecords(readCheckIns())
     setSettings(readSettings())
   }, [canUseCloud, hydrateFromCloud])
+
+  useEffect(() => {
+    if (previousTodayKeyRef.current === todayKey) {
+      return
+    }
+    previousTodayKeyRef.current = todayKey
+    setTodayStatus(null)
+    if (!canUseCloud) {
+      setRecords(readCheckIns())
+      return
+    }
+    void hydrateAll()
+  }, [todayKey, canUseCloud, hydrateAll])
 
   const startTimer = useCallback(() => {
     if (timerRef.current) {
@@ -383,7 +427,7 @@ export default function Index() {
   const checkInLocally = useCallback(
     async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
       const now = new Date()
-      const key = formatDateKey(now)
+      const key = formatDateKey(now, windowOptions)
       const updated = { ...records, [key]: now.getTime() }
       persistRecords(updated)
       setTodayStatus({
@@ -399,7 +443,7 @@ export default function Index() {
         syncToCheckin: true
       })
     },
-    [persistRecords, presentGoodnightReward, records]
+    [persistRecords, presentGoodnightReward, records, windowOptions]
   )
 
   const handleCheckIn = useCallback(async () => {
