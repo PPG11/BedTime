@@ -1,6 +1,5 @@
 const { initCloud, getOpenId, getDb } = require('common/cloud')
 const { ensureUser, computeCheckinSummary } = require('common/users')
-const { getTodayFromOffset } = require('common/time')
 const { buildDocId, getCheckin, createCheckin, normalizeDateKey } = require('common/checkins')
 const { pickRandomMessage } = require('common/goodnight')
 const { createError } = require('common/errors')
@@ -25,9 +24,18 @@ exports.main = async (event, context) => {
 
     const user = await ensureUser(openid)
     const db = getDb()
-    const today = getTodayFromOffset(user.tzOffset)
     const requestedDate = normalizeDateKey(event?.date)
-    const checkinDate = requestedDate || today
+    if (!requestedDate) {
+      throw createError('INVALID_ARG', '缺少日期参数')
+    }
+    const checkinDate = requestedDate
+    console.log('[checkinSubmit] 打卡提交:', {
+      requestedDate: event?.date,
+      normalizedDate: requestedDate,
+      checkinDate: checkinDate,
+      status: status,
+      tzOffset: user.tzOffset
+    })
 
     const docId = buildDocId(user.uid, checkinDate)
 

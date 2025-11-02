@@ -69,6 +69,13 @@ exports.main = async (event, context) => {
     const today = getTodayFromOffset(user.tzOffset)
     const requestedDate = normalizeDateKey(event?.date)
     const targetDate = requestedDate || today
+    console.log('[checkinStatus] 查询打卡状态:', {
+      requestedDate: event?.date,
+      normalizedRequestedDate: requestedDate,
+      computedToday: today,
+      targetDate: targetDate,
+      tzOffset: user.tzOffset
+    })
     const record = await getCheckin(user.uid, targetDate)
 
     if (!record) {
@@ -89,9 +96,16 @@ exports.main = async (event, context) => {
       normalizeTimestamp(record.ts) ||
       null
 
+    console.log('[checkinStatus] 找到打卡记录:', {
+      recordDate: record.date,
+      targetDate: targetDate,
+      status: status,
+      willReturnDate: targetDate
+    })
+
     return success({
       checkedIn: true,
-      date: record.date || targetDate,
+      date: targetDate,
       status,
       gnMsgId,
       timestamp
