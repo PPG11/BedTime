@@ -694,7 +694,6 @@ async function submitCheckinViaCloudFunction(params: {
     if (requestGnMsgId) {
       payload.gnMsgId = requestGnMsgId
     }
-    console.log('[打卡调试] submitCheckinViaCloudFunction payload:', payload)
     const response = await callCloudFunction<CheckinSubmitFunctionResponse>({
       name: 'checkinSubmit',
       data: payload

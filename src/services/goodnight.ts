@@ -447,7 +447,6 @@ export async function voteGoodnightMessage(
     return null
   }
 
-  console.log('id, vote', id, vote)
   const response = await callCloudFunction<GoodnightReactionFunctionResponse>({
     name: 'gnReact',
     data: {
@@ -455,7 +454,6 @@ export async function voteGoodnightMessage(
       value: vote === 'like' ? 1 : -1
     }
   })
-  console.log('response', response)
 
   if (!response) {
     throw new Error('投票失败，请稍后再试')

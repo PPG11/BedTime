@@ -49,7 +49,7 @@ if (ENABLE_ANALYTICS) {
       autoTrack: true,
       installFrom: 'Taro@v3'
     })
-} else {
+} else if (process.env.NODE_ENV !== 'production') {
   console.info('已跳过有数埋点 SDK 初始化（ENABLE_ANALYTICS 未开启）')
 }
 
@@ -65,6 +65,6 @@ if (CLOUD_SHOULD_ENABLE && Taro.cloud) {
   }
 } else if (CLOUD_SHOULD_ENABLE) {
   console.warn('当前环境不支持 Taro.cloud，已跳过云开发初始化')
-} else {
+} else if (process.env.NODE_ENV !== 'production') {
   console.info('云开发未配置，应用将使用本地模式')
 }

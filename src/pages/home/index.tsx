@@ -177,18 +177,7 @@ export default function Index() {
     return null
   }, [records, todayKey, todayStatus])
   const hasCheckedInToday = useMemo(
-    () => {
-      const result = Boolean(todayStatus?.checkedIn) || typeof todayRecord === 'number'
-      console.log('[打卡调试] hasCheckedInToday 判断:', {
-        todayKey: todayKey,
-        todayStatusCheckedIn: todayStatus?.checkedIn,
-        todayStatusDate: todayStatus?.date,
-        todayRecord: todayRecord,
-        recordsKeys: Object.keys(records),
-        result: result
-      })
-      return result
-    },
+    () => Boolean(todayStatus?.checkedIn) || typeof todayRecord === 'number',
     [todayRecord, todayStatus, todayKey, records]
   )
   const windowHint = useMemo(
@@ -266,27 +255,12 @@ export default function Index() {
       const normalizedStatusDate = statusResult?.date ? normalizeDateKey(statusResult.date) : null
       const isStatusForToday =
         Boolean(statusResult?.checkedIn) && normalizedStatusDate === cloudTodayKey
-      console.log('[打卡调试] 查询打卡状态结果:', {
-        请求的日期Key: cloudTodayKey,
-        云函数返回的checkedIn: statusResult?.checkedIn,
-        云函数返回的date: statusResult?.date,
-        标准化后的日期: normalizedStatusDate,
-        是否匹配今天: isStatusForToday,
-        完整statusResult: statusResult
-      })
       let resolvedStatusResult: TodayCheckinStatus | null = null
-      console.log('[打卡调试] 准备设置 todayStatus:', {
-        isStatusForToday: isStatusForToday,
-        statusResultExists: !!statusResult,
-        statusResultCheckedIn: statusResult?.checkedIn,
-        statusResultDate: statusResult?.date
-      })
       if (statusResult && isStatusForToday) {
         resolvedStatusResult = {
           ...statusResult,
           date: cloudTodayKey
         }
-        console.log('[打卡调试] 使用 statusResult 设置 todayStatus (isStatusForToday=true)')
       } else if (statusResult) {
         resolvedStatusResult = {
           checkedIn: false,
@@ -295,9 +269,6 @@ export default function Index() {
           goodnightMessageId: null,
           timestamp: null
         }
-        console.log('[打卡调试] 设置 todayStatus 为未打卡 (isStatusForToday=false)')
-      } else {
-        console.log('[打卡调试] statusResult 为 null，不设置 todayStatus')
       }
       setTodayStatus(resolvedStatusResult)
       setSettings({
@@ -310,26 +281,13 @@ export default function Index() {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
       const checkins = await fetchCheckins(user.uid, 365)
-      console.log('[打卡调试] fetchCheckins 返回的数据:', {
-        checkinsCount: checkins.length,
-        checkinsDates: checkins.map(c => ({ date: c.date, status: c.status, ts: c.ts })),
-        cloudTodayKey: cloudTodayKey
-      })
       const record = mapCheckinsToRecord(checkins)
-      console.log('[打卡调试] mapCheckinsToRecord 后的 records:', {
-        recordKeys: Object.keys(record),
-        recordValues: Object.entries(record).map(([k, v]) => ({ key: k, timestamp: v }))
-      })
       if (
         isStatusForToday &&
         statusResult?.timestamp instanceof Date &&
         !record[cloudTodayKey]
       ) {
         record[cloudTodayKey] = statusResult.timestamp.getTime()
-        console.log('[打卡调试] 添加了 statusResult.timestamp 到 records:', {
-          cloudTodayKey: cloudTodayKey,
-          timestamp: statusResult.timestamp.getTime()
-        })
       }
       setRecords(record)
     } catch (error) {
@@ -432,16 +390,12 @@ export default function Index() {
         const actualWindowOptions: CheckInWindowOptions = {
           targetSleepMinute: actualTargetSleepMinute
         }
-        const actualCycle = resolveCheckInCycle(currentTime, actualTargetSleepMinute, actualWindowOptions)
+        const actualCycle = resolveCheckInCycle(
+          currentTime,
+          actualTargetSleepMinute,
+          actualWindowOptions
+        )
         const actualDateKey = actualCycle.dateKey
-        console.log('[打卡调试] 云端打卡提交信息:', {
-          当前时间: currentTime.toISOString(),
-          目标睡眠时间分钟数: actualTargetSleepMinute,
-          目标睡眠时间显示: formatMinutesToTime(actualTargetSleepMinute),
-          计算的日期: actualCycle.date.toISOString(),
-          提交的日期Key: actualDateKey,
-          原始todayKey: todayKey
-        })
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
           date: actualDateKey,
@@ -512,16 +466,12 @@ export default function Index() {
       const actualWindowOptions: CheckInWindowOptions = {
         targetSleepMinute: settings.targetSleepMinute
       }
-      const actualCycle = resolveCheckInCycle(currentTime, settings.targetSleepMinute, actualWindowOptions)
+      const actualCycle = resolveCheckInCycle(
+        currentTime,
+        settings.targetSleepMinute,
+        actualWindowOptions
+      )
       const actualDateKey = actualCycle.dateKey
-      console.log('[打卡调试] 本地打卡提交信息:', {
-        当前时间: currentTime.toISOString(),
-        目标睡眠时间分钟数: settings.targetSleepMinute,
-        目标睡眠时间显示: formatMinutesToTime(settings.targetSleepMinute),
-        计算的日期: actualCycle.date.toISOString(),
-        提交的日期Key: actualDateKey,
-        原始todayKey: todayKey
-      })
       const now = new Date()
       const updated = { ...records, [actualDateKey]: now.getTime() }
       persistRecords(updated)
@@ -568,8 +518,7 @@ export default function Index() {
         console.warn('获取今日晚安心语失败', error)
         // 如果获取失败，仍然允许打卡，只是不携带晚安心语ID
       }
-      console.log('[打卡调试] 获取到的晚安心语:', rewardCandidate)
-      
+
       const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
       if (canUseCloud && userDoc) {
         await checkInWithCloud(checkinStatus, rewardCandidate)

@@ -29,13 +29,6 @@ exports.main = async (event, context) => {
       throw createError('INVALID_ARG', '缺少日期参数')
     }
     const checkinDate = requestedDate
-    console.log('[checkinSubmit] 打卡提交:', {
-      requestedDate: event?.date,
-      normalizedDate: requestedDate,
-      checkinDate: checkinDate,
-      status: status,
-      tzOffset: user.tzOffset
-    })
 
     const docId = buildDocId(user.uid, checkinDate)
 

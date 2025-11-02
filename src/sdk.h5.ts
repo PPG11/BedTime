@@ -59,6 +59,6 @@ if (ENABLE_ANALYTICS) {
   // window.srt.setChan({chan_id: 'xxx'}) // 设置渠道，渠道信息将会被设置在props.chan对象中
 
   // window.srt.setUser({user_id: 'xxx'}) // 设置用户信息，用户信息将会被设置在props.wx_user对象中
-} else {
+} else if (process.env.NODE_ENV !== 'production') {
   console.info('已跳过 H5 有数埋点 SDK 初始化（ENABLE_ANALYTICS 未开启）')
 }

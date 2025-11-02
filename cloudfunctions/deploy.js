@@ -191,9 +191,8 @@ function logSection(title, items, formatter = (value) => value) {
   if (!items.length) {
     return;
   }
-  console.info(title);
-  items.forEach((item) => console.info(`   - ${formatter(item)}`));
-  console.info('');
+  const body = items.map((item) => formatter(item)).join(', ');
+  console.info(`${title} ${body}`);
 }
 
 function resolveCloudEnvId() {
@@ -300,14 +299,13 @@ function syncCommonDependents({
     return { synced: [] };
   }
 
-  console.info('Preparing dependencies for cloud functions depending on common:');
-  selected.forEach(({ dirName, packageName }) => {
-    const display = dirName === packageName ? dirName : `${dirName} (${packageName})`;
-    console.info(`   - ${display}`);
-  });
+  const displayTargets = selected
+    .map(({ dirName, packageName }) => (dirName === packageName ? dirName : `${dirName} (${packageName})`))
+    .join(', ');
+  console.info(`Preparing dependencies for: ${displayTargets}`);
 
   if (dryRun) {
-    console.info('\nDry run enabled; skipped dependency materialisation.\n');
+    console.info('Dry run: dependency materialisation skipped.');
     return { synced: selected.map((item) => item.dirName) };
   }
 
@@ -317,7 +315,7 @@ function syncCommonDependents({
       focusArgs.push('--production');
     }
 
-    console.info(`\nRunning: yarn ${focusArgs.join(' ')}`);
+    console.info(`Running: yarn ${focusArgs.join(' ')}`);
 
     const result = spawnSync('yarn', focusArgs, {
       cwd: workspaceRoot,
@@ -326,10 +324,10 @@ function syncCommonDependents({
     });
 
     if (result.error) {
-      console.error('\nFailed to execute yarn:', result.error.message);
-      console.error('Continuing without yarn focus (dependencies will be copied as-is).');
+      console.error(`Failed to execute yarn: ${result.error.message}`);
+      console.info('Continuing without yarn focus; dependencies will be copied as-is.');
     } else if (typeof result.status === 'number' && result.status !== 0) {
-      console.error(`\nYarn exited with code ${result.status}; continuing anyway.`);
+      console.warn(`Yarn exited with code ${result.status}; continuing anyway.`);
     }
   }
 
@@ -382,7 +380,7 @@ function syncCommonDependents({
 
   for (const { dirName, packageJson } of selected) {
     const targetDir = path.join(cloudfunctionsDir, dirName);
-    console.info(`\nMaterialising dependencies for ${dirName}...`);
+    console.info(`Materialising dependencies for ${dirName}...`);
 
     const nodeModulesDir = path.join(targetDir, 'node_modules');
     if (fs.existsSync(nodeModulesDir)) {
@@ -392,6 +390,7 @@ function syncCommonDependents({
 
     const queue = [];
     const visited = new Set();
+    let copiedCount = 0;
     enqueueDependencies(queue, packageJson, targetDir, visited);
 
     while (queue.length > 0) {
@@ -410,19 +409,25 @@ function syncCommonDependents({
       }
 
       if (!sourcePath || !fs.existsSync(sourcePath)) {
-        console.warn(`  ⚠️  Missing dependency source for ${depName} (${spec ?? 'unknown'}); skipped.`);
+        console.warn(`Missing dependency source for ${depName} (${spec ?? 'unknown'}); skipped.`);
         continue;
       }
 
       const destPath = path.join(nodeModulesDir, depName);
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
       fs.cpSync(sourcePath, destPath, { recursive: true });
-      console.info(`  • ${depName}`);
+      copiedCount += 1;
 
       const depPkgJsonPath = path.join(sourcePath, 'package.json');
       const depPkgJson = fs.existsSync(depPkgJsonPath) ? readJSON(depPkgJsonPath) : null;
       enqueueDependencies(queue, depPkgJson, sourcePath, visited);
     }
+
+    console.info(
+      copiedCount > 0
+        ? `Copied ${copiedCount} package${copiedCount === 1 ? '' : 's'} for ${dirName}.`
+        : `No packages copied for ${dirName}.`
+    );
 
     if (!keepLock) {
       const npmLock = path.join(targetDir, 'package-lock.json');
@@ -475,8 +480,7 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
     if (remoteNpm) {
       previewArgs.push('--remote-npm-install');
     }
-    console.info('Dry run enabled; command preview:');
-    console.info(`  ${previewArgs.join(' ')}`);
+    console.info(`Dry run command: ${previewArgs.join(' ')}`);
     return { success: [], failed: [], batchAttempted: false, aborted: false };
   }
 
@@ -498,12 +502,11 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
       if (ok) {
         targetNames.forEach((name) => success.add(name));
       } else {
-        console.info('\n⚠️  Batch upload failed; retrying sequentially...\n');
+        console.warn('Batch upload failed; retrying sequentially.');
       }
     } catch (error) {
-      console.info('\n⚠️  Batch upload error; retrying sequentially...');
-      console.error(`   ${error.message}`);
-      console.info('');
+      console.warn('Batch upload error; retrying sequentially.');
+      console.error(`Error: ${error.message}`);
     }
   }
 
@@ -536,16 +539,10 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
   const successCount = success.size;
   const failCount = failed.size;
 
-  console.info('\n' + '='.repeat(40));
-  console.info(`✅ Success: ${successCount}`);
-  console.info(`❌ Failed: ${failCount}`);
-  console.info(`📦 Total: ${targets.length}`);
-  if (batchAttempted) {
-    console.info('🚚 Mode: batch first, sequential fallback');
-  } else {
-    console.info('🚚 Mode: sequential');
-  }
-  console.info('='.repeat(40));
+  const mode = batchAttempted ? 'batch-first with sequential fallback' : 'sequential';
+  console.info(
+    `Deploy summary -> success: ${successCount}, failed: ${failCount}, total: ${targets.length}, mode: ${mode}`
+  );
 
   if (failCount > 0) {
     process.exitCode = 1;
