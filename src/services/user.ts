@@ -4,7 +4,13 @@ import {
   COLLECTIONS
 } from '../config/cloud'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../utils/time'
-import { ensureCloud, getCurrentOpenId, type CloudDatabase, type DbCollection } from './cloud'
+import {
+  callCloudFunction,
+  ensureCloud,
+  getCurrentOpenId,
+  type CloudDatabase,
+  type DbCollection
+} from './cloud'
 
 export type UserDocument = {
   _id: string
@@ -64,6 +70,17 @@ type FriendInviteDocument = {
 const DEFAULT_TARGET_HM = '22:30'
 const DEFAULT_BUDDY_CONSENT = false
 
+type UserEnsureFunctionPayload = {
+  nickname?: string
+  targetHM?: string
+  tzOffset?: number
+}
+
+type UserEnsureFunctionResponse = {
+  code?: string
+  message?: string
+}
+
 function getUsersCollection(db: CloudDatabase): DbCollection<UserDocument> {
   return db.collection<UserDocument>(COLLECTIONS.users)
 }
@@ -101,6 +118,52 @@ async function generateUniqueUid(db: CloudDatabase): Promise<string> {
   }
 
   throw new Error('UID 分配失败，请稍后重试')
+}
+
+function isCloudFunctionMissingError(error: unknown): boolean {
+  if (!error) {
+    return false
+  }
+
+  if (typeof error === 'object') {
+    const maybeError = error as {
+      code?: unknown
+      errCode?: unknown
+      errMsg?: unknown
+      message?: unknown
+    }
+    const code = maybeError.code ?? maybeError.errCode
+    if (typeof code === 'string') {
+      const normalized = code.toUpperCase()
+      if (
+        normalized.includes('FUNCTION_NOT_FOUND') ||
+        normalized.includes('FUNCTION_NOT_EXIST') ||
+        normalized.includes('INVALID_FUNCTION_NAME')
+      ) {
+        return true
+      }
+    }
+    const errMsg = maybeError.errMsg ?? maybeError.message
+    if (typeof errMsg === 'string') {
+      const lower = errMsg.toLowerCase()
+      if (
+        lower.includes('function not found') ||
+        lower.includes('function not exist') ||
+        lower.includes('function does not exist') ||
+        lower.includes('functionname not found') ||
+        lower.includes('functionname not exist')
+      ) {
+        return true
+      }
+    }
+  }
+
+  const text = String(error).toLowerCase()
+  return (
+    text.includes('function not found') ||
+    text.includes('function not exist') ||
+    text.includes('invalid function name')
+  )
 }
 
 function ensureUserDocument(data: Partial<UserDocument>, openid: string, uid: string): UserDocument {
@@ -181,13 +244,56 @@ export async function fetchCurrentUser(): Promise<UserDocument | null> {
   return fetchUserByOpenId(db, openid)
 }
 
+async function ensureUserViaCloudFunction(
+  payload: UserEnsureFunctionPayload
+): Promise<boolean> {
+  try {
+    const response = await callCloudFunction<UserEnsureFunctionResponse>({
+      name: 'userEnsure',
+      data: payload
+    })
+
+    if (!response) {
+      return false
+    }
+
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+    if (code !== 'OK') {
+      if (typeof response.message === 'string' && response.message.length) {
+        console.warn('userEnsure 云函数返回错误', response.message)
+      }
+      return false
+    }
+
+    return true
+  } catch (error) {
+    if (!isCloudFunctionMissingError(error)) {
+      console.warn('调用 userEnsure 云函数失败', error)
+    }
+    return false
+  }
+}
+
 export async function ensureCurrentUser(): Promise<UserDocument> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
 
-  const existing = await fetchUserByOpenId(db, openid)
+  let existing = await fetchUserByOpenId(db, openid)
   if (existing) {
     return existing
+  }
+
+  const tzOffset = getDefaultTzOffset()
+  const ensuredViaCloud = await ensureUserViaCloudFunction({
+    tzOffset,
+    targetHM: DEFAULT_TARGET_HM
+  })
+
+  if (ensuredViaCloud) {
+    existing = await fetchUserByOpenId(db, openid)
+    if (existing) {
+      return existing
+    }
   }
 
   const uid = await generateUniqueUid(db)
@@ -195,7 +301,8 @@ export async function ensureCurrentUser(): Promise<UserDocument> {
   const doc = ensureUserDocument(
     {
       createdAt: now as unknown as Date,
-      updatedAt: now as unknown as Date
+      updatedAt: now as unknown as Date,
+      tzOffset
     },
     openid,
     uid
