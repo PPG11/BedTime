@@ -39,9 +39,42 @@ async function createCheckin(record) {
   return record
 }
 
+function normalizeDateKey(input) {
+  if (typeof input !== 'string') {
+    return null
+  }
+  const trimmed = input.trim()
+  if (!trimmed.length) {
+    return null
+  }
+  const digits = /^\d{8}$/.test(trimmed) ? trimmed : trimmed.replace(/\D/g, '')
+  if (digits.length !== 8) {
+    return null
+  }
+  const year = Number(digits.slice(0, 4))
+  const month = Number(digits.slice(4, 6))
+  const day = Number(digits.slice(6, 8))
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null
+  }
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    return null
+  }
+  const normalizedYear = String(year).padStart(4, '0')
+  const normalizedMonth = String(month).padStart(2, '0')
+  const normalizedDay = String(day).padStart(2, '0')
+  return `${normalizedYear}${normalizedMonth}${normalizedDay}`
+}
+
 module.exports = {
   buildDocId,
   getCheckin,
   createCheckin,
-  COLLECTION
+  COLLECTION,
+  normalizeDateKey
 }

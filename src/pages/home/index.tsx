@@ -9,12 +9,12 @@ import {
   computeCurrentStreak,
   computeRecommendedBedTime,
   formatCountdown,
-  formatDateKey,
   normalizeDateKey,
   formatWindowHint,
   getMinutesSinceMidnight,
   getRecentDays,
   isCheckInWindowOpen,
+  resolveCheckInCycle,
   weekdayLabels
 } from '../../utils/checkin'
 import {
@@ -62,19 +62,20 @@ const sleepTips = [
   '建立固定的睡前仪式，例如阅读或轻度伸展。'
 ]
 
-function mapCheckinsToRecord(list: CheckinDocument[], windowOptions: CheckInWindowOptions): CheckInMap {
+function mapCheckinsToRecord(list: CheckinDocument[]): CheckInMap {
   return list.reduce<CheckInMap>((acc, item) => {
     if (item.status === 'hit' || item.status === 'late') {
       const rawTs = item.ts instanceof Date ? item.ts : new Date(item.ts)
       const ts = rawTs.getTime()
-      let key: string | null = null
-      if (!Number.isNaN(ts)) {
-        key = formatDateKey(new Date(ts), windowOptions)
-      } else {
-        key = normalizeDateKey(item.date)
-      }
+      const key = normalizeDateKey(item.date)
       if (key) {
         acc[key] = Number.isNaN(ts) ? Date.now() : ts
+      } else if (!Number.isNaN(ts)) {
+        const fallback = new Date(ts)
+        const fallbackKey = `${String(fallback.getFullYear()).padStart(4, '0')}${String(
+          fallback.getMonth() + 1
+        ).padStart(2, '0')}${String(fallback.getDate()).padStart(2, '0')}`
+        acc[fallbackKey] = ts
       }
     }
     return acc
@@ -137,18 +138,19 @@ export default function Index() {
     [settings.targetSleepMinute]
   )
 
-  const todayKey = useMemo(
-    () => formatDateKey(currentTime, windowOptions),
-    [currentTime, windowOptions]
+  const checkinCycle = useMemo(
+    () => resolveCheckInCycle(currentTime, settings.targetSleepMinute, windowOptions),
+    [currentTime, settings.targetSleepMinute, windowOptions]
   )
+  const todayKey = checkinCycle.dateKey
+  const todayDate = useMemo(() => new Date(checkinCycle.date.getTime()), [checkinCycle.date])
   const previousTodayKeyRef = useRef(todayKey)
   const todayLabel = useMemo(() => {
-    const normalized = normalizeDateKey(todayKey)
-    if (!normalized) {
-      return todayKey
-    }
-    return `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}`
-  }, [todayKey])
+    const year = String(todayDate.getFullYear()).padStart(4, '0')
+    const month = String(todayDate.getMonth() + 1).padStart(2, '0')
+    const day = String(todayDate.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [todayDate])
   const minutesNow = useMemo(() => getMinutesSinceMidnight(currentTime), [currentTime])
   const isWindowOpen = useMemo(
     () => isCheckInWindowOpen(minutesNow, settings.targetSleepMinute, windowOptions),
@@ -192,12 +194,12 @@ export default function Index() {
     [settings.targetSleepMinute]
   )
   const stats = useMemo(
-    () => createHomeStats(records, currentTime, windowOptions),
-    [records, currentTime, windowOptions]
+    () => createHomeStats(records, todayDate, windowOptions),
+    [records, todayDate, windowOptions]
   )
   const recentDays = useMemo(
-    () => createRecentCheckIns(records, currentTime, windowOptions),
-    [records, currentTime, windowOptions]
+    () => createRecentCheckIns(records, todayDate, windowOptions),
+    [records, todayDate, windowOptions]
   )
   const lastCheckInTime = useMemo(() => {
     if (!todayRecord) {
@@ -241,14 +243,33 @@ export default function Index() {
       const targetSleepMinute = parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
       const cloudWindowOptions: CheckInWindowOptions = { targetSleepMinute }
       const now = new Date()
-      const cloudTodayKey = formatDateKey(now, cloudWindowOptions)
+      const cloudCycle = resolveCheckInCycle(now, targetSleepMinute, cloudWindowOptions)
+      const cloudTodayKey = cloudCycle.dateKey
       let statusResult: TodayCheckinStatus | null = null
       try {
-        statusResult = await fetchTodayCheckinStatus()
+        statusResult = await fetchTodayCheckinStatus(cloudTodayKey)
       } catch (error) {
         console.warn('查询今日打卡状态失败', error)
       }
-      setTodayStatus(statusResult)
+      const normalizedStatusDate = statusResult?.date ? normalizeDateKey(statusResult.date) : null
+      const isStatusForToday =
+        Boolean(statusResult?.checkedIn) && normalizedStatusDate === cloudTodayKey
+      let resolvedStatusResult: TodayCheckinStatus | null = null
+      if (statusResult && isStatusForToday) {
+        resolvedStatusResult = {
+          ...statusResult,
+          date: cloudTodayKey
+        }
+      } else if (statusResult) {
+        resolvedStatusResult = {
+          checkedIn: false,
+          date: cloudTodayKey,
+          status: null,
+          goodnightMessageId: null,
+          timestamp: null
+        }
+      }
+      setTodayStatus(resolvedStatusResult)
       setSettings({
         name: user.nickname || DEFAULT_USER_NAME,
         targetSleepMinute
@@ -259,10 +280,10 @@ export default function Index() {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
       const checkins = await fetchCheckins(user.uid, 365)
-      const record = mapCheckinsToRecord(checkins, cloudWindowOptions)
+      const record = mapCheckinsToRecord(checkins)
       if (
-        statusResult?.checkedIn &&
-        statusResult.timestamp instanceof Date &&
+        isStatusForToday &&
+        statusResult?.timestamp instanceof Date &&
         !record[cloudTodayKey]
       ) {
         record[cloudTodayKey] = statusResult.timestamp.getTime()
@@ -379,7 +400,7 @@ export default function Index() {
             : rewardCandidate?._id ?? null
         setTodayStatus({
           checkedIn: true,
-          date: created.date,
+          date: todayKey,
           status: created.status,
           goodnightMessageId: resolvedMessageId,
           timestamp: created.ts instanceof Date ? created.ts : new Date(created.ts)
@@ -427,7 +448,7 @@ export default function Index() {
   const checkInLocally = useCallback(
     async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
       const now = new Date()
-      const key = formatDateKey(now, windowOptions)
+      const key = todayKey
       const updated = { ...records, [key]: now.getTime() }
       persistRecords(updated)
       setTodayStatus({
@@ -443,7 +464,7 @@ export default function Index() {
         syncToCheckin: true
       })
     },
-    [persistRecords, presentGoodnightReward, records, windowOptions]
+    [persistRecords, presentGoodnightReward, records, todayKey]
   )
 
   const handleCheckIn = useCallback(async () => {
@@ -512,7 +533,7 @@ export default function Index() {
     <View className='index'>
       <HomeHero
         displayName={displayName}
-        weekdayLabel={weekdayLabels[currentTime.getDay()]}
+        weekdayLabel={weekdayLabels[todayDate.getDay()]}
         dateLabel={todayLabel}
         countdownText={countdownText}
       />

@@ -13,6 +13,7 @@ export const CHECK_IN_WINDOW_CLOSE_OFFSET_MINUTES = 6 * 60 // 最晚打卡：目
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000
 
 const MINUTES_PER_DAY = 24 * 60
+const HALF_DAY_MINUTES = MINUTES_PER_DAY / 2
 const MS_PER_MINUTE = 60 * 1000
 const DEFAULT_TARGET_SLEEP_MINUTE = 22 * 60 + 30
 
@@ -30,6 +31,13 @@ function normalizeMinute(value: number | undefined): number {
   }
   const integer = Math.trunc(value) % MINUTES_PER_DAY
   return integer >= 0 ? integer : integer + MINUTES_PER_DAY
+}
+
+function formatAbsoluteDateKey(date: Date): string {
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
 }
 
 function clampOffset(value: unknown, fallback: number): number {
@@ -80,6 +88,49 @@ function resolveWindowBoundaries(
 
 function shiftByReset(date: Date, resetMinute: number): Date {
   return new Date(date.getTime() - resetMinute * MS_PER_MINUTE)
+}
+
+export type CheckInCycleResolution = {
+  date: Date
+  dateKey: string
+  isAfterWindow: boolean
+  crossesMidnight: boolean
+  minutesDelta: number
+}
+
+export function resolveCheckInCycle(
+  currentTime: Date,
+  targetSleepMinute: number,
+  options?: CheckInWindowOptions
+): CheckInCycleResolution {
+  const { targetMinute, closeOffsetMinutes } = resolveWindowOptions(targetSleepMinute, options)
+  const currentMinute = getMinutesSinceMidnight(currentTime)
+  let minutesDelta = currentMinute - targetMinute
+  if (minutesDelta > HALF_DAY_MINUTES) {
+    minutesDelta -= MINUTES_PER_DAY
+  } else if (minutesDelta < -HALF_DAY_MINUTES) {
+    minutesDelta += MINUTES_PER_DAY
+  }
+  const isAfterWindow = minutesDelta > closeOffsetMinutes
+  const simpleDiff = currentMinute - targetMinute
+  const crossesMidnight = Math.abs(simpleDiff) > HALF_DAY_MINUTES
+
+  const date = new Date(currentTime)
+  date.setHours(0, 0, 0, 0)
+
+  if (crossesMidnight && !isAfterWindow) {
+    date.setTime(date.getTime() - ONE_DAY_MS)
+  } else if (!crossesMidnight && isAfterWindow) {
+    date.setTime(date.getTime() + ONE_DAY_MS)
+  }
+
+  return {
+    date,
+    dateKey: formatAbsoluteDateKey(date),
+    isAfterWindow,
+    crossesMidnight,
+    minutesDelta
+  }
 }
 
 export function getCheckInDayStart(date: Date, options?: CheckInWindowOptions): Date {

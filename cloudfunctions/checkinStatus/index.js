@@ -1,7 +1,7 @@
 const { initCloud, getOpenId } = require('common/cloud')
 const { ensureUser } = require('common/users')
 const { getTodayFromOffset } = require('common/time')
-const { getCheckin } = require('common/checkins')
+const { getCheckin, normalizeDateKey } = require('common/checkins')
 const { success, failure } = require('common/response')
 
 initCloud()
@@ -67,12 +67,14 @@ exports.main = async (event, context) => {
     const openid = getOpenId(context)
     const user = await ensureUser(openid)
     const today = getTodayFromOffset(user.tzOffset)
-    const record = await getCheckin(user.uid, today)
+    const requestedDate = normalizeDateKey(event?.date)
+    const targetDate = requestedDate || today
+    const record = await getCheckin(user.uid, targetDate)
 
     if (!record) {
       return success({
         checkedIn: false,
-        date: today,
+        date: targetDate,
         status: null,
         gnMsgId: null,
         timestamp: null
@@ -89,7 +91,7 @@ exports.main = async (event, context) => {
 
     return success({
       checkedIn: true,
-      date: record.date || today,
+      date: record.date || targetDate,
       status,
       gnMsgId,
       timestamp

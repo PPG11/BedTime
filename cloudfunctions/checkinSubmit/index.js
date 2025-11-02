@@ -1,7 +1,7 @@
 const { initCloud, getOpenId, getDb } = require('common/cloud')
 const { ensureUser, computeCheckinSummary } = require('common/users')
 const { getTodayFromOffset } = require('common/time')
-const { buildDocId, getCheckin, createCheckin } = require('common/checkins')
+const { buildDocId, getCheckin, createCheckin, normalizeDateKey } = require('common/checkins')
 const { pickRandomMessage } = require('common/goodnight')
 const { createError } = require('common/errors')
 const { success, failure } = require('common/response')
@@ -26,9 +26,12 @@ exports.main = async (event, context) => {
     const user = await ensureUser(openid)
     const db = getDb()
     const today = getTodayFromOffset(user.tzOffset)
-    const docId = buildDocId(user.uid, today)
+    const requestedDate = normalizeDateKey(event?.date)
+    const checkinDate = requestedDate || today
 
-    const existing = await getCheckin(user.uid, today)
+    const docId = buildDocId(user.uid, checkinDate)
+
+    const existing = await getCheckin(user.uid, checkinDate)
     if (existing) {
       const hasExistingGnMsgId =
         typeof existing.gnMsgId === 'string' && existing.gnMsgId.trim().length > 0
@@ -49,7 +52,7 @@ exports.main = async (event, context) => {
         code: 'ALREADY_EXISTS',
         record,
         summary: {
-          date: record.date,
+          date: checkinDate,
           status: record.status,
           gnMsgId: record.gnMsgId || null,
           streak: user.streak,
@@ -78,7 +81,7 @@ exports.main = async (event, context) => {
     const record = {
       _id: docId,
       uid: user.uid,
-      date: today,
+      date: checkinDate,
       status,
       gnMsgId: messageId,
       createdAt: db.serverDate()
@@ -89,7 +92,7 @@ exports.main = async (event, context) => {
     } catch (error) {
       const msg = error?.errMsg || ''
       if (/already exist/i.test(msg)) {
-        const latest = await getCheckin(user.uid, today)
+        const latest = await getCheckin(user.uid, checkinDate)
         let record = latest
         const hasLatestGnMsgId =
           latest && typeof latest.gnMsgId === 'string' && latest.gnMsgId.trim().length > 0
@@ -109,7 +112,7 @@ exports.main = async (event, context) => {
           record ||
           Object.assign(
             {
-              date: today,
+              date: checkinDate,
               status,
               gnMsgId: requestedGnMsgId || null
             },
@@ -119,7 +122,7 @@ exports.main = async (event, context) => {
           code: 'ALREADY_EXISTS',
           record: summaryRecord,
           summary: {
-            date: summaryRecord.date,
+            date: checkinDate,
             status: summaryRecord.status,
             gnMsgId: summaryRecord.gnMsgId || null,
             streak: user.streak,
@@ -132,13 +135,13 @@ exports.main = async (event, context) => {
       throw error
     }
 
-    const summary = computeCheckinSummary(user, status, today)
+    const summary = computeCheckinSummary(user, status, checkinDate)
     await db.collection('users').doc(openid).update({
       data: summary
     })
 
     const response = {
-      date: today,
+      date: checkinDate,
       status,
       gnMsgId: messageId,
       streak: summary.streak,

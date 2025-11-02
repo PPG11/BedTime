@@ -108,14 +108,36 @@ const checkinListCache = new Map<string, CacheEntry<CheckinDocument[]>>()
 const checkinListInflight = new Map<string, Promise<CheckinDocument[]>>()
 const checkinInfoCache = new Map<string, CacheEntry<CheckinDocument | null>>()
 const checkinInfoInflight = new Map<string, Promise<CheckinDocument | null>>()
-let todayStatusCache: CacheEntry<TodayCheckinStatus | null> | null = null
-let todayStatusInflight: Promise<TodayCheckinStatus | null> | null = null
+type TodayStatusCacheEntry = {
+  timestamp: number
+  key: string
+  value: TodayCheckinStatus | null
+}
+type TodayStatusInflightEntry = {
+  key: string
+  promise: Promise<TodayCheckinStatus | null>
+}
+let todayStatusCache: TodayStatusCacheEntry | null = null
+let todayStatusInflight: TodayStatusInflightEntry | null = null
 
 function isCacheFresh<T>(entry: CacheEntry<T> | null | undefined, ttl: number): entry is CacheEntry<T> {
   if (!entry) {
     return false
   }
   return Date.now() - entry.timestamp < ttl
+}
+
+function isTodayStatusCacheFresh(
+  entry: TodayStatusCacheEntry | null,
+  key: string
+): entry is TodayStatusCacheEntry {
+  if (!entry) {
+    return false
+  }
+  if (entry.key !== key) {
+    return false
+  }
+  return Date.now() - entry.timestamp < TODAY_STATUS_CACHE_TTL
 }
 
 function setCacheEntry<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
@@ -843,24 +865,30 @@ async function fetchCheckinViaCloudFunction(
   return request
 }
 
-export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | null> {
-  if (isCacheFresh(todayStatusCache, TODAY_STATUS_CACHE_TTL)) {
+export async function fetchTodayCheckinStatus(date?: string): Promise<TodayCheckinStatus | null> {
+  const trimmedInput = typeof date === 'string' ? date.trim() : ''
+  const normalizedInput = trimmedInput ? normalizeDateKey(trimmedInput) ?? '' : ''
+  const cacheKey = normalizedInput || ''
+
+  if (isTodayStatusCacheFresh(todayStatusCache, cacheKey)) {
     return todayStatusCache.value
   }
 
-  if (todayStatusInflight) {
-    return todayStatusInflight
+  if (todayStatusInflight && todayStatusInflight.key === cacheKey) {
+    return todayStatusInflight.promise
   }
 
-  todayStatusInflight = (async () => {
+  const request = (async () => {
     try {
       const response = await callCloudFunction<CheckinStatusFunctionResponse>({
-        name: 'checkinStatus'
+        name: 'checkinStatus',
+        data: cacheKey ? { date: cacheKey } : undefined
       })
 
       if (!response) {
         todayStatusCache = {
           timestamp: Date.now(),
+          key: cacheKey,
           value: null
         }
         return null
@@ -871,13 +899,14 @@ export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | nu
         if (code === 'NOT_FOUND') {
           const value: TodayCheckinStatus = {
             checkedIn: false,
-            date: '',
+            date: cacheKey,
             status: null,
             goodnightMessageId: null,
             timestamp: null
           }
           todayStatusCache = {
             timestamp: Date.now(),
+            key: cacheKey,
             value
           }
           return value
@@ -894,8 +923,8 @@ export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | nu
       const rawDate =
         typeof response.date === 'string' && response.date.trim().length
           ? response.date.trim()
-          : ''
-      const date = (normalizeDateKey(rawDate) ?? rawDate) || ''
+          : cacheKey
+      const normalizedDate = normalizeDateKey(rawDate) ?? rawDate
       const status = checkedIn ? normalizeStatus(response.status) : null
       const goodnightMessageId =
         typeof response.gnMsgId === 'string' && response.gnMsgId.trim().length
@@ -912,13 +941,14 @@ export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | nu
 
       const value: TodayCheckinStatus = {
         checkedIn,
-        date,
+        date: normalizedDate,
         status,
         goodnightMessageId,
         timestamp
       }
       todayStatusCache = {
         timestamp: Date.now(),
+        key: cacheKey,
         value
       }
       return value
@@ -926,6 +956,7 @@ export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | nu
       if (isCloudFunctionMissingError(error)) {
         todayStatusCache = {
           timestamp: Date.now(),
+          key: cacheKey,
           value: null
         }
         return null
@@ -933,11 +964,18 @@ export async function fetchTodayCheckinStatus(): Promise<TodayCheckinStatus | nu
       todayStatusCache = null
       throw error
     } finally {
-      todayStatusInflight = null
+      if (todayStatusInflight && todayStatusInflight.key === cacheKey) {
+        todayStatusInflight = null
+      }
     }
   })()
 
-  return todayStatusInflight
+  todayStatusInflight = {
+    key: cacheKey,
+    promise: request
+  }
+
+  return request
 }
 
 async function appendCheckinEntry(params: {
