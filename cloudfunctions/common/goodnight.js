@@ -7,8 +7,11 @@ function buildBaseQuery(db, filters) {
   const collection = db.collection(COLLECTION)
   const _ = db.command
   let condition = { status: 'approved' }
+  if (filters.avoidUid) {
+    condition = Object.assign(condition, { uid: _.neq(filters.avoidUid) })
+  }
   if (filters.avoidUserId) {
-    condition = Object.assign(condition, { uid: _.neq(filters.avoidUserId) })
+    condition = Object.assign(condition, { userId: _.neq(filters.avoidUserId) })
   }
   if (filters.slotKey) {
     condition = Object.assign(condition, { slotKey: filters.slotKey })
@@ -19,11 +22,11 @@ function buildBaseQuery(db, filters) {
   return collection.where(condition)
 }
 
-async function pickRandomMessage({ avoidUserId, slotKey, minScore = -2, pivot }) {
+async function pickRandomMessage({ avoidUserId, avoidUid, slotKey, minScore = -2, pivot }) {
   const db = getDb()
   const _ = db.command
   const randomPivot = typeof pivot === 'number' ? pivot : Math.random()
-  const baseQuery = buildBaseQuery(db, { avoidUserId, slotKey, minScore })
+  const baseQuery = buildBaseQuery(db, { avoidUserId, avoidUid, slotKey, minScore })
 
   const first = await baseQuery
     .where({ rand: _.gte(randomPivot) })

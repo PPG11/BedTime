@@ -76,6 +76,7 @@ exports.main = async (event, context) => {
       try {
         const message = await pickRandomMessage({
           avoidUserId: openid,
+          avoidUid: user.uid,
           slotKey: user.slotKey,
           minScore: typeof event?.minScore === 'number' ? event.minScore : -2
         })

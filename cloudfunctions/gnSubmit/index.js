@@ -1,6 +1,7 @@
 const { initCloud, getOpenId, getDb } = require('common/cloud')
 const { ensureUser, quantizeSlotKey } = require('common/users')
 const { getTodayFromOffset } = require('common/time')
+const { normalizeDateKey } = require('common/checkins')
 const { createError } = require('common/errors')
 const { success, failure } = require('common/response')
 const { COLLECTION: GN_COLLECTION } = require('common/goodnight')
@@ -28,10 +29,12 @@ exports.main = async (event, context) => {
     }
 
     const db = getDb()
-    const today = getTodayFromOffset(user.tzOffset)
+    const normalizedDate = normalizeDateKey(event?.date)
+    const defaultDate = getTodayFromOffset(user.tzOffset)
+    const targetDate = normalizedDate || defaultDate
     const slotKey = quantizeSlotKey(user.targetHM)
     const collection = db.collection(GN_COLLECTION)
-    const docId = `${user.uid}_${today}`
+    const docId = `${user.uid}_${targetDate}`
     const docRef = collection.doc(docId)
 
     let existingId = null
@@ -50,7 +53,7 @@ exports.main = async (event, context) => {
 
     if (!existingId) {
       const existing = await collection
-        .where({ userId: openid, date: today })
+        .where({ userId: openid, date: targetDate })
         .limit(1)
         .get()
       if (existing.data.length > 0) {
@@ -70,7 +73,7 @@ exports.main = async (event, context) => {
       data: {
         userId: openid,
         uid: user.uid,
-        date: today,
+        date: targetDate,
         text,
         content: text,
         slotKey,

@@ -16,6 +16,7 @@ exports.main = async (event, context) => {
 
     const message = await pickRandomMessage({
       avoidUserId: avoidSelf ? openid : undefined,
+      avoidUid: avoidSelf ? user.uid : undefined,
       slotKey: preferSlot ? user.slotKey : undefined,
       minScore
     })
