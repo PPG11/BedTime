@@ -30,36 +30,60 @@ exports.main = async (event, context) => {
     const db = getDb()
     const today = getTodayFromOffset(user.tzOffset)
     const slotKey = quantizeSlotKey(user.targetHM)
+    const collection = db.collection(GN_COLLECTION)
+    const docId = `${user.uid}_${today}`
+    const docRef = collection.doc(docId)
 
-    const existing = await db
-      .collection(GN_COLLECTION)
-      .where({ userId: openid, date: today })
-      .limit(1)
-      .get()
+    let existingId = null
 
-    if (existing.data.length > 0) {
-      return {
-        code: 'ALREADY_EXISTS',
-        messageId: existing.data[0]._id
+    try {
+      const existingDoc = await docRef.get()
+      if (existingDoc?.data) {
+        existingId = existingDoc.data._id || docId
+      }
+    } catch (error) {
+      const message = typeof error?.errMsg === 'string' ? error.errMsg : ''
+      if (message && !/not\s*exist|not\s*found|fail/i.test(message)) {
+        throw error
       }
     }
 
-    const result = await db.collection(GN_COLLECTION).add({
+    if (!existingId) {
+      const existing = await collection
+        .where({ userId: openid, date: today })
+        .limit(1)
+        .get()
+      if (existing.data.length > 0) {
+        existingId = existing.data[0]._id
+      }
+    }
+
+    if (existingId) {
+      return {
+        code: 'ALREADY_EXISTS',
+        messageId: existingId
+      }
+    }
+
+    const now = db.serverDate()
+    await docRef.set({
       data: {
         userId: openid,
+        uid: user.uid,
         date: today,
         text,
+        content: text,
         slotKey,
         rand: Math.random(),
         likes: 0,
         dislikes: 0,
         score: 0,
         status: 'approved',
-        createdAt: db.serverDate()
+        createdAt: now
       }
     })
 
-    return success({ messageId: result._id })
+    return success({ messageId: docId })
   } catch (error) {
     console.error('gnSubmit error', error)
     return failure(error)
