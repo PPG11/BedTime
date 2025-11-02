@@ -118,10 +118,41 @@ export function resolveCheckInCycle(
   const date = new Date(currentTime)
   date.setHours(0, 0, 0, 0)
 
-  if (crossesMidnight && !isAfterWindow) {
-    date.setTime(date.getTime() - ONE_DAY_MS)
-  } else if (!crossesMidnight && isAfterWindow) {
-    date.setTime(date.getTime() + ONE_DAY_MS)
+  // 计算关闭时间（目标时间 + 关闭偏移）
+  const resetMinute = (targetMinute + closeOffsetMinutes) % MINUTES_PER_DAY
+  const resetCrossesMidnight = resetMinute < targetMinute
+
+  if (crossesMidnight) {
+    // 跨越午夜的情况（目标时间在凌晨或深夜）
+    if (currentMinute < targetMinute) {
+      // 当前时间在目标时间之前（比如21:34在00:30之前）
+      // 目标是"明天"的，所以日期+1
+      date.setTime(date.getTime() + ONE_DAY_MS)
+    } else if (resetCrossesMidnight) {
+      // 关闭时间跨越午夜（关闭时间在第二天）
+      if (currentMinute < resetMinute) {
+        // 当前时间在关闭时间之前（比如01:00在06:30之前，假设关闭时间是06:30）
+        // 还在今天的目标窗口内，日期保持不变（目标是今天的）
+      } else {
+        // 当前时间在关闭时间之后（比如07:00在06:30之后）
+        // 已经过了今天的目标窗口，目标是"明天"的，所以日期+1
+        date.setTime(date.getTime() + ONE_DAY_MS)
+      }
+    } else {
+      // 关闭时间不跨越午夜（在同一天）
+      if (currentMinute > targetMinute + closeOffsetMinutes) {
+        // 当前时间在关闭时间之后，目标是"明天"的，所以日期+1
+        date.setTime(date.getTime() + ONE_DAY_MS)
+      }
+      // 否则：当前时间在目标时间和关闭时间之间，日期保持不变（目标是今天的）
+    }
+  } else {
+    // 没有跨越午夜的情况（目标时间在白天）
+    if (isAfterWindow) {
+      // 当前时间在关闭时间之后，目标是"明天"的
+      date.setTime(date.getTime() + ONE_DAY_MS)
+    }
+    // 否则：当前时间在窗口内，日期保持不变（目标是今天的）
   }
 
   return {

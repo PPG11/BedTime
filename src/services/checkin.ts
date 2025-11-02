@@ -688,11 +688,13 @@ async function submitCheckinViaCloudFunction(params: {
         ? params.goodnightMessageId.trim()
         : undefined
     const payload: Record<string, unknown> = {
-      status: params.status
+      status: params.status,
+      date: params.date
     }
     if (requestGnMsgId) {
       payload.gnMsgId = requestGnMsgId
     }
+    console.log('[打卡调试] submitCheckinViaCloudFunction payload:', payload)
     const response = await callCloudFunction<CheckinSubmitFunctionResponse>({
       name: 'checkinSubmit',
       data: payload
@@ -1110,7 +1112,7 @@ export async function updateCheckinGoodnightMessage(params: {
 
   const updatedEntry: CheckinEntry = {
     ...infoList[index],
-    date: normalizedDate,
+    // 保留原有的 date 字段，不要覆盖
     message: params.goodnightMessageId,
     goodnightMessageId: params.goodnightMessageId
   }

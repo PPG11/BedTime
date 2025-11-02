@@ -175,8 +175,19 @@ export default function Index() {
     return null
   }, [records, todayKey, todayStatus])
   const hasCheckedInToday = useMemo(
-    () => Boolean(todayStatus?.checkedIn) || typeof todayRecord === 'number',
-    [todayRecord, todayStatus]
+    () => {
+      const result = Boolean(todayStatus?.checkedIn) || typeof todayRecord === 'number'
+      console.log('[打卡调试] hasCheckedInToday 判断:', {
+        todayKey: todayKey,
+        todayStatusCheckedIn: todayStatus?.checkedIn,
+        todayStatusDate: todayStatus?.date,
+        todayRecord: todayRecord,
+        recordsKeys: Object.keys(records),
+        result: result
+      })
+      return result
+    },
+    [todayRecord, todayStatus, todayKey, records]
   )
   const windowHint = useMemo(
     () =>
@@ -242,8 +253,7 @@ export default function Index() {
       setUserDoc(user)
       const targetSleepMinute = parseTimeStringToMinutes(user.targetHM, DEFAULT_SLEEP_MINUTE)
       const cloudWindowOptions: CheckInWindowOptions = { targetSleepMinute }
-      const now = new Date()
-      const cloudCycle = resolveCheckInCycle(now, targetSleepMinute, cloudWindowOptions)
+      const cloudCycle = resolveCheckInCycle(currentTime, targetSleepMinute, cloudWindowOptions)
       const cloudTodayKey = cloudCycle.dateKey
       let statusResult: TodayCheckinStatus | null = null
       try {
@@ -254,12 +264,27 @@ export default function Index() {
       const normalizedStatusDate = statusResult?.date ? normalizeDateKey(statusResult.date) : null
       const isStatusForToday =
         Boolean(statusResult?.checkedIn) && normalizedStatusDate === cloudTodayKey
+      console.log('[打卡调试] 查询打卡状态结果:', {
+        请求的日期Key: cloudTodayKey,
+        云函数返回的checkedIn: statusResult?.checkedIn,
+        云函数返回的date: statusResult?.date,
+        标准化后的日期: normalizedStatusDate,
+        是否匹配今天: isStatusForToday,
+        完整statusResult: statusResult
+      })
       let resolvedStatusResult: TodayCheckinStatus | null = null
+      console.log('[打卡调试] 准备设置 todayStatus:', {
+        isStatusForToday: isStatusForToday,
+        statusResultExists: !!statusResult,
+        statusResultCheckedIn: statusResult?.checkedIn,
+        statusResultDate: statusResult?.date
+      })
       if (statusResult && isStatusForToday) {
         resolvedStatusResult = {
           ...statusResult,
           date: cloudTodayKey
         }
+        console.log('[打卡调试] 使用 statusResult 设置 todayStatus (isStatusForToday=true)')
       } else if (statusResult) {
         resolvedStatusResult = {
           checkedIn: false,
@@ -268,6 +293,9 @@ export default function Index() {
           goodnightMessageId: null,
           timestamp: null
         }
+        console.log('[打卡调试] 设置 todayStatus 为未打卡 (isStatusForToday=false)')
+      } else {
+        console.log('[打卡调试] statusResult 为 null，不设置 todayStatus')
       }
       setTodayStatus(resolvedStatusResult)
       setSettings({
@@ -280,13 +308,26 @@ export default function Index() {
         console.warn('刷新公开资料失败（将稍后重试）', error)
       }
       const checkins = await fetchCheckins(user.uid, 365)
+      console.log('[打卡调试] fetchCheckins 返回的数据:', {
+        checkinsCount: checkins.length,
+        checkinsDates: checkins.map(c => ({ date: c.date, status: c.status, ts: c.ts })),
+        cloudTodayKey: cloudTodayKey
+      })
       const record = mapCheckinsToRecord(checkins)
+      console.log('[打卡调试] mapCheckinsToRecord 后的 records:', {
+        recordKeys: Object.keys(record),
+        recordValues: Object.entries(record).map(([k, v]) => ({ key: k, timestamp: v }))
+      })
       if (
         isStatusForToday &&
         statusResult?.timestamp instanceof Date &&
         !record[cloudTodayKey]
       ) {
         record[cloudTodayKey] = statusResult.timestamp.getTime()
+        console.log('[打卡调试] 添加了 statusResult.timestamp 到 records:', {
+          cloudTodayKey: cloudTodayKey,
+          timestamp: statusResult.timestamp.getTime()
+        })
       }
       setRecords(record)
     } catch (error) {
@@ -298,7 +339,7 @@ export default function Index() {
     } finally {
       setIsSyncing(false)
     }
-  }, [todayKey])
+  }, [todayKey, currentTime])
 
   const hydrateAll = useCallback(async () => {
     if (canUseCloud) {
@@ -381,9 +422,27 @@ export default function Index() {
           typeof latestUser.tzOffset === 'number'
             ? latestUser.tzOffset
             : -new Date().getTimezoneOffset()
+        // 使用最新的目标睡眠时间重新计算应该使用的日期
+        const actualTargetSleepMinute = parseTimeStringToMinutes(
+          latestUser.targetHM,
+          settings.targetSleepMinute
+        )
+        const actualWindowOptions: CheckInWindowOptions = {
+          targetSleepMinute: actualTargetSleepMinute
+        }
+        const actualCycle = resolveCheckInCycle(currentTime, actualTargetSleepMinute, actualWindowOptions)
+        const actualDateKey = actualCycle.dateKey
+        console.log('[打卡调试] 云端打卡提交信息:', {
+          当前时间: currentTime.toISOString(),
+          目标睡眠时间分钟数: actualTargetSleepMinute,
+          目标睡眠时间显示: formatMinutesToTime(actualTargetSleepMinute),
+          计算的日期: actualCycle.date.toISOString(),
+          提交的日期Key: actualDateKey,
+          原始todayKey: todayKey
+        })
         const { document: created, status: submitStatus } = await submitCheckinRecord({
           uid: latestUser.uid,
-          date: todayKey,
+          date: actualDateKey,
           status,
           tzOffset,
           goodnightMessageId: rewardCandidate?._id,
@@ -391,7 +450,7 @@ export default function Index() {
         })
         const timestamp =
           created.ts instanceof Date ? created.ts.getTime() : new Date(created.ts).getTime()
-        persistRecords({ ...records, [todayKey]: timestamp })
+        persistRecords({ ...records, [actualDateKey]: timestamp })
         const resolvedMessageId =
           typeof created.goodnightMessageId === 'string' && created.goodnightMessageId.trim().length
             ? created.goodnightMessageId.trim()
@@ -400,7 +459,7 @@ export default function Index() {
             : rewardCandidate?._id ?? null
         setTodayStatus({
           checkedIn: true,
-          date: todayKey,
+          date: actualDateKey,
           status: created.status,
           goodnightMessageId: resolvedMessageId,
           timestamp: created.ts instanceof Date ? created.ts : new Date(created.ts)
@@ -413,7 +472,7 @@ export default function Index() {
                 ...latestUser,
                 tzOffset
               },
-              todayKey
+              actualDateKey
             )
           } catch (error) {
             console.warn('刷新公开资料失败（将在后台重试）', error)
@@ -422,7 +481,7 @@ export default function Index() {
         if (submitStatus === 'created') {
           Taro.showToast({ title: '打卡成功，早睡加油！', icon: 'success' })
         } else {
-          Taro.showToast({ title: '今天已经打过卡了', icon: 'none' })
+          Taro.showToast({ title: '统计过今天已经打过卡了', icon: 'none' })
         }
         await presentGoodnightReward({
           message: submitStatus === 'created' ? rewardCandidate : undefined,
@@ -440,20 +499,33 @@ export default function Index() {
       records,
       refreshPublicProfile,
       settings,
-      todayKey,
+      currentTime,
       userDoc
     ]
   )
 
   const checkInLocally = useCallback(
     async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
+      // 使用最新的目标睡眠时间重新计算应该使用的日期
+      const actualWindowOptions: CheckInWindowOptions = {
+        targetSleepMinute: settings.targetSleepMinute
+      }
+      const actualCycle = resolveCheckInCycle(currentTime, settings.targetSleepMinute, actualWindowOptions)
+      const actualDateKey = actualCycle.dateKey
+      console.log('[打卡调试] 本地打卡提交信息:', {
+        当前时间: currentTime.toISOString(),
+        目标睡眠时间分钟数: settings.targetSleepMinute,
+        目标睡眠时间显示: formatMinutesToTime(settings.targetSleepMinute),
+        计算的日期: actualCycle.date.toISOString(),
+        提交的日期Key: actualDateKey,
+        原始todayKey: todayKey
+      })
       const now = new Date()
-      const key = todayKey
-      const updated = { ...records, [key]: now.getTime() }
+      const updated = { ...records, [actualDateKey]: now.getTime() }
       persistRecords(updated)
       setTodayStatus({
         checkedIn: true,
-        date: key,
+        date: actualDateKey,
         status,
         goodnightMessageId: rewardCandidate?._id ?? null,
         timestamp: now
@@ -464,7 +536,7 @@ export default function Index() {
         syncToCheckin: true
       })
     },
-    [persistRecords, presentGoodnightReward, records, todayKey]
+    [persistRecords, presentGoodnightReward, records, settings.targetSleepMinute, currentTime]
   )
 
   const handleCheckIn = useCallback(async () => {
