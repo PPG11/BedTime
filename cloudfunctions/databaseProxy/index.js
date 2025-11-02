@@ -326,6 +326,14 @@ async function handleRequest(db, payload, authState) {
         throw new Error('缺少文档 ID')
       }
       const data = deserializeRecord(db, payload.data)
+      // 对于晚安心语集合，确保默认设置 status: 'approved' 和 rand 字段
+      if (collectionName === 'goodnight_messages') {
+        data.status = 'approved'
+        // 如果客户端没有提供 rand 字段，自动生成一个 0-1 之间的随机数
+        if (typeof data.rand !== 'number' || !Number.isFinite(data.rand)) {
+          data.rand = Math.random()
+        }
+      }
       await collection.doc(id).set({ data })
       return { ok: true }
     }

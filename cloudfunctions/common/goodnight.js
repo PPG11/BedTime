@@ -8,7 +8,7 @@ function buildBaseQuery(db, filters) {
   const _ = db.command
   let condition = { status: 'approved' }
   if (filters.avoidUserId) {
-    condition = Object.assign(condition, { userId: _.neq(filters.avoidUserId) })
+    condition = Object.assign(condition, { uid: _.neq(filters.avoidUserId) })
   }
   if (filters.slotKey) {
     condition = Object.assign(condition, { slotKey: filters.slotKey })

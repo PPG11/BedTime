@@ -40,6 +40,7 @@ import {
   ensureCurrentUser,
   fetchCheckins,
   fetchTodayCheckinStatus,
+  fetchRandomGoodnightMessage,
   refreshPublicProfile,
   supportsCloud,
   submitCheckinRecord,
@@ -53,6 +54,7 @@ import {
   type GoodnightMessage,
   type GoodnightVoteType
 } from '../../types/goodnight'
+import { pickRandomLocalGoodnightMessage } from '../../utils/goodnight'
 import { useGoodnightInteraction } from './useGoodnight'
 import './index.scss'
 
@@ -552,12 +554,22 @@ export default function Index() {
 
     setIsSyncing(true)
     try {
+      // 打卡时先通过 gnGetRandom 获取一个晚安心语
       let rewardCandidate: GoodnightMessage | null = null
       try {
-        rewardCandidate = await fetchRewardForToday()
+        if (canUseCloud && userDoc) {
+          // 云端模式：调用 gnGetRandom 云函数获取随机晚安心语
+          rewardCandidate = await fetchRandomGoodnightMessage(effectiveUid)
+        } else {
+          // 本地模式：从本地存储中随机选择一个晚安心语
+          rewardCandidate = pickRandomLocalGoodnightMessage(effectiveUid)
+        }
       } catch (error) {
         console.warn('获取今日晚安心语失败', error)
+        // 如果获取失败，仍然允许打卡，只是不携带晚安心语ID
       }
+      console.log('[打卡调试] 获取到的晚安心语:', rewardCandidate)
+      
       const checkinStatus: CheckinStatus = isLateNow ? 'late' : 'hit'
       if (canUseCloud && userDoc) {
         await checkInWithCloud(checkinStatus, rewardCandidate)
@@ -572,7 +584,7 @@ export default function Index() {
     canUseCloud,
     checkInLocally,
     checkInWithCloud,
-    fetchRewardForToday,
+    effectiveUid,
     hasCheckedInToday,
     isLateNow,
     isSyncing,
