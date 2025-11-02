@@ -1,3 +1,4 @@
+const crypto = require('crypto')
 const { initCloud, getOpenId, getDb } = require('common/cloud')
 const { ensureUser } = require('common/users')
 const { createError } = require('common/errors')
@@ -6,106 +7,122 @@ const { success, failure } = require('common/response')
 initCloud()
 
 const DEDUPE_COLLECTION = 'gn_reactions_dedupe'
-const EVENTS_COLLECTION = 'gn_reaction_events'
 
 function normalizeValue(value) {
   const num = Number(value)
-  if (num === 1 || num === -1) {
-    return num
-  }
+  if (num === 1 || num === -1) return num
   return null
 }
 
 exports.main = async (event, context) => {
   try {
     const openid = getOpenId(context)
-    await ensureUser(openid)
+    const user = await ensureUser(openid)
+    const voteUid = user.uid || openid
 
     const messageId = typeof event?.messageId === 'string' ? event.messageId.trim() : ''
     const value = normalizeValue(event?.value)
 
-    if (!messageId) {
-      throw createError('INVALID_ARG', '缺少消息 ID')
-    }
-    if (value === null) {
-      throw createError('INVALID_ARG', '非法的投票值')
-    }
+    if (!messageId) throw createError('INVALID_ARG', '缺少消息 ID')
+    if (value === null) throw createError('INVALID_ARG', '非法的投票值')
 
     const db = getDb()
-    const result = await db.runTransaction(async (transaction) => {
-      const dedupeId = `${openid}#${messageId}`
-      const dedupeRef = transaction.collection(DEDUPE_COLLECTION).doc(dedupeId)
-      const dedupeSnap = await dedupeRef.get()
-      const now = db.serverDate()
+    const _ = db.command
+    const now = db.serverDate()
+    const dedupeKey = `${voteUid}#${messageId}`
+    const dedupeId = crypto.createHash('md5').update(dedupeKey).digest('hex')
+    const dedupeRef = db.collection(DEDUPE_COLLECTION).doc(dedupeId)
 
-      if (!dedupeSnap?.data) {
-        let deltaLikes = 0
-        let deltaDislikes = 0
-        let deltaScore = value
-        if (value === 1) {
-          deltaLikes = 1
-        } else {
-          deltaDislikes = 1
-        }
-        await dedupeRef.set({
-          data: {
-            _id: dedupeId,
-            userId: openid,
-            messageId,
-            value,
-            createdAt: now
-          }
-        })
-        await transaction.collection(EVENTS_COLLECTION).add({
-          data: {
-            messageId,
-            deltaLikes,
-            deltaDislikes,
-            deltaScore,
-            createdAt: now,
-            status: 'queued'
-          }
-        })
-        return { queued: true }
+    // ---- Step 1: 先检查文档是否存在 ----
+    let existing = null
+    try {
+      const snap = await dedupeRef.get()
+      if (snap && snap.data) {
+        existing = snap.data
       }
-
-      const previous = dedupeSnap.data.value
-      if (previous === value) {
-        return { queued: false, dedup: true }
+    } catch (e) {
+      const msg = String(e || '')
+      // 如果文档不存在，忽略错误继续创建
+      if (!/not exist|not found|fail/i.test(msg)) {
+        throw e
       }
+    }
 
-      let deltaLikes = 0
-      let deltaDislikes = 0
-      const deltaScore = value - previous
-
-      if (value === 1) {
-        deltaLikes = 1
-        if (previous === -1) {
-          deltaDislikes = -1
-        }
-      } else {
-        deltaDislikes = 1
-        if (previous === 1) {
-          deltaLikes = -1
-        }
-      }
-
-      await dedupeRef.update({ data: { value, updatedAt: now } })
-      await transaction.collection(EVENTS_COLLECTION).add({
+    // ---- Step 2: 如果不存在，创建新文档 ----
+    if (!existing) {
+      await dedupeRef.set({
         data: {
           messageId,
-          deltaLikes,
-          deltaDislikes,
-          deltaScore,
+          dedupeKey,
+          deltaLikes: value === 1 ? 1 : 0,
+          deltaDislikes: value === -1 ? 1 : 0,
+          deltaScore: value,
           createdAt: now,
-          status: 'queued'
+          updatedAt: now,
+          lastVoteAt: now,
+          voteUid,
+          value,
         }
       })
 
-      return { queued: true }
-    })
+      return success({ queued: true, firstVote: true })
+    }
 
-    return success(result)
+    // ---- Step 3: 文档已存在，检查是否重复投票 ----
+    const previousNormalized = normalizeValue(existing.value)
+    if (previousNormalized === value) {
+      return success({ queued: false, dedup: true })
+    }
+
+    // ---- Step 4: 计算增量并更新 ----
+    const previousValue = typeof previousNormalized === 'number' ? previousNormalized : 0
+    const deltaScore = value - previousValue
+
+    let deltaLikes = 0
+    if (value === 1) deltaLikes += 1
+    if (previousNormalized === 1) deltaLikes -= 1
+
+    let deltaDislikes = 0
+    if (value === -1) deltaDislikes += 1
+    if (previousNormalized === -1) deltaDislikes -= 1
+
+    try {
+      await dedupeRef.update({
+        data: {
+          messageId,
+          dedupeKey,
+          deltaLikes: _.inc(deltaLikes),
+          deltaDislikes: _.inc(deltaDislikes),
+          deltaScore: _.inc(deltaScore),
+          updatedAt: now,
+          voteUid,
+          value,
+          lastVoteAt: now,
+        }
+      })
+    } catch (updateError) {
+      const message = updateError && updateError.errMsg ? String(updateError.errMsg) : String(updateError || '')
+      if (/does\s+not\s+exist|not\s+found|not\s+exist/i.test(message)) {
+        await dedupeRef.set({
+          data: {
+            messageId,
+            dedupeKey,
+            deltaLikes,
+            deltaDislikes,
+            deltaScore,
+            createdAt: existing?.createdAt || now,
+            updatedAt: now,
+            voteUid,
+            value,
+            lastVoteAt: now,
+          }
+        })
+      } else {
+        throw updateError
+      }
+    }
+
+    return success({ queued: true, updated: true })
   } catch (error) {
     console.error('gnReact error', error)
     return failure(error)

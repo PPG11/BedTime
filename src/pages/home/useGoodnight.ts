@@ -400,12 +400,17 @@ export function useGoodnightInteraction({
 
       setIsVoting(true)
       try {
+        // 确保使用正确的消息ID进行投票
+        const messageId = modalMessage._id
+        console.log('[投票调试] 投票前的晚安心语ID:', messageId)
+        
         let updated: GoodnightMessage | null
         if (canUseCloud && userDoc) {
-          updated = await voteGoodnightMessage(modalMessage._id, voteType)
+          updated = await voteGoodnightMessage(messageId, voteType)
         } else {
-          updated = voteLocalGoodnightMessage(modalMessage._id, voteType)
+          updated = voteLocalGoodnightMessage(messageId, voteType)
         }
+        console.log('[投票调试] 投票后的晚安心语00:', updated)
 
         if (!updated) {
           Taro.showToast({ title: '当前晚安心语不可用', icon: 'none' })
@@ -413,8 +418,11 @@ export function useGoodnightInteraction({
           return
         }
 
+        console.log('[投票调试] 投票后的晚安心语:', updated)
         setModalMessage(updated)
+        console.log('[投票调试] 投票后的晚安心语11:', updated)
         setRewardMessage(updated)
+        console.log('[投票调试] 投票后的晚安心语22:', updated)
         setHasVoted(true)
         Taro.showToast({ title: voteType === 'like' ? '已点赞' : '已收到反馈', icon: 'success' })
       } catch (error) {
