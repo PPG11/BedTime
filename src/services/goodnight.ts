@@ -70,52 +70,6 @@ function invalidateRandomCache(key?: string): void {
   randomMessageCache.delete(key)
 }
 
-function isCloudFunctionMissingError(error: unknown): boolean {
-  if (!error) {
-    return false
-  }
-
-  if (typeof error === 'object') {
-    const maybeError = error as {
-      code?: unknown
-      errCode?: unknown
-      errMsg?: unknown
-      message?: unknown
-    }
-    const code = maybeError.code ?? maybeError.errCode
-    if (typeof code === 'string') {
-      const normalized = code.toUpperCase()
-      if (
-        normalized.includes('FUNCTION_NOT_FOUND') ||
-        normalized.includes('FUNCTION_NOT_EXIST') ||
-        normalized.includes('INVALID_FUNCTION_NAME')
-      ) {
-        return true
-      }
-    }
-    const errMsg = maybeError.errMsg ?? maybeError.message
-    if (typeof errMsg === 'string') {
-      const lower = errMsg.toLowerCase()
-      if (
-        lower.includes('function not found') ||
-        lower.includes('function not exist') ||
-        lower.includes('function does not exist') ||
-        lower.includes('functionname not found') ||
-        lower.includes('functionname not exist')
-      ) {
-        return true
-      }
-    }
-  }
-
-  const text = String(error).toLowerCase()
-  return (
-    text.includes('function not found') ||
-    text.includes('function not exist') ||
-    text.includes('invalid function name')
-  )
-}
-
 function getGoodnightMessagesCollection(
   db: CloudDatabase
 ): DbCollection<GoodnightMessageDocument> {
@@ -291,60 +245,6 @@ type GoodnightSubmitFunctionResponse = {
   messageId?: string | null
 }
 
-async function submitGoodnightMessageViaDatabase(
-  params: {
-    uid: string
-    content: string
-    date: string
-  },
-  trimmed: string
-): Promise<GoodnightMessage> {
-  const db = await ensureCloud()
-  const docId = getGoodnightMessageId(params.uid, params.date)
-  const collection = getGoodnightMessagesCollection(db)
-  const existingSnapshot = await getSnapshotOrNull(collection.doc(docId))
-
-  if (existingSnapshot && existingSnapshot.data) {
-    throw new Error(GOODNIGHT_ERROR_ALREADY_SUBMITTED)
-  }
-
-  const now = db.serverDate ? db.serverDate() : new Date()
-  const data: GoodnightMessageRecord = {
-    uid: params.uid,
-    content: trimmed,
-    text: trimmed,
-    likes: 0,
-    dislikes: 0,
-    date: params.date,
-    createdAt: now as unknown as Date
-  }
-
-  await collection.doc(docId).set({
-    data: {
-      uid: data.uid,
-      content: data.content,
-      text: data.text,
-      likes: data.likes,
-      dislikes: data.dislikes,
-      date: data.date,
-      createdAt: now
-    }
-  })
-
-  const message = mapGoodnightMessage(docId, data, {
-    uid: params.uid,
-    content: trimmed
-  })
-  const cacheKeys = new Set(
-    [docId, message._id, getGoodnightMessageId(params.uid, params.date)].filter(
-      (key): key is string => typeof key === 'string' && key.length > 0
-    )
-  )
-  cacheKeys.forEach((key) => setCacheEntry(goodnightMessageCache, key, message))
-  invalidateRandomCache()
-  return message
-}
-
 export async function submitGoodnightMessage(params: {
   uid: string
   content: string
@@ -352,91 +252,84 @@ export async function submitGoodnightMessage(params: {
 }): Promise<GoodnightMessage> {
   const trimmed = params.content.trim()
 
+  const response = await callCloudFunction<GoodnightSubmitFunctionResponse>({
+    name: 'gnSubmit',
+    data: {
+      text: trimmed,
+      date: params.date
+    }
+  })
+
+  if (!response) {
+    throw new Error('提交晚安心语失败')
+  }
+
+  const code = typeof response.code === 'string' ? response.code : 'OK'
+  if (code === 'ALREADY_EXISTS') {
+    throw new Error(GOODNIGHT_ERROR_ALREADY_SUBMITTED)
+  }
+  if (code !== 'OK') {
+    const message =
+      typeof response.message === 'string' && response.message.length
+        ? response.message
+        : '提交晚安心语失败'
+    throw new Error(message)
+  }
+
+  const fallbackId = getGoodnightMessageId(params.uid, params.date)
+  const messageId =
+    typeof response.messageId === 'string' && response.messageId.trim().length
+      ? response.messageId.trim()
+      : fallbackId
+
+  let message: GoodnightMessage | null = null
   try {
-    const response = await callCloudFunction<GoodnightSubmitFunctionResponse>({
-      name: 'gnSubmit',
-      data: {
-        text: trimmed,
+    message = await fetchGoodnightMessageById(messageId)
+  } catch (error) {
+    console.warn('提交后加载晚安心语详情失败', error)
+  }
+
+  if (!message) {
+    message = {
+      _id: messageId,
+      uid: params.uid,
+      content: trimmed,
+      likes: 0,
+      dislikes: 0,
+      date: params.date,
+      createdAt: new Date()
+    }
+  } else {
+    if (!message.uid && params.uid) {
+      message = {
+        ...message,
+        uid: params.uid
+      }
+    }
+    if (!message.content && trimmed) {
+      message = {
+        ...message,
+        content: trimmed
+      }
+    }
+    if (!message.date && params.date) {
+      message = {
+        ...message,
         date: params.date
       }
-    })
-
-    if (!response) {
-      throw new Error('提交晚安心语失败')
     }
-
-    const code = typeof response.code === 'string' ? response.code : 'OK'
-    if (code === 'ALREADY_EXISTS') {
-      throw new Error(GOODNIGHT_ERROR_ALREADY_SUBMITTED)
-    }
-    if (code !== 'OK') {
-      const message =
-        typeof response.message === 'string' && response.message.length
-          ? response.message
-          : '提交晚安心语失败'
-      throw new Error(message)
-    }
-
-    const fallbackId = getGoodnightMessageId(params.uid, params.date)
-    const messageId =
-      typeof response.messageId === 'string' && response.messageId.trim().length
-        ? response.messageId.trim()
-        : fallbackId
-
-    let message: GoodnightMessage | null = null
-    try {
-      message = await fetchGoodnightMessageById(messageId)
-    } catch (error) {
-      console.warn('提交后加载晚安心语详情失败', error)
-    }
-
-    if (!message) {
-      message = {
-        _id: messageId,
-        uid: params.uid,
-        content: trimmed,
-        likes: 0,
-        dislikes: 0,
-        date: params.date,
-        createdAt: new Date()
-      }
-    } else {
-      if (!message.uid && params.uid) {
-        message = {
-          ...message,
-          uid: params.uid
-        }
-      }
-      if (!message.content && trimmed) {
-        message = {
-          ...message,
-          content: trimmed
-        }
-      }
-      if (!message.date && params.date) {
-        message = {
-          ...message,
-          date: params.date
-        }
-      }
-    }
-
-    const normalizedMessage = message as GoodnightMessage
-    const cacheKeys = new Set(
-      [normalizedMessage._id, messageId, fallbackId].filter(
-        (key): key is string => typeof key === 'string' && key.length > 0
-      )
-    )
-    cacheKeys.forEach((key) => setCacheEntry(goodnightMessageCache, key, normalizedMessage))
-
-    invalidateRandomCache()
-    return normalizedMessage
-  } catch (error) {
-    if (isCloudFunctionMissingError(error)) {
-      return submitGoodnightMessageViaDatabase(params, trimmed)
-    }
-    throw error
   }
+
+  const normalizedMessage = message as GoodnightMessage
+  const cacheKeys = new Set(
+    [normalizedMessage._id, messageId, fallbackId].filter(
+      (key): key is string => typeof key === 'string' && key.length > 0
+    )
+  )
+  cacheKeys.forEach((key) => setCacheEntry(goodnightMessageCache, key, normalizedMessage))
+
+  invalidateRandomCache()
+  return normalizedMessage
 }
 
 type GoodnightRandomFunctionResponse = {
