@@ -6,6 +6,8 @@ initCloud()
 
 const EVENTS_COLLECTION = 'gn_reaction_events'
 
+// https://docs.cloudbase.net/cloud-function/timer-trigger
+
 exports.main = async () => {
   try {
     const db = getDb()

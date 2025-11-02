@@ -6,6 +6,7 @@ import {
 } from '../types/goodnight'
 import {
   ensureCloud,
+  callCloudFunction,
   type CloudDatabase,
   type CloudDocumentSnapshot,
   type DbCollection
@@ -18,6 +19,13 @@ type GoodnightMessageRecord = Omit<GoodnightMessage, '_id'>
 type CacheEntry<T> = {
   timestamp: number
   value: T
+}
+
+type GoodnightReactionFunctionResponse = {
+  code?: string
+  message?: string
+  queued?: boolean
+  dedup?: boolean
 }
 
 const MESSAGE_CACHE_TTL = 60 * 1000
@@ -240,26 +248,51 @@ export async function voteGoodnightMessage(
   id: string,
   vote: GoodnightVoteType
 ): Promise<GoodnightMessage | null> {
-  const db = await ensureCloud()
-  const collection = getGoodnightMessagesCollection(db)
-  const doc = collection.doc(id)
-  const snapshot = await doc.get()
-  const current = mapSnapshot(id, snapshot)
+  if (!id) {
+    return null
+  }
+
+  const cached = goodnightMessageCache.get(id)
+  let current: GoodnightMessage | null = null
+  if (cached && isCacheFresh(cached, MESSAGE_CACHE_TTL) && cached.value) {
+    current = cached.value
+  } else {
+    current = await fetchGoodnightMessageById(id)
+  }
 
   if (!current) {
     setCacheEntry(goodnightMessageCache, id, null)
     return null
   }
 
-  const nextLikes = vote === 'like' ? current.likes + 1 : current.likes
-  const nextDislikes = vote === 'dislike' ? current.dislikes + 1 : current.dislikes
-
-  await doc.update({
+  const response = await callCloudFunction<GoodnightReactionFunctionResponse>({
+    name: 'gnReact',
     data: {
-      likes: nextLikes,
-      dislikes: nextDislikes
+      messageId: id,
+      value: vote === 'like' ? 1 : -1
     }
   })
+
+  if (!response) {
+    throw new Error('投票失败，请稍后再试')
+  }
+
+  const code = typeof response.code === 'string' ? response.code : 'OK'
+  if (code !== 'OK') {
+    const message =
+      typeof response.message === 'string' && response.message.length
+        ? response.message
+        : '投票失败，请稍后再试'
+    throw new Error(message)
+  }
+
+  if (!response.queued) {
+    setCacheEntry(goodnightMessageCache, id, current)
+    return current
+  }
+
+  const nextLikes = vote === 'like' ? current.likes + 1 : current.likes
+  const nextDislikes = vote === 'dislike' ? current.dislikes + 1 : current.dislikes
 
   const updated: GoodnightMessage = {
     ...current,
