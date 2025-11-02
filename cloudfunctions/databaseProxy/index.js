@@ -140,17 +140,6 @@ async function ensureAuthUid(db, authState) {
   return uid
 }
 
-function parseInviteId(id) {
-  if (typeof id !== 'string') {
-    return null
-  }
-  const match = /^invite_([^_]+)_([^_]+)$/.exec(id.trim())
-  if (!match) {
-    return null
-  }
-  return { senderUid: match[1], recipientUid: match[2] }
-}
-
 function ensureAllowedFields(data, allowedFields) {
   if (!isPlainObject(data)) {
     throw forbidden('缺少有效的数据负载')
@@ -235,44 +224,6 @@ async function authorizeOperation(db, collectionName, action, payload, authState
           const queryUid = toTrimmedString(query.uid)
           if (!queryUid || queryUid !== uid) {
             throw forbidden('查询条件缺少当前用户 UID')
-          }
-          return
-        }
-
-        throw forbidden('不允许的数据库操作')
-      }
-    },
-    friend_invites: {
-      actions: new Set(['doc.get', 'doc.set', 'doc.update', 'doc.remove', 'collection.get', 'collection.count']),
-      async authorize() {
-        const uid = await ensureAuthUid(db, authState)
-
-        if (action === 'doc.get' || action === 'doc.set' || action === 'doc.update' || action === 'doc.remove') {
-          const details = parseInviteId(toTrimmedString(payload.id))
-          if (!details) {
-            throw forbidden('无效的好友邀请标识')
-          }
-          if (details.senderUid !== uid && details.recipientUid !== uid) {
-            throw forbidden('无权访问该好友邀请')
-          }
-
-          if (action === 'doc.set' || action === 'doc.update') {
-            const data = isPlainObject(payload.data) ? payload.data : {}
-            const senderUid = toTrimmedString(data.senderUid)
-            const recipientUid = toTrimmedString(data.recipientUid)
-            if ((senderUid && senderUid !== details.senderUid) || (recipientUid && recipientUid !== details.recipientUid)) {
-              throw forbidden('好友邀请参与者信息不匹配')
-            }
-          }
-          return
-        }
-
-        if (action === 'collection.get' || action === 'collection.count') {
-          const query = isPlainObject(payload.query) ? payload.query : {}
-          const senderUid = toTrimmedString(query.senderUid)
-          const recipientUid = toTrimmedString(query.recipientUid)
-          if (senderUid !== uid && recipientUid !== uid) {
-            throw forbidden('无权查询好友邀请')
           }
           return
         }

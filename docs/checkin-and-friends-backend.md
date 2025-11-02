@@ -6,12 +6,13 @@
 
 | 集合 | 作用 | 关键字段 |
 | ---- | ---- | -------- |
-| `users` | 保存用户主档信息及好友关系缓存 | `uid`、`nickname`、`tzOffset`、`targetHM`、`buddyList`、`incomingRequests`、`outgoingRequests`、`createdAt`、`updatedAt` |
+| `users` | 保存用户主档信息与打卡摘要 | `uid`、`nickname`、`tzOffset`、`targetHM`、`slotKey`、`todayStatus`、`streak`、`totalDays`、`lastCheckinDate`、`createdAt` |
 | `checkins` | 以用户维度聚合打卡状态 | `_id`（用户 UID）、`uid`、`ownerOpenid`、`info[]`（`date`、`status`、`message`、`tzOffset`、`ts`）、`createdAt`、`updatedAt` |
 | `public_profiles` | 好友列表展示所需的公开资料与状态 | `_id`、`uid`、`nickname`、`sleeptime`、`streak`、`todayStatus`、`updatedAt` |
-| `friend_invites` | 好友邀请单与状态流转 | `_id`（`invite_sender_recipient` 组合）、`senderUid`、`senderOpenId`、`recipientUid`、`recipientOpenId`、`status`、`createdAt`、`updatedAt` |
+| `friend_requests` | 好友申请记录 | `_id`、`fromUid`、`toUid`、`status`、`createdAt` |
+| `friendships` | 好友无向边 | `_id = {minUid}#{maxUid}`、`aUid`、`bUid`、`createdAt` |
 
-所有集合名称由 `COLLECTIONS` 常量统一维护，便于后续修改。【F:src/config/cloud.ts†L15-L21】
+所有集合名称由 `COLLECTIONS` 常量统一维护，便于后续修改。【F:src/config/cloud.ts†L15-L20】
 
 ## 打卡业务流程
 
@@ -38,36 +39,46 @@
 
 ## 好友体系流程
 
-### 用户主档与邀请缓存
+### 用户主档
 
-`UserDocument` 同时维护好友列表与收发请求缓存字段（`buddyList`、`incomingRequests`、`outgoingRequests`），数据在 `hydrateUserInviteLists` 中与 `friend_invites` 集合同步，清理已接受 / 拒绝的邀请并回填本地缓存，避免前端显示过期数据。【F:src/services/user.ts†L9-L152】【F:src/services/user.ts†L371-L535】
+`userEnsure` 云函数确保 `users` 集合存在主档，并返回包含 UID、昵称、目标睡眠时间、 streak 等字段的摘要数据。前端通过 `ensureCurrentUser` 调用云函数并映射为 `UserDocument`，无须再直接读写数据库。【F:cloudfunctions/userEnsure/index.js†L1-L15】【F:src/services/user.ts†L101-L158】
 
-新用户通过 `ensureCurrentUser` 创建：若 `users` 集合无记录，先生成唯一 UID，再写入包含默认昵称、目标睡眠时间、好友字段初始值的文档。【F:src/services/user.ts†L184-L223】
+昵称或目标睡眠时间更新时，`updateCurrentUser` 直接更新 `users` 文档并在成功后调用 `syncPublicProfileBasics` 将核心展示字段写入 `public_profiles`，保证好友页读取到最新资料。【F:src/services/user.ts†L200-L278】
 
-### 好友邀请发送（`sendFriendInvite`）
+### 好友申请发送（`sendFriendRequest`）
 
-1. 入口会确认目标 UID 合法且非本人，同时检查当前用户的好友与申请缓存，避免重复邀请。【F:src/services/user.ts†L863-L909】
-2. 通过公开资料集合反查目标用户，必要时尝试根据公开资料为对方补齐 `users` 文档，从而拿到 `recipientOpenId`。【F:src/services/user.ts†L886-L907】【F:src/services/user.ts†L675-L799】
-3. 使用 `invite_sender_recipient` 作为主键读取 / 创建邀请文档；若已有 `pending` 状态直接返回“已发送”，若已接受则视为“已经是好友”。【F:src/services/user.ts†L916-L968】
-4. 写入 / 更新邀请后，把对方 UID 追加到当前用户的 `outgoingRequests` 并更新时间戳，再读取最新用户文档返回给前端。【F:src/services/user.ts†L970-L985】
+1. `friendRequestSend` 云函数校验目标 UID 与去重条件，确认双方未建立好友关系后写入 `friend_requests`，状态为 `pending`。【F:cloudfunctions/friendRequestSend/index.js†L7-L53】
+2. 前端封装为 `sendFriendRequest`，只需传入目标 UID，成功后云函数返回申请 ID。【F:src/services/friends.ts†L204-L236】
 
-### 好友邀请处理（`respondFriendInvite`）
+### 接收方处理申请（`respondFriendRequest`）
 
-1. 依据当前用户的 `incomingRequests` 匹配来访者 UID，定位邀请文档，必要时兜底查询参与方组合。【F:src/services/user.ts†L992-L1044】
-2. 根据接受 / 拒绝分支调整双方的 `buddyList` 与收发请求列表，保持云端字段同步；失败时仅打印警告以避免流程中断。【F:src/services/user.ts†L1046-L1107】
-3. 更新邀请状态为 `accept`（兼容历史的 `accepted`）或 `declined`，最后重新读取当前用户返回最新数据。【F:src/services/user.ts†L1103-L1119】
+1. `friendRequestUpdate` 在事务中读取申请文档，确认接收方 UID 后根据 `decision` 写入 `status`。【F:cloudfunctions/friendRequestUpdate/index.js†L17-L69】
+2. 接受时同步在 `friendships` 集合中创建无向边（若已存在则跳过），返回最新状态。前端通过 `respondFriendRequest` 调用云函数并据返回值反馈用户。【F:src/services/friends.ts†L238-L278】
+
+### 发送方确认结果（`confirmFriendRequest`）
+
+接收方接受申请后，发送方调用 `friendFinish` 进行幂等补写，确保好友边已存在。前端会在拉取好友数据时检测到 `accepted` 的外发申请，逐一调用 `confirmFriendRequest` 并刷新展示。【F:cloudfunctions/friendFinish/index.js†L7-L53】【F:src/services/friends.ts†L280-L320】【F:src/pages/friends/index.tsx†L139-L207】
 
 ### 好友关系解除（`removeFriend`）
 
-- 校验目标 UID 在当前 `buddyList` 中，再分别更新双方的好友 / 请求缓存，确保解除关系后所有引用都被移除。【F:src/services/user.ts†L1122-L1171】
+`friendRemove` 云函数根据双方 UID 构造边主键并删除 `friendships` 文档。前端封装为 `removeFriend`，完成后再次拉取好友数据刷新界面。【F:cloudfunctions/friendRemove/index.js†L7-L38】【F:src/services/friends.ts†L322-L351】
 
-### 公开资料维护
+### 好友列表与申请分页（`friendsPage`）
 
-昵称或目标睡眠时间更新后，会调用 `syncPublicProfileBasics` 同步 `public_profiles` 集合；若更新失败则回退到创建新公开档案，保证好友页可以读取最新展示信息。【F:src/services/user.ts†L537-L1211】
+`friendsPage` 云函数基于 `friendships` 集合查询当前用户的好友边，同时拉取 `friend_requests` 中的待处理申请（收 / 发）。返回结构包含：
+
+- `list`：好友 UID 与展示所需的昵称、 streak、目标睡眠时间等；
+- `requests.incoming`：按创建时间倒序的待处理申请；
+- `requests.outgoing`：当前用户发出的申请及其状态；
+- `nextCursor`：用于分页的时间戳游标。
+
+云函数内部会一次性加载相关 UID 的用户资料，避免前端多次 round-trip。【F:cloudfunctions/friendsPage/index.js†L14-L162】
+
+前端通过 `fetchFriendsOverview` 获取该结构，结合本地备注生成好友列表与申请列表，并在需要时触发 `confirmFriendRequest` 更新状态。【F:src/services/friends.ts†L100-L202】【F:src/pages/friends/index.tsx†L209-L356】
 
 ## 前端触发点概览
 
 - 首页打卡按钮调用 `upsertCheckin`，成功后立即刷新公开资料并在本地缓存打卡时间戳。【F:src/pages/home/index.tsx†L233-L330】
-- 好友页加载时通过 `ensureCurrentUser`、`fetchPublicProfiles` 等方法填充好友和申请列表，并在发送 / 处理邀请时调用上述服务函数更新数据库。【F:src/pages/friends/index.tsx†L5-L210】【F:src/pages/friends/index.tsx†L343-L525】
+- 好友页加载时通过 `ensureCurrentUser` 与 `fetchFriendsOverview` 获取好友、申请及分页信息；发送、接受、拒绝、删除好友均委托云函数完成，并在操作后重新拉取概览数据。【F:src/pages/friends/index.tsx†L80-L370】
 
 以上流程涵盖了打卡记录写入、晚安心语关联、好友关系的创建 / 接受 / 删除及公开资料同步的关键节点，可据此评估数据库结构调整或业务逻辑重构的影响范围。

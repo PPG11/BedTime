@@ -40,7 +40,7 @@ export function FriendForm({
           />
         </View>
         <Button className='friends__submit' type='primary' onClick={onSubmit}>
-          发送邀请
+          发送申请
         </Button>
       </View>
     </View>

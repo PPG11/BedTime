@@ -1,6 +1,7 @@
 import { Button, Text, View } from '@tarojs/components'
 
 export type FriendRequestItem = {
+  requestId: string
   uid: string
   nickname: string
   sleeptime: string
@@ -9,20 +10,20 @@ export type FriendRequestItem = {
 
 type FriendRequestListProps = {
   requests: FriendRequestItem[]
-  onAccept?: (uid: string) => void
-  onReject?: (uid: string) => void
+  onAccept?: (requestId: string, uid: string) => void
+  onReject?: (requestId: string, uid: string) => void
 }
 
 export function FriendRequestList({ requests, onAccept, onReject }: FriendRequestListProps) {
   const hasRequests = requests.length > 0
-  const handleAccept = (uid: string) => {
+  const handleAccept = (requestId: string, uid: string) => {
     if (typeof onAccept === 'function') {
-      onAccept(uid)
+      onAccept(requestId, uid)
     }
   }
-  const handleReject = (uid: string) => {
+  const handleReject = (requestId: string, uid: string) => {
     if (typeof onReject === 'function') {
-      onReject(uid)
+      onReject(requestId, uid)
     }
   }
 
@@ -32,7 +33,7 @@ export function FriendRequestList({ requests, onAccept, onReject }: FriendReques
       {hasRequests ? (
         <View className='friends__requests'>
           {requests.map((request) => (
-            <View key={request.uid} className='friends__request-item'>
+            <View key={request.requestId} className='friends__request-item'>
               <View className='friends__request-info'>
                 <Text className='friends__item-name'>{request.nickname}</Text>
                 <Text className='friends__item-uid'>UID：{request.uid}</Text>
@@ -41,10 +42,18 @@ export function FriendRequestList({ requests, onAccept, onReject }: FriendReques
                 </Text>
               </View>
               <View className='friends__request-actions'>
-                <Button size='mini' type='primary' onClick={() => handleAccept(request.uid)}>
+                <Button
+                  size='mini'
+                  type='primary'
+                  onClick={() => handleAccept(request.requestId, request.uid)}
+                >
                   同意
                 </Button>
-                <Button size='mini' className='friends__remove' onClick={() => handleReject(request.uid)}>
+                <Button
+                  size='mini'
+                  className='friends__remove'
+                  onClick={() => handleReject(request.requestId, request.uid)}
+                >
                   拒绝
                 </Button>
               </View>

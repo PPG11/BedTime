@@ -5,17 +5,18 @@ import { FriendProfile, readFriends, readUserUid, saveFriends } from '../../util
 import { formatMinutesToTime } from '../../utils/time'
 import { FriendUidCard } from '../../components/friends/FriendUidCard'
 import { FriendForm } from '../../components/friends/FriendForm'
-import { FriendList, FriendListItem } from '../../components/friends/FriendList'
-import { FriendRequestItem, FriendRequestList } from '../../components/friends/FriendRequestList'
+import { FriendList, type FriendListItem } from '../../components/friends/FriendList'
+import { FriendRequestList, type FriendRequestItem } from '../../components/friends/FriendRequestList'
 import {
-  CheckinStatus,
-  FriendProfileSnapshot,
-  UserDocument,
+  type CheckinStatus,
+  type FriendsOverview,
+  type UserDocument,
+  confirmFriendRequest,
   ensureCurrentUser,
-  fetchPublicProfiles,
+  fetchFriendsOverview,
   removeFriend,
-  respondFriendInvite,
-  sendFriendInvite,
+  respondFriendRequest,
+  sendFriendRequest,
   supportsCloud
 } from '../../services'
 import './index.scss'
@@ -60,70 +61,54 @@ function createPlaceholderItem(uid: string, remark?: string): FriendListItem {
   }
 }
 
-function mergeAliasList(buddyList: string[], aliases: FriendProfile[]): FriendProfile[] {
-  const aliasMap = new Map(aliases.map((item) => [item.uid, item.remark]))
-  return buddyList.map((uid) => ({
-    uid,
-    remark: aliasMap.get(uid)
-  }))
-}
+type FriendSummary = FriendsOverview['friends'][number]
+type FriendRequestSummary = FriendsOverview['requests']['incoming'][number]
 
-function buildRequestItems(
-  requestList: string[],
-  snapshots: FriendProfileSnapshot[]
-): FriendRequestItem[] {
-  const snapshotMap = new Map(snapshots.map((item) => [item.uid, item]))
+function buildFriendItemsFromSummaries(
+  summaries: FriendSummary[],
+  aliases: FriendProfile[]
+): FriendListItem[] {
+  const aliasMap = new Map(aliases.map((item) => [item.uid, item.remark?.trim() ?? '']))
 
-  return requestList.map((uid) => {
-    const snapshot = snapshotMap.get(uid)
-    if (!snapshot) {
-      const placeholder = createPlaceholderItem(uid)
-      return {
-        uid,
-        nickname: placeholder.nickname,
-        sleeptime: placeholder.sleeptime,
-        updatedAtLabel: placeholder.updatedAtLabel
-      }
-    }
-    const updatedAt =
-      snapshot.updatedAt instanceof Date ? snapshot.updatedAt : new Date(snapshot.updatedAt)
-    const fallbackName = snapshot.nickname || `早睡伙伴 ${uid.slice(-4)}`
+  return summaries.map((summary) => {
+    const remark = aliasMap.get(summary.uid) ?? ''
+    const fallbackName = summary.nickname || `早睡伙伴 ${summary.uid.slice(-4)}`
+    const displayName = remark.length ? remark : fallbackName
+    const todayStatus = summary.todayStatus ?? 'pending'
+    const statusLabel = statusLabels[todayStatus] ?? statusLabels.pending
+    const sleeptime =
+      typeof summary.targetHM === 'string' && summary.targetHM.length
+        ? summary.targetHM
+        : formatMinutesToTime(22 * 60 + 30)
+
     return {
-      uid,
+      uid: summary.uid,
       nickname: fallbackName,
-      sleeptime: snapshot.sleeptime,
-      updatedAtLabel: formatUpdatedAtLabel(updatedAt)
+      displayName,
+      remark: remark.length ? remark : undefined,
+      streak: summary.streak ?? 0,
+      todayStatus,
+      todayStatusLabel: statusLabel,
+      sleeptime,
+      updatedAtLabel: formatUpdatedAtLabel(new Date())
     }
   })
 }
 
-function buildFriendItems(
-  buddyList: string[],
-  snapshots: FriendProfileSnapshot[],
-  aliases: FriendProfile[]
-): FriendListItem[] {
-  const aliasMap = new Map(aliases.map((item) => [item.uid, item.remark?.trim() ?? '']))
-  const snapshotMap = new Map(snapshots.map((item) => [item.uid, item]))
+function buildRequestItemsFromSummaries(requests: FriendRequestSummary[]): FriendRequestItem[] {
+  return requests.map((request) => {
+    const fallbackName = request.nickname || `早睡伙伴 ${request.uid.slice(-4)}`
+    const sleeptime =
+      typeof request.targetHM === 'string' && request.targetHM.length
+        ? request.targetHM
+        : formatMinutesToTime(22 * 60 + 30)
+    const updatedAt = request.createdAt instanceof Date ? request.createdAt : new Date()
 
-  return buddyList.map((uid) => {
-    const snapshot = snapshotMap.get(uid)
-    const remark = aliasMap.get(uid) ?? ''
-    if (!snapshot) {
-      return createPlaceholderItem(uid, remark)
-    }
-    const updatedAt =
-      snapshot.updatedAt instanceof Date ? snapshot.updatedAt : new Date(snapshot.updatedAt)
-    const fallbackName = snapshot.nickname || `早睡伙伴 ${uid.slice(-4)}`
-    const displayName = remark.length ? remark : fallbackName
     return {
-      uid,
+      requestId: request.requestId,
+      uid: request.uid,
       nickname: fallbackName,
-      displayName,
-      remark: remark.length ? remark : undefined,
-      streak: snapshot.streak,
-      todayStatus: snapshot.todayStatus,
-      todayStatusLabel: statusLabels[snapshot.todayStatus] ?? statusLabels.pending,
-      sleeptime: snapshot.sleeptime,
+      sleeptime,
       updatedAtLabel: formatUpdatedAtLabel(updatedAt)
     }
   })
@@ -133,11 +118,11 @@ export default function Friends() {
   const [friendItems, setFriendItems] = useState<FriendListItem[]>([])
   const [, setFriendAliases] = useState<FriendProfile[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequestItem[]>([])
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendsOverview['requests']['outgoing']>([])
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
   const [userUid, setUserUid] = useState('')
   const [userDoc, setUserDoc] = useState<UserDocument | null>(null)
-  const [outgoingRequests, setOutgoingRequests] = useState<string[]>([])
   const [isSyncing, setIsSyncing] = useState(false)
   const [canUseCloud] = useState(() => supportsCloud())
 
@@ -158,7 +143,15 @@ export default function Friends() {
         persistAliases(filtered)
         return
       }
-      persistAliases([...filtered, { uid, remark: trimmed }])
+
+      const next: FriendProfile[] = [
+        ...filtered,
+        {
+          uid,
+          remark: trimmed
+        }
+      ]
+      persistAliases(next)
     },
     [persistAliases]
   )
@@ -174,52 +167,70 @@ export default function Friends() {
     [persistAliases]
   )
 
-  const applyUserDoc = useCallback(
-    async (doc: UserDocument, aliasSource?: FriendProfile[]) => {
-      setUserDoc(doc)
-      setUserUid(doc.uid)
-      setOutgoingRequests(doc.outgoingRequests ?? [])
-
+  const applyOverview = useCallback(
+    (overview: FriendsOverview, aliasSource?: FriendProfile[]) => {
       const source = aliasSource ?? friendAliasesRef.current
-      const buddyUids = doc.buddyList ?? []
-      const normalizedAliases = mergeAliasList(buddyUids, source)
-      const aliasPool = new Set([
-        ...buddyUids,
-        ...(doc.incomingRequests ?? []),
-        ...(doc.outgoingRequests ?? [])
-      ])
       const sourceMap = new Map(source.map((item) => [item.uid, item.remark]))
+      const aliasPool = new Set<string>([
+        ...overview.friends.map((item) => item.uid),
+        ...overview.requests.incoming.map((item) => item.uid),
+        ...overview.requests.outgoing.map((item) => item.uid)
+      ])
       const storedAliases: FriendProfile[] = Array.from(aliasPool).map((uid) => ({
         uid,
-        remark: sourceMap.get(uid)
+        remark: sourceMap.get(uid) ?? ''
       }))
+
       persistAliases(storedAliases)
-
-      let friendSnapshots: FriendProfileSnapshot[] = []
-      if (buddyUids.length) {
-        try {
-          friendSnapshots = await fetchPublicProfiles(buddyUids)
-        } catch (error) {
-          console.error('同步好友状态失败，使用占位信息', error)
-          friendSnapshots = []
-        }
-      }
-      setFriendItems(buildFriendItems(buddyUids, friendSnapshots, normalizedAliases))
-
-      const incomingUids = doc.incomingRequests ?? []
-      let requestSnapshots: FriendProfileSnapshot[] = []
-      if (incomingUids.length) {
-        try {
-          requestSnapshots = await fetchPublicProfiles(incomingUids)
-        } catch (error) {
-          console.error('读取好友申请失败，使用占位信息', error)
-          requestSnapshots = []
-        }
-      }
-      setFriendRequests(buildRequestItems(incomingUids, requestSnapshots))
+      setFriendItems(buildFriendItemsFromSummaries(overview.friends, storedAliases))
+      setFriendRequests(buildRequestItemsFromSummaries(overview.requests.incoming))
+      setOutgoingRequests(overview.requests.outgoing)
     },
     [persistAliases]
   )
+
+  const confirmedRequestsRef = useRef<Set<string>>(new Set())
+
+  const ensureOutgoingConfirmed = useCallback(
+    async (outgoing: FriendsOverview['requests']['outgoing']) => {
+      if (!outgoing.length) {
+        return
+      }
+      const pending = outgoing.filter(
+        (request) =>
+          request.status === 'accepted' && !confirmedRequestsRef.current.has(request.requestId)
+      )
+    if (!pending.length) {
+      return
+    }
+
+    let didConfirm = false
+
+    for (const request of pending) {
+      try {
+        const confirmed = await confirmFriendRequest(request.requestId)
+        if (confirmed) {
+          confirmedRequestsRef.current.add(request.requestId)
+          didConfirm = true
+        } else {
+          console.warn('好友申请确认返回未建立关系', request.requestId)
+        }
+      } catch (error) {
+        console.warn('确认好友申请结果失败', request.requestId, error)
+      }
+    }
+
+    if (didConfirm) {
+      try {
+        const refreshed = await fetchFriendsOverview()
+        applyOverview(refreshed)
+      } catch (error) {
+        console.warn('刷新好友数据失败', error)
+      }
+    }
+  },
+  [applyOverview]
+)
 
   const hydrate = useCallback(async () => {
     const aliases = readFriends()
@@ -230,10 +241,16 @@ export default function Friends() {
       setIsSyncing(true)
       try {
         const user = await ensureCurrentUser()
-        await applyUserDoc(user, aliases)
+        setUserDoc(user)
+        setUserUid(user.uid)
+
+        const overview = await fetchFriendsOverview()
+        applyOverview(overview, aliases)
+        await ensureOutgoingConfirmed(overview.requests.outgoing)
       } catch (error) {
         console.error('同步好友数据失败，使用本地数据', error)
         Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
+        setUserDoc(null)
         const fallbackUid = readUserUid()
         setUserUid((prev) => (prev ? prev : fallbackUid))
         setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
@@ -247,10 +264,11 @@ export default function Friends() {
 
     const fallbackUid = readUserUid()
     setUserUid((prev) => (prev ? prev : fallbackUid))
+    setUserDoc(null)
     setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
     setFriendRequests([])
     setOutgoingRequests([])
-  }, [applyUserDoc, canUseCloud])
+  }, [applyOverview, canUseCloud])
 
   useEffect(() => {
     void hydrate()
@@ -266,19 +284,28 @@ export default function Friends() {
   }, [])
 
   const knownUids = useMemo(() => new Set(friendItems.map((item) => item.uid)), [friendItems])
-  const outgoingRequestSet = useMemo(() => new Set(outgoingRequests), [outgoingRequests])
-  const incomingRequestSet = useMemo(
-    () => new Set(userDoc?.incomingRequests ?? []),
-    [userDoc]
+  const outgoingRequestSet = useMemo(
+    () => new Set(outgoingRequests.map((item) => item.uid)),
+    [outgoingRequests]
   )
+  const incomingRequestSet = useMemo(
+    () => new Set(friendRequests.map((item) => item.uid)),
+    [friendRequests]
+  )
+
+  const refreshOverview = useCallback(async () => {
+    const overview = await fetchFriendsOverview()
+    applyOverview(overview)
+    await ensureOutgoingConfirmed(overview.requests.outgoing)
+  }, [applyOverview, ensureOutgoingConfirmed])
 
   const handleAddFriend = useCallback(async () => {
     if (isSyncing) {
       return
     }
     const normalizedUid = uidInput.trim()
-    if (!/^\d{8}$/.test(normalizedUid)) {
-      Taro.showToast({ title: '请输入 8 位好友 UID', icon: 'none' })
+    if (!/^[0-9A-Za-z]{6,12}$/.test(normalizedUid)) {
+      Taro.showToast({ title: '请输入有效的好友 UID', icon: 'none' })
       return
     }
     if (normalizedUid === userUid) {
@@ -286,15 +313,15 @@ export default function Friends() {
       return
     }
     if (knownUids.has(normalizedUid)) {
-      Taro.showToast({ title: '已经是好友', icon: 'none' })
+      Taro.showToast({ title: '已经是好友啦', icon: 'none' })
       return
     }
     if (incomingRequestSet.has(normalizedUid)) {
-      Taro.showToast({ title: '对方已向你发出邀请，请在好友申请中查看', icon: 'none' })
+      Taro.showToast({ title: '对方已向你发出申请，请在好友申请中查看', icon: 'none' })
       return
     }
     if (outgoingRequestSet.has(normalizedUid)) {
-      Taro.showToast({ title: '已向对方发送邀请，请耐心等待', icon: 'none' })
+      Taro.showToast({ title: '已向对方发送申请，请耐心等待', icon: 'none' })
       return
     }
 
@@ -303,50 +330,36 @@ export default function Friends() {
     if (canUseCloud && userDoc) {
       setIsSyncing(true)
       try {
-        const result = await sendFriendInvite(normalizedUid)
-        if (result.status === 'not-found') {
-          Taro.showToast({ title: '未找到该用户', icon: 'none' })
-          return
-        }
-        if (result.status === 'self-target') {
-          Taro.showToast({ title: '不能添加自己哦', icon: 'none' })
-          return
-        }
-        await applyUserDoc(result.user)
+        await sendFriendRequest(normalizedUid)
         if (remark) {
           upsertAlias(normalizedUid, remark)
         }
+        await refreshOverview()
         resetForm()
-        if (result.status === 'sent') {
-          Taro.showToast({ title: '邀请已发送', icon: 'success' })
-        } else if (result.status === 'already-friends') {
-          Taro.showToast({ title: '已经是好友', icon: 'none' })
-        } else if (result.status === 'incoming-exists') {
-          Taro.showToast({ title: '对方已向你发出邀请，请在好友申请中查看', icon: 'none' })
-        } else {
-          Taro.showToast({ title: '已向对方发送邀请', icon: 'none' })
-        }
+        Taro.showToast({ title: '好友申请已发送', icon: 'success' })
       } catch (error) {
-        console.error('发送好友邀请失败', error)
-        Taro.showToast({ title: '发送邀请失败，请稍后重试', icon: 'none' })
+        console.error('发送好友申请失败', error)
+        const message =
+          error instanceof Error && typeof error.message === 'string' && error.message.length
+            ? error.message
+            : '发送好友申请失败，请稍后重试'
+        Taro.showToast({ title: message, icon: 'none' })
       } finally {
         setIsSyncing(false)
       }
       return
     }
 
-    Taro.showToast({ title: '当前模式不支持好友邀请', icon: 'none' })
+    Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
   }, [
     aliasInput,
-    applyUserDoc,
     canUseCloud,
-    friendAliasesRef,
     incomingRequestSet,
     isSyncing,
     knownUids,
     outgoingRequestSet,
+    refreshOverview,
     resetForm,
-    sendFriendInvite,
     uidInput,
     upsertAlias,
     userDoc,
@@ -370,16 +383,17 @@ export default function Friends() {
           if (canUseCloud && userDoc) {
             setIsSyncing(true)
             try {
-              const result = await removeFriend(targetUid)
-              await applyUserDoc(result.user)
-              if (result.status === 'ok') {
-                Taro.showToast({ title: '已解除好友关系', icon: 'none' })
-              } else {
-                Taro.showToast({ title: '未找到该好友', icon: 'none' })
-              }
+              await removeFriend(targetUid)
+              removeAlias(targetUid)
+              await refreshOverview()
+              Taro.showToast({ title: '已解除好友关系', icon: 'none' })
             } catch (error) {
               console.error('解除好友关系失败', error)
-              Taro.showToast({ title: '操作失败，请稍后再试', icon: 'none' })
+              const message =
+                error instanceof Error && typeof error.message === 'string' && error.message.length
+                  ? error.message
+                  : '操作失败，请稍后再试'
+              Taro.showToast({ title: message, icon: 'none' })
             } finally {
               setIsSyncing(false)
             }
@@ -391,72 +405,71 @@ export default function Friends() {
         }
       })
     },
-    [
-      applyUserDoc,
-      canUseCloud,
-      friendAliasesRef,
-      friendItems,
-      isSyncing,
-      removeAlias,
-      removeFriend,
-      userDoc
-    ]
+    [canUseCloud, friendItems, isSyncing, refreshOverview, removeAlias, userDoc]
   )
 
   const handleAcceptRequest = useCallback(
-    async (targetUid: string) => {
+    async (requestId: string) => {
       if (isSyncing) {
         return
       }
       if (!canUseCloud || !userDoc) {
-        Taro.showToast({ title: '当前模式不支持好友邀请', icon: 'none' })
+        Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
         return
       }
       setIsSyncing(true)
       try {
-        const result = await respondFriendInvite(targetUid, true)
-        await applyUserDoc(result.user)
-        if (result.status === 'accepted') {
+        const status = await respondFriendRequest(requestId, true)
+        await refreshOverview()
+        if (status === 'accepted') {
           Taro.showToast({ title: '已成为好友', icon: 'success' })
         } else {
-          Taro.showToast({ title: '该邀请已失效', icon: 'none' })
+          Taro.showToast({ title: '该申请已失效', icon: 'none' })
         }
       } catch (error) {
-        console.error('接受好友邀请失败', error)
-        Taro.showToast({ title: '操作失败，请稍后再试', icon: 'none' })
+        console.error('接受好友申请失败', error)
+        const message =
+          error instanceof Error && typeof error.message === 'string' && error.message.length
+            ? error.message
+            : '操作失败，请稍后再试'
+        Taro.showToast({ title: message, icon: 'none' })
       } finally {
         setIsSyncing(false)
       }
     },
-    [applyUserDoc, canUseCloud, isSyncing, respondFriendInvite, userDoc]
+    [canUseCloud, isSyncing, refreshOverview, userDoc]
   )
 
   const handleRejectRequest = useCallback(
-    async (targetUid: string) => {
+    async (requestId: string) => {
       if (isSyncing) {
         return
       }
       if (!canUseCloud || !userDoc) {
-        Taro.showToast({ title: '当前模式不支持好友邀请', icon: 'none' })
+        Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
         return
       }
       setIsSyncing(true)
       try {
-        const result = await respondFriendInvite(targetUid, false)
-        await applyUserDoc(result.user)
-        if (result.status === 'declined') {
-          Taro.showToast({ title: '已拒绝邀请', icon: 'none' })
+        const status = await respondFriendRequest(requestId, false)
+        await refreshOverview()
+        if (status === 'rejected') {
+          Taro.showToast({ title: '已拒绝申请', icon: 'none' })
         } else {
-          Taro.showToast({ title: '该邀请已失效', icon: 'none' })
+          Taro.showToast({ title: '该申请已失效', icon: 'none' })
         }
       } catch (error) {
-        console.error('拒绝好友邀请失败', error)
-        Taro.showToast({ title: '操作失败，请稍后再试', icon: 'none' })
+        console.error('拒绝好友申请失败', error)
+        const message =
+          error instanceof Error && typeof error.message === 'string' && error.message.length
+            ? error.message
+            : '操作失败，请稍后再试'
+        Taro.showToast({ title: message, icon: 'none' })
       } finally {
         setIsSyncing(false)
       }
     },
-    [applyUserDoc, canUseCloud, isSyncing, respondFriendInvite, userDoc]
+    [canUseCloud, isSyncing, refreshOverview, userDoc]
   )
 
   const handleRefreshFriend = useCallback(
@@ -465,27 +478,14 @@ export default function Friends() {
         return
       }
       if (canUseCloud && userDoc) {
-        if (!(userDoc.buddyList ?? []).includes(targetUid)) {
+        if (!friendItems.some((item) => item.uid === targetUid)) {
           Taro.showToast({ title: '未找到该好友', icon: 'none' })
           return
         }
         setIsSyncing(true)
         try {
-          const snapshots = await fetchPublicProfiles([targetUid])
-          if (!snapshots.length) {
-            Taro.showToast({ title: '暂无最新状态', icon: 'none' })
-          } else {
-            const alias = friendAliasesRef.current.find((item) => item.uid === targetUid)?.remark
-            const updated = buildFriendItems(
-              [targetUid],
-              snapshots,
-              [{ uid: targetUid, remark: alias }]
-            )[0]
-            setFriendItems((prev) =>
-              prev.map((item) => (item.uid === targetUid ? updated : item))
-            )
-            Taro.showToast({ title: '好友状态已更新', icon: 'success' })
-          }
+          await refreshOverview()
+          Taro.showToast({ title: '好友状态已更新', icon: 'success' })
         } catch (error) {
           console.error('刷新好友失败', error)
           Taro.showToast({ title: '刷新失败，请稍后再试', icon: 'none' })
@@ -504,7 +504,7 @@ export default function Friends() {
       )
       Taro.showToast({ title: '好友状态已更新', icon: 'success' })
     },
-    [canUseCloud, friendAliasesRef, isSyncing, userDoc]
+    [canUseCloud, friendItems, isSyncing, refreshOverview, userDoc]
   )
 
   return (
@@ -519,8 +519,12 @@ export default function Friends() {
       />
       <FriendRequestList
         requests={friendRequests}
-        onAccept={handleAcceptRequest}
-        onReject={handleRejectRequest}
+        onAccept={(requestId) => {
+          void handleAcceptRequest(requestId)
+        }}
+        onReject={(requestId) => {
+          void handleRejectRequest(requestId)
+        }}
       />
       <FriendList friends={friendItems} onRefresh={handleRefreshFriend} onRemove={handleRemoveFriend} />
     </View>

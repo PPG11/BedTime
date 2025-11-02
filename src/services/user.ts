@@ -1,8 +1,4 @@
-import {
-  UID_LENGTH,
-  UID_MAX_RETRY,
-  COLLECTIONS
-} from '../config/cloud'
+import { COLLECTIONS } from '../config/cloud'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../utils/time'
 import {
   callCloudFunction,
@@ -12,663 +8,262 @@ import {
   type DbCollection
 } from './cloud'
 
+export type UserTodayStatus = 'hit' | 'late' | 'miss' | 'pending' | 'none'
+
 export type UserDocument = {
   _id: string
   uid: string
   nickname: string
   tzOffset: number
   targetHM: string
-  buddyConsent: boolean
-  buddyList: string[]
-  incomingRequests: string[]
-  outgoingRequests: string[]
+  slotKey: string
+  todayStatus: UserTodayStatus
+  streak: number
+  totalDays: number
+  lastCheckinDate: string
   createdAt: Date
-  updatedAt: Date
 }
 
-export type UserUpsertPayload = Partial<
-  Omit<UserDocument, '_id' | 'uid' | 'createdAt' | 'updatedAt'>
-> & {
+export type UserUpsertPayload = {
   nickname?: string
   targetHM?: string
-  buddyConsent?: boolean
-  buddyList?: string[]
   tzOffset?: number
-  incomingRequests?: string[]
-  outgoingRequests?: string[]
 }
 
-type PublicProfileDocument = {
-  _id: string
+type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
+
+type CloudUserEnsureResponse = {
+  code?: string
+  message?: string
+  uid?: string
+  nickname?: string
+  tzOffset?: number
+  targetHM?: string
+  slotKey?: string
+  todayStatus?: string
+  streak?: number
+  totalDays?: number
+  lastCheckinDate?: string
+  createdAt?: Date | string | number | Record<string, unknown>
+}
+
+type UserRecord = {
+  uid?: string
+  nickname?: string
+  tzOffset?: number
+  targetHM?: string
+  slotKey?: string
+  todayStatus?: string
+  streak?: number
+  totalDays?: number
+  lastCheckinDate?: string
+  createdAt?: Date | string | number | Record<string, unknown>
+  updatedAt?: Date | string | number | Record<string, unknown>
+}
+
+type PublicProfileRecord = {
   uid: string
   nickname: string
   sleeptime: string
   streak: number
-  todayStatus: 'hit' | 'miss' | 'pending'
-  updatedAt: Date
-}
-
-type PublicProfileRecord = PublicProfileDocument & { _openid?: string }
-
-type RawUserDocument = Omit<UserDocument, 'uid'> & { uid: string | number }
-
-type CloudServerDate = ReturnType<NonNullable<CloudDatabase['serverDate']>>
-
-type FriendInviteStatus = 'pending' | 'accept' | 'accepted' | 'declined'
-
-type FriendInviteDocument = {
-  _id: string
-  senderUid: string
-  senderOpenId: string
-  recipientUid: string
-  recipientOpenId: string
-  status: FriendInviteStatus
-  createdAt: Date
-  updatedAt: Date
+  todayStatus: string
+  updatedAt: Date | string | number | Record<string, unknown>
 }
 
 const DEFAULT_TARGET_HM = '22:30'
-const DEFAULT_BUDDY_CONSENT = false
+const VALID_STATUS_SET = new Set<UserTodayStatus>(['hit', 'late', 'miss', 'pending', 'none'])
 
-type UserEnsureFunctionPayload = {
-  nickname?: string
-  targetHM?: string
-  tzOffset?: number
-}
-
-type UserEnsureFunctionResponse = {
-  code?: string
-  message?: string
-}
-
-function getUsersCollection(db: CloudDatabase): DbCollection<UserDocument> {
-  return db.collection<UserDocument>(COLLECTIONS.users)
-}
-
-function getPublicProfilesCollection(db: CloudDatabase): DbCollection<PublicProfileDocument> {
-  return db.collection<PublicProfileDocument>(COLLECTIONS.publicProfiles)
-}
-
-function getFriendInvitesCollection(db: CloudDatabase): DbCollection<FriendInviteDocument> {
-  return db.collection<FriendInviteDocument>(COLLECTIONS.friendInvites)
-}
-
-function getDefaultTzOffset(): number {
-  const offsetMinutes = -new Date().getTimezoneOffset()
-  return Math.min(14 * 60, Math.max(-12 * 60, offsetMinutes))
-}
-
-function normalizeUid(candidate: number): string {
-  return `${candidate}`.padStart(UID_LENGTH, '0')
-}
-
-async function generateUniqueUid(db: CloudDatabase): Promise<string> {
-  const users = getUsersCollection(db)
-
-  for (let attempt = 0; attempt < UID_MAX_RETRY; attempt += 1) {
-    const randomCandidate = normalizeUid(Math.floor(Math.random() * 10 ** UID_LENGTH))
-    const result = await users
-      .where({
-        uid: randomCandidate
-      })
-      .count()
-    if (result.total === 0) {
-      return randomCandidate
+function normalizeTodayStatus(value: unknown): UserTodayStatus {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (VALID_STATUS_SET.has(normalized as UserTodayStatus)) {
+      return normalized as UserTodayStatus
     }
   }
-
-  throw new Error('UID 分配失败，请稍后重试')
+  return 'none'
 }
 
-function isCloudFunctionMissingError(error: unknown): boolean {
-  if (!error) {
-    return false
+function toDate(value: unknown): Date {
+  if (value instanceof Date) {
+    return value
   }
 
-  if (typeof error === 'object') {
-    const maybeError = error as {
-      code?: unknown
-      errCode?: unknown
-      errMsg?: unknown
-      message?: unknown
-    }
-    const code = maybeError.code ?? maybeError.errCode
-    if (typeof code === 'string') {
-      const normalized = code.toUpperCase()
-      if (
-        normalized.includes('FUNCTION_NOT_FOUND') ||
-        normalized.includes('FUNCTION_NOT_EXIST') ||
-        normalized.includes('INVALID_FUNCTION_NAME')
-      ) {
-        return true
+  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    try {
+      const converted = (value as { toDate: () => Date }).toDate()
+      if (converted instanceof Date && !Number.isNaN(converted.getTime())) {
+        return converted
       }
-    }
-    const errMsg = maybeError.errMsg ?? maybeError.message
-    if (typeof errMsg === 'string') {
-      const lower = errMsg.toLowerCase()
-      if (
-        lower.includes('function not found') ||
-        lower.includes('function not exist') ||
-        lower.includes('function does not exist') ||
-        lower.includes('functionname not found') ||
-        lower.includes('functionname not exist')
-      ) {
-        return true
-      }
+    } catch {
+      // fall through
     }
   }
 
-  const text = String(error).toLowerCase()
-  return (
-    text.includes('function not found') ||
-    text.includes('function not exist') ||
-    text.includes('invalid function name')
-  )
-}
-
-function ensureUserDocument(data: Partial<UserDocument>, openid: string, uid: string): UserDocument {
-  const now = new Date()
-  return {
-    _id: openid,
-    uid,
-    nickname: data.nickname ?? `睡眠伙伴${uid.slice(-4)}`,
-    tzOffset: data.tzOffset ?? getDefaultTzOffset(),
-    targetHM: data.targetHM ?? DEFAULT_TARGET_HM,
-    buddyConsent: data.buddyConsent ?? DEFAULT_BUDDY_CONSENT,
-    buddyList: Array.isArray(data.buddyList) ? sanitizeUidList(data.buddyList) : [],
-    incomingRequests: Array.isArray(data.incomingRequests)
-      ? sanitizeUidList(data.incomingRequests)
-      : [],
-    outgoingRequests: Array.isArray(data.outgoingRequests)
-      ? sanitizeUidList(data.outgoingRequests)
-      : [],
-    createdAt: data.createdAt ?? now,
-    updatedAt: data.updatedAt ?? now
-  }
-}
-
-function mapUserDocument(raw: RawUserDocument): UserDocument {
-  const uid =
-    typeof raw.uid === 'number'
-      ? Number.isSafeInteger(raw.uid)
-        ? normalizeUid(raw.uid)
-        : String(raw.uid)
-      : raw.uid
-
-  return {
-    ...raw,
-    uid,
-    buddyList: Array.isArray(raw.buddyList) ? sanitizeUidList(raw.buddyList) : [],
-    incomingRequests: Array.isArray(raw.incomingRequests)
-      ? sanitizeUidList(raw.incomingRequests)
-      : [],
-    outgoingRequests: Array.isArray(raw.outgoingRequests)
-      ? sanitizeUidList(raw.outgoingRequests)
-      : [],
-    nickname: raw.nickname || `睡眠伙伴${uid.slice(-4)}`,
-    targetHM: raw.targetHM || DEFAULT_TARGET_HM,
-    tzOffset: typeof raw.tzOffset === 'number' ? raw.tzOffset : getDefaultTzOffset(),
-    buddyConsent: Boolean(raw.buddyConsent),
-    createdAt: raw.createdAt instanceof Date ? raw.createdAt : new Date(raw.createdAt),
-    updatedAt: raw.updatedAt instanceof Date ? raw.updatedAt : new Date(raw.updatedAt)
-  }
-}
-
-async function fetchUserByOpenId(
-  db: CloudDatabase,
-  openid: string
-): Promise<UserDocument | null> {
-  try {
-    const result = await getUsersCollection(db)
-      .where({
-        _openid: openid
-      })
-      .limit(1)
-      .get()
-
-    const doc = result.data?.[0]
-    if (!doc) {
-      return null
-    }
-    const mapped = mapUserDocument(doc)
-    return await hydrateUserInviteLists(db, mapped)
-  } catch (error) {
-    console.error('读取用户信息失败', error)
-    throw error
-  }
-}
-
-export async function fetchCurrentUser(): Promise<UserDocument | null> {
-  const db = await ensureCloud()
-  const openid = await getCurrentOpenId()
-  return fetchUserByOpenId(db, openid)
-}
-
-async function ensureUserViaCloudFunction(
-  payload: UserEnsureFunctionPayload
-): Promise<boolean> {
-  try {
-    const response = await callCloudFunction<UserEnsureFunctionResponse>({
-      name: 'userEnsure',
-      data: payload
-    })
-
-    if (!response) {
-      return false
-    }
-
-    const code = typeof response.code === 'string' ? response.code : 'OK'
-    if (code !== 'OK') {
-      if (typeof response.message === 'string' && response.message.length) {
-        console.warn('userEnsure 云函数返回错误', response.message)
-      }
-      return false
-    }
-
-    return true
-  } catch (error) {
-    if (!isCloudFunctionMissingError(error)) {
-      console.warn('调用 userEnsure 云函数失败', error)
-    }
-    return false
-  }
-}
-
-export async function ensureCurrentUser(): Promise<UserDocument> {
-  const db = await ensureCloud()
-  const openid = await getCurrentOpenId()
-
-  let existing = await fetchUserByOpenId(db, openid)
-  if (existing) {
-    return existing
-  }
-
-  const tzOffset = getDefaultTzOffset()
-  const ensuredViaCloud = await ensureUserViaCloudFunction({
-    tzOffset,
-    targetHM: DEFAULT_TARGET_HM
-  })
-
-  if (ensuredViaCloud) {
-    existing = await fetchUserByOpenId(db, openid)
-    if (existing) {
-      return existing
+  if (typeof value === 'number' || typeof value === 'string') {
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed
     }
   }
 
-  const uid = await generateUniqueUid(db)
-  const now = db.serverDate ? db.serverDate() : new Date()
-  const doc = ensureUserDocument(
-    {
-      createdAt: now as unknown as Date,
-      updatedAt: now as unknown as Date,
-      tzOffset
-    },
-    openid,
-    uid
-  )
-
-  await getUsersCollection(db)
-    .doc(openid)
-    .set({
-      data: {
-        uid: doc.uid,
-        nickname: doc.nickname,
-        tzOffset: doc.tzOffset,
-        targetHM: doc.targetHM,
-        buddyConsent: doc.buddyConsent,
-        buddyList: doc.buddyList,
-        createdAt: now as unknown as Date,
-        updatedAt: now as unknown as Date
-      }
-    })
-
-  return {
-    ...doc,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  }
+  return new Date()
 }
 
-function sanitizeUidList(list: string[]): string[] {
-  return Array.from(
-    new Set(
-      list
-        .filter((item): item is string => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter((item) => item.length)
-    )
-  )
-}
-
-function areUidListsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) {
-    return false
-  }
-
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) {
-      return false
-    }
-  }
-
-  return true
-}
-
-function buildFriendInviteId(senderUid: string, recipientUid: string): string {
-  return `invite_${senderUid}_${recipientUid}`
-}
-
-function buildUidMatchSet(candidate: string): Set<string> {
-  const matches = new Set<string>()
-
-  for (const option of buildUidCandidates(candidate)) {
-    if (typeof option === 'string') {
-      const trimmed = option.trim()
-      if (trimmed.length) {
-        matches.add(trimmed)
-      }
-      continue
-    }
-
-    if (typeof option === 'number' && Number.isSafeInteger(option)) {
-      const asString = String(option)
-      if (asString.length) {
-        matches.add(asString)
-      }
-      matches.add(normalizeUid(option))
-    }
-  }
-
-  return matches
-}
-
-function findMatchingUid(source: string[], candidate: string): string | null {
-  if (!Array.isArray(source) || !source.length) {
-    return null
-  }
-
-  const matchSet = buildUidMatchSet(candidate)
-  if (!matchSet.size) {
-    return null
-  }
-
-  for (const value of source) {
-    if (typeof value !== 'string') {
-      continue
-    }
+function normalizeString(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
     const trimmed = value.trim()
-    if (!trimmed.length) {
-      continue
-    }
-    if (matchSet.has(trimmed)) {
+    if (trimmed.length) {
       return trimmed
     }
   }
-
-  return null
+  return fallback
 }
 
-function hasUidCandidate(source: string[], candidate: string): boolean {
-  return Boolean(findMatchingUid(source, candidate))
+function mapUserResponse(openid: string, payload: CloudUserEnsureResponse | null | undefined): UserDocument {
+  if (!payload) {
+    throw new Error('未获取到用户资料')
+  }
+
+  const uid = normalizeString(payload.uid)
+  if (!uid) {
+    throw new Error('用户 UID 缺失')
+  }
+
+  const nickname = normalizeString(payload.nickname, `睡眠伙伴${uid.slice(-4)}`)
+  const tzOffset = Number.isFinite(payload.tzOffset)
+    ? Math.max(Math.min(Math.trunc(payload.tzOffset as number), 14 * 60), -12 * 60)
+    : 8 * 60
+  const targetHM = normalizeString(payload.targetHM, DEFAULT_TARGET_HM)
+  const slotKey = normalizeString(payload.slotKey, targetHM)
+  const todayStatus = normalizeTodayStatus(payload.todayStatus)
+  const streak = Number.isFinite(payload.streak) ? Math.max(0, Math.trunc(payload.streak as number)) : 0
+  const totalDays = Number.isFinite(payload.totalDays)
+    ? Math.max(0, Math.trunc(payload.totalDays as number))
+    : 0
+  const lastCheckinDate = normalizeString(payload.lastCheckinDate)
+  const createdAt = toDate(payload.createdAt)
+
+  return {
+    _id: openid,
+    uid,
+    nickname,
+    tzOffset,
+    targetHM,
+    slotKey,
+    todayStatus,
+    streak,
+    totalDays,
+    lastCheckinDate,
+    createdAt
+  }
 }
 
-function isInviteAccepted(status: unknown): boolean {
-  return status === 'accepted' || status === 'accept'
+function getUsersCollection(db: CloudDatabase): DbCollection<UserRecord> {
+  return db.collection<UserRecord>(COLLECTIONS.users)
 }
 
-async function fetchInviteDocumentByParticipants(
-  invites: DbCollection<FriendInviteDocument>,
-  senderUid: string,
-  recipientUid: string
-): Promise<FriendInviteDocument | null> {
+function getPublicProfilesCollection(db: CloudDatabase): DbCollection<PublicProfileRecord> {
+  return db.collection<PublicProfileRecord>(COLLECTIONS.publicProfiles)
+}
+
+async function syncPublicProfileBasics(
+  db: CloudDatabase,
+  user: UserDocument,
+  timestamp: Date | CloudServerDate
+): Promise<void> {
+  const collection = getPublicProfilesCollection(db)
+  const doc = collection.doc(user.uid)
+
+  const updatePayload = {
+    uid: user.uid,
+    nickname: user.nickname,
+    sleeptime: clampSleeptimeBucket(user.targetHM),
+    streak: user.streak,
+    todayStatus: user.todayStatus,
+    updatedAt: timestamp as unknown as Date
+  }
+
   try {
-    const result = await invites
-      .where({
-        senderUid,
-        recipientUid
-      })
-      .limit(1)
-      .get()
-
-    const doc = result.data?.[0]
-    if (!doc) {
-      return null
-    }
-
-    const createdAt =
-      doc.createdAt instanceof Date
-        ? doc.createdAt
-        : doc.createdAt
-        ? new Date(doc.createdAt)
-        : new Date()
-    const updatedAt =
-      doc.updatedAt instanceof Date
-        ? doc.updatedAt
-        : doc.updatedAt
-        ? new Date(doc.updatedAt)
-        : new Date()
-
-    return {
-      ...doc,
-      createdAt,
-      updatedAt
-    } as FriendInviteDocument
+    await doc.update({
+      data: {
+        nickname: updatePayload.nickname,
+        sleeptime: updatePayload.sleeptime,
+        streak: updatePayload.streak,
+        todayStatus: updatePayload.todayStatus,
+        updatedAt: updatePayload.updatedAt
+      }
+    })
   } catch (error) {
-    console.warn('按参与方读取好友邀请失败', error)
+    console.warn('更新公开资料失败，尝试创建新记录', error)
+    await doc.set({
+      data: updatePayload
+    })
+  }
+}
+
+function clampSleeptimeBucket(targetHM: string): string {
+  const minutes = parseTimeStringToMinutes(targetHM, 22 * 60 + 30)
+  const bucket = Math.round(minutes / 30) * 30
+  return formatMinutesToTime(bucket)
+}
+
+export async function fetchCurrentUser(): Promise<UserDocument | null> {
+  try {
+    return await ensureCurrentUser()
+  } catch (error) {
+    console.error('读取用户信息失败', error)
     return null
   }
 }
 
-function isDocumentNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false
+export async function ensureCurrentUser(overrides?: UserUpsertPayload): Promise<UserDocument> {
+  const openid = await getCurrentOpenId()
+  const response = await callCloudFunction<CloudUserEnsureResponse>({
+    name: 'userEnsure',
+    data: overrides && Object.keys(overrides).length ? overrides : undefined
+  })
+
+  const code = typeof response?.code === 'string' ? response.code : 'OK'
+  if (code !== 'OK') {
+    const message =
+      typeof response?.message === 'string' && response.message.length
+        ? response.message
+        : '确保用户资料失败'
+    throw new Error(message)
   }
 
-  const err = error as { errMsg?: unknown; message?: unknown }
-  const message = typeof err.message === 'string' ? err.message : ''
-  const errMsg = typeof err.errMsg === 'string' ? err.errMsg : ''
-  const combined = `${errMsg} ${message}`
-
-  return (
-    /document\.get:fail/i.test(combined) && /can\s*not find document/i.test(combined)
-  )
-}
-
-async function hydrateUserInviteLists(
-  db: CloudDatabase,
-  user: UserDocument
-): Promise<UserDocument> {
-  try {
-    const invites = getFriendInvitesCollection(db)
-    const users = getUsersCollection(db)
-    const acceptedStatusQuery =
-      db.command && typeof db.command.in === 'function'
-        ? db.command.in(['accepted', 'accept'])
-        : 'accepted'
-
-    const [
-      pendingOutgoingSnapshot,
-      pendingIncomingSnapshot,
-      acceptedOutgoingSnapshot,
-      acceptedIncomingSnapshot,
-      declinedOutgoingSnapshot
-    ] = await Promise.all([
-      invites
-        .where({
-          senderUid: user.uid,
-          status: 'pending'
-        })
-        .get(),
-      invites
-        .where({
-          recipientUid: user.uid,
-          status: 'pending'
-        })
-        .get(),
-      invites
-        .where({
-          senderUid: user.uid,
-          status: acceptedStatusQuery
-        })
-        .limit(100)
-        .get(),
-      invites
-        .where({
-          recipientUid: user.uid,
-          status: acceptedStatusQuery
-        })
-        .limit(100)
-        .get(),
-      invites
-        .where({
-          senderUid: user.uid,
-          status: 'declined'
-        })
-        .limit(100)
-        .get()
-    ])
-
-    const pendingOutgoingInvites = pendingOutgoingSnapshot.data ?? []
-    const pendingIncomingInvites = pendingIncomingSnapshot.data ?? []
-    const acceptedOutgoingInvites = acceptedOutgoingSnapshot.data ?? []
-    const acceptedIncomingInvites = acceptedIncomingSnapshot.data ?? []
-    const declinedOutgoingInvites = declinedOutgoingSnapshot.data ?? []
-    const pendingOutgoing: string[] = []
-    const pendingIncoming: string[] = []
-    const buddySet = new Set(user.buddyList ?? [])
-    const cleanupInviteIds: string[] = []
-
-    for (const invite of pendingIncomingInvites) {
-      pendingIncoming.push(invite.senderUid)
-    }
-
-    for (const invite of pendingOutgoingInvites) {
-      pendingOutgoing.push(invite.recipientUid)
-    }
-
-    for (const invite of acceptedIncomingInvites) {
-      buddySet.add(invite.senderUid)
-    }
-
-    for (const invite of acceptedOutgoingInvites) {
-      buddySet.add(invite.recipientUid)
-      cleanupInviteIds.push(invite._id)
-    }
-
-    for (const invite of declinedOutgoingInvites) {
-      cleanupInviteIds.push(invite._id)
-    }
-
-    const sanitizedIncoming = sanitizeUidList(pendingIncoming)
-    const sanitizedOutgoing = sanitizeUidList(pendingOutgoing)
-    const sanitizedBuddyList = sanitizeUidList(Array.from(buddySet))
-
-    const shouldUpdateIncoming = !areUidListsEqual(
-      sanitizedIncoming,
-      user.incomingRequests
-    )
-    const shouldUpdateOutgoing = !areUidListsEqual(
-      sanitizedOutgoing,
-      user.outgoingRequests
-    )
-    const shouldUpdateBuddy = !areUidListsEqual(
-      sanitizedBuddyList,
-      user.buddyList
-    )
-
-    const now = db.serverDate ? db.serverDate() : new Date()
-    const updatePayload: Partial<UserDocument> & {
-      updatedAt?: Date | CloudServerDate
-    } = {}
-
-    if (shouldUpdateIncoming) {
-      updatePayload.incomingRequests = sanitizedIncoming
-    }
-    if (shouldUpdateOutgoing) {
-      updatePayload.outgoingRequests = sanitizedOutgoing
-    }
-    if (shouldUpdateBuddy) {
-      updatePayload.buddyList = sanitizedBuddyList
-    }
-
-    let nextUser = {
-      ...user,
-      buddyList: sanitizedBuddyList,
-      incomingRequests: sanitizedIncoming,
-      outgoingRequests: sanitizedOutgoing
-    }
-
-    if (
-      shouldUpdateIncoming ||
-      shouldUpdateOutgoing ||
-      shouldUpdateBuddy
-    ) {
-      updatePayload.updatedAt = now as unknown as Date
-
-      try {
-        await users.doc(user._id).update({
-          data: updatePayload
-        })
-        nextUser = {
-          ...nextUser,
-          updatedAt: now as unknown as Date
-        }
-      } catch (error) {
-        console.warn('同步好友邀请缓存失败', error)
-      }
-    }
-
-    if (cleanupInviteIds.length) {
-      await Promise.all(
-        cleanupInviteIds.map((inviteId) =>
-          invites
-            .doc(inviteId)
-            .remove()
-            .catch((error) => console.warn('清理好友邀请失败', error))
-        )
-      )
-    }
-
-    return nextUser
-  } catch (error) {
-    console.warn('同步好友邀请列表失败', error)
-    return {
-      ...user,
-      incomingRequests: sanitizeUidList(user.incomingRequests ?? []),
-      outgoingRequests: sanitizeUidList(user.outgoingRequests ?? [])
-    }
-  }
+  return mapUserResponse(openid, response)
 }
 
 export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserDocument> {
   const db = await ensureCloud()
   const openid = await getCurrentOpenId()
-  const now = db.serverDate ? db.serverDate() : new Date()
 
-  const sanitized: UserUpsertPayload = {}
+  const sanitized: Record<string, unknown> = {}
+
   if (typeof patch.nickname === 'string') {
-    sanitized.nickname = patch.nickname.trim()
+    const trimmed = patch.nickname.trim()
+    if (trimmed.length) {
+      sanitized.nickname = trimmed
+    }
   }
+
   if (typeof patch.targetHM === 'string') {
     const minutes = parseTimeStringToMinutes(patch.targetHM, 22 * 60 + 30)
-    sanitized.targetHM = formatMinutesToTime(minutes)
+    const normalized = formatMinutesToTime(minutes)
+    sanitized.targetHM = normalized
+    sanitized.slotKey = clampSleeptimeBucket(normalized)
   }
+
   if (typeof patch.tzOffset === 'number') {
-    sanitized.tzOffset = Math.round(patch.tzOffset)
+    sanitized.tzOffset = Math.max(Math.min(Math.trunc(patch.tzOffset), 14 * 60), -12 * 60)
   }
-  if (typeof patch.buddyConsent === 'boolean') {
-    sanitized.buddyConsent = patch.buddyConsent
+
+  if (!Object.keys(sanitized).length) {
+    return ensureCurrentUser()
   }
-  if (Array.isArray(patch.buddyList)) {
-    sanitized.buddyList = sanitizeUidList(patch.buddyList)
-  }
-  if (Array.isArray(patch.incomingRequests)) {
-    sanitized.incomingRequests = sanitizeUidList(patch.incomingRequests)
-  }
-  if (Array.isArray(patch.outgoingRequests)) {
-    sanitized.outgoingRequests = sanitizeUidList(patch.outgoingRequests)
-  }
+
+  const now = db.serverDate ? db.serverDate() : new Date()
 
   await getUsersCollection(db)
     .doc(openid)
@@ -679,547 +274,15 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
       }
     })
 
-  const updated = await fetchUserByOpenId(db, openid)
-  if (!updated) {
-    throw new Error('更新用户信息后未找到记录')
-  }
-  if (typeof sanitized.nickname === 'string' || typeof sanitized.targetHM === 'string') {
-    await syncPublicProfileBasics(db, updated, now)
-  }
-  return updated
-}
+  const updated = await ensureCurrentUser()
 
-type SendFriendInviteResult =
-  | { status: 'not-found' }
-  | { status: 'self-target'; user: UserDocument }
-  | { status: 'already-friends'; user: UserDocument }
-  | { status: 'incoming-exists'; user: UserDocument }
-  | { status: 'already-sent'; user: UserDocument }
-  | { status: 'sent'; user: UserDocument }
-
-function removeUid(source: string[], target: string): string[] {
-  return source.filter((item) => item !== target)
-}
-
-type UidCandidate = string | number
-
-function buildUidCandidates(uid: string): UidCandidate[] {
-  const candidates: UidCandidate[] = []
-  const seen = new Set<string>()
-
-  const pushCandidate = (value: UidCandidate) => {
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      if (!trimmed.length) {
-        return
-      }
-      const key = `string:${trimmed}`
-      if (seen.has(key)) {
-        return
-      }
-      seen.add(key)
-      candidates.push(trimmed)
-      return
-    }
-
-    const key = `number:${value}`
-    if (seen.has(key)) {
-      return
-    }
-    seen.add(key)
-    candidates.push(value)
-  }
-
-  const normalized = uid.trim()
-  pushCandidate(normalized)
-
-  if (normalized.length && normalized !== uid) {
-    pushCandidate(uid)
-  }
-
-  if (/^\d+$/.test(normalized)) {
-    if (normalized.length < UID_LENGTH) {
-      pushCandidate(normalized.padStart(UID_LENGTH, '0'))
-    }
-
-    const withoutLeadingZeros = normalized.replace(/^0+/, '')
-    if (withoutLeadingZeros.length) {
-      pushCandidate(withoutLeadingZeros)
-    }
-
-    const numericUid = Number(normalized)
-    if (Number.isSafeInteger(numericUid)) {
-      pushCandidate(numericUid)
-      pushCandidate(String(numericUid))
-      pushCandidate(normalizeUid(numericUid))
-    }
-  }
-
-  return candidates
-}
-
-async function queryUserByCandidates(
-  users: DbCollection<UserDocument>,
-  candidates: UidCandidate[]
-): Promise<UserDocument | null> {
-  for (const candidate of candidates) {
-    const result = await users
-      .where({
-        uid: candidate
-      })
-      .limit(1)
-      .get()
-
-    const doc = result.data?.[0]
-    if (doc) {
-      return mapUserDocument(doc)
-    }
-  }
-
-  return null
-}
-
-async function fetchPublicProfileRecords(
-  publicProfiles: DbCollection<PublicProfileDocument>,
-  candidate: string
-): Promise<PublicProfileRecord[]> {
-  const records: PublicProfileRecord[] = []
-
-  try {
-    const snapshot = await publicProfiles.doc(candidate).get()
-    if (snapshot.data) {
-      records.push({
-        ...snapshot.data,
-        uid: snapshot.data.uid ?? candidate
-      } as PublicProfileRecord)
-    }
-  } catch (error) {
-    console.warn('按 UID 读取公开资料失败', error)
-  }
-
-  try {
-    const queried = await publicProfiles
-      .where({
-        uid: candidate
-      })
-      .limit(1)
-      .get()
-    const doc = queried.data?.[0]
-    if (doc) {
-      records.push(doc as PublicProfileRecord)
-    }
-  } catch (error) {
-    console.warn('查询公开资料失败', error)
-  }
-
-  return records
-}
-
-async function findPublicProfileByUid(
-  db: CloudDatabase,
-  uid: string
-): Promise<PublicProfileRecord | null> {
-  const publicProfiles = getPublicProfilesCollection(db)
-  const candidates = buildUidCandidates(uid)
-  const seen = new Set<string>()
-
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string') {
-      continue
-    }
-
-    const trimmed = candidate.trim()
-    if (!trimmed.length || seen.has(trimmed)) {
-      continue
-    }
-    seen.add(trimmed)
-
-    const records = await fetchPublicProfileRecords(publicProfiles, trimmed)
-    for (const record of records) {
-      if (!record || typeof record.uid !== 'string') {
-        continue
-      }
-
-      const recordUid = record.uid.trim()
-      if (!recordUid.length) {
-        continue
-      }
-
-      return {
-        ...record,
-        uid: recordUid
-      }
-    }
-  }
-
-  return null
-}
-
-async function fetchUserByUid(db: CloudDatabase, uid: string): Promise<UserDocument | null> {
-  const users = getUsersCollection(db)
-
-  try {
-    const candidates = buildUidCandidates(uid)
-
-    const directMatch = await queryUserByCandidates(users, candidates)
-    if (directMatch) {
-      return directMatch
-    }
-
-    return null
-  } catch (error) {
-    console.error('通过 UID 查询用户失败', error)
-    throw error
-  }
-}
-
-export async function sendFriendInvite(targetUid: string): Promise<SendFriendInviteResult> {
-  const db = await ensureCloud()
-  const sender = await ensureCurrentUser()
-  const users = getUsersCollection(db)
-  const invites = getFriendInvitesCollection(db)
-  const normalizedTargetUid = targetUid.trim()
-
-  if (!normalizedTargetUid.length) {
-    return { status: 'not-found' }
-  }
-  if (normalizedTargetUid === sender.uid) {
-    return { status: 'self-target', user: sender }
-  }
-  if (hasUidCandidate(sender.buddyList, normalizedTargetUid)) {
-    return { status: 'already-friends', user: sender }
-  }
-  if (hasUidCandidate(sender.incomingRequests, normalizedTargetUid)) {
-    return { status: 'incoming-exists', user: sender }
-  }
-  if (hasUidCandidate(sender.outgoingRequests, normalizedTargetUid)) {
-    return { status: 'already-sent', user: sender }
-  }
-
-  const recipientProfile = await findPublicProfileByUid(db, normalizedTargetUid)
-  if (!recipientProfile) {
-    return { status: 'not-found' }
-  }
-
-  const resolvedRecipientUid =
-    typeof recipientProfile.uid === 'string' && recipientProfile.uid.trim().length
-      ? recipientProfile.uid.trim()
-      : normalizedTargetUid
-  const profileOpenId = (recipientProfile as { _openid?: unknown })._openid
-  const recipientOpenId =
-    typeof profileOpenId === 'string' && profileOpenId.trim().length ? profileOpenId.trim() : ''
-
-  if (resolvedRecipientUid === sender.uid) {
-    return { status: 'self-target', user: sender }
-  }
-  if (hasUidCandidate(sender.buddyList, resolvedRecipientUid)) {
-    return { status: 'already-friends', user: sender }
-  }
-  if (hasUidCandidate(sender.incomingRequests, resolvedRecipientUid)) {
-    return { status: 'incoming-exists', user: sender }
-  }
-  if (hasUidCandidate(sender.outgoingRequests, resolvedRecipientUid)) {
-    return { status: 'already-sent', user: sender }
-  }
-  if (!recipientOpenId.length) {
-    console.warn('公开资料缺少 openid，无法发送好友邀请', recipientProfile)
-    return { status: 'not-found' }
-  }
-
-  const now = db.serverDate ? db.serverDate() : new Date()
-  const inviteId = buildFriendInviteId(sender.uid, resolvedRecipientUid)
-  const inviteDoc = invites.doc(inviteId)
-  let existingInvite: FriendInviteDocument | undefined
-
-  try {
-    const snapshot = await inviteDoc.get()
-    if (snapshot.data) {
-      existingInvite = snapshot.data
-    }
-  } catch (error) {
-    if (isDocumentNotFoundError(error)) {
-      existingInvite = undefined
-    } else {
-      console.warn('读取好友邀请记录失败', error)
-    }
-  }
-
-  if (existingInvite) {
-    if (existingInvite.status === 'pending') {
-      return { status: 'already-sent', user: sender }
-    }
-    if (isInviteAccepted(existingInvite.status)) {
-      return { status: 'already-friends', user: sender }
-    }
-  }
-
-  const inviteCreatedAt =
-    existingInvite?.createdAt instanceof Date
-      ? (existingInvite.createdAt as Date)
-      : existingInvite?.createdAt
-      ? new Date(existingInvite.createdAt)
-      : now
-
-  const invitePayload = {
-    senderUid: sender.uid,
-    senderOpenId: sender._id,
-    recipientUid: resolvedRecipientUid,
-    recipientOpenId,
-    status: 'pending' as FriendInviteStatus,
-    createdAt: inviteCreatedAt as unknown as Date,
-    updatedAt: now as unknown as Date
-  }
-
-  if (existingInvite) {
-    await inviteDoc.update({
-      data: invitePayload
-    })
-  } else {
-    await inviteDoc.set({
-      data: invitePayload
-    })
-  }
-
-  const nextSenderOutgoing = sanitizeUidList([...sender.outgoingRequests, resolvedRecipientUid])
-
-  await users.doc(sender._id).update({
-    data: {
-      outgoingRequests: nextSenderOutgoing,
-      updatedAt: now as unknown as Date
-    }
-  })
-
-  const updatedSender = await fetchUserByOpenId(db, sender._id)
-  if (!updatedSender) {
-    throw new Error('更新邀请信息后未找到当前用户记录')
-  }
-
-  return { status: 'sent', user: updatedSender }
-}
-
-type RespondFriendInviteResult =
-  | { status: 'accepted'; user: UserDocument }
-  | { status: 'declined'; user: UserDocument }
-  | { status: 'not-found'; user: UserDocument }
-
-export async function respondFriendInvite(
-  targetUid: string,
-  accept: boolean
-): Promise<RespondFriendInviteResult> {
-  const db = await ensureCloud()
-  const users = getUsersCollection(db)
-  const invites = getFriendInvitesCollection(db)
-  const current = await ensureCurrentUser()
-  const normalizedTargetUid = targetUid.trim()
-
-  if (!normalizedTargetUid.length) {
-    return { status: 'not-found', user: current }
-  }
-
-  const matchedRequesterUid = findMatchingUid(current.incomingRequests, normalizedTargetUid)
-  if (!matchedRequesterUid) {
-    return { status: 'not-found', user: current }
-  }
-
-  const inviteId = buildFriendInviteId(matchedRequesterUid, current.uid)
-  let inviteDocRef = invites.doc(inviteId)
-  let invite: FriendInviteDocument | undefined
-
-  try {
-    const snapshot = await inviteDocRef.get()
-    if (snapshot.data) {
-      invite = snapshot.data
-    }
-  } catch (error) {
-    if (isDocumentNotFoundError(error)) {
-      invite = undefined
-    } else {
-      console.warn('读取好友邀请失败', error)
-    }
-  }
-
-  if (!invite) {
-    const fallbackInvite = await fetchInviteDocumentByParticipants(
-      invites,
-      matchedRequesterUid,
-      current.uid
-    )
-    if (fallbackInvite) {
-      invite = fallbackInvite
-      if (fallbackInvite._id && fallbackInvite._id !== inviteId) {
-        inviteDocRef = invites.doc(fallbackInvite._id)
-      }
-    }
-  }
-
-  if (!invite || invite.status !== 'pending') {
-    return { status: 'not-found', user: current }
-  }
-
-  const requester = await fetchUserByUid(db, matchedRequesterUid)
-  const now = db.serverDate ? db.serverDate() : new Date()
-  const nextInviteStatus: FriendInviteStatus =
-    accept && requester ? 'accept' : 'declined'
-
-  const nextCurrentIncoming = sanitizeUidList(
-    removeUid(current.incomingRequests, matchedRequesterUid)
-  )
-  const matchedOutgoingUid = findMatchingUid(current.outgoingRequests, matchedRequesterUid)
-  const rawCurrentOutgoing = matchedOutgoingUid
-    ? removeUid(current.outgoingRequests, matchedOutgoingUid)
-    : current.outgoingRequests
-  const nextCurrentOutgoing = sanitizeUidList(rawCurrentOutgoing)
-  const nextCurrentBuddyList = accept && requester
-    ? sanitizeUidList([...current.buddyList, matchedRequesterUid])
-    : sanitizeUidList(current.buddyList)
-
-  await users.doc(current._id).update({
-    data: {
-      incomingRequests: nextCurrentIncoming,
-      outgoingRequests: nextCurrentOutgoing,
-      buddyList: nextCurrentBuddyList,
-      updatedAt: now as unknown as Date
-    }
-  })
-
-  if (requester) {
-    const nextRequesterOutgoing = sanitizeUidList(
-      removeUid(requester.outgoingRequests, current.uid)
-    )
-    const nextRequesterIncoming = sanitizeUidList(
-      removeUid(requester.incomingRequests, current.uid)
-    )
-    const nextRequesterBuddyList = accept
-      ? sanitizeUidList([...requester.buddyList, current.uid])
-      : sanitizeUidList(requester.buddyList)
-    const requesterUpdatePayload: Partial<UserDocument> & {
-      updatedAt: Date | CloudServerDate
-    } = {
-      outgoingRequests: nextRequesterOutgoing,
-      incomingRequests: nextRequesterIncoming,
-      updatedAt: now as unknown as Date
-    }
-
-    if (!areUidListsEqual(nextRequesterBuddyList, requester.buddyList)) {
-      requesterUpdatePayload.buddyList = nextRequesterBuddyList
-    }
-
+  if ('nickname' in sanitized || 'targetHM' in sanitized) {
     try {
-      await users.doc(requester._id).update({
-        data: requesterUpdatePayload
-      })
+      await syncPublicProfileBasics(db, updated, now)
     } catch (error) {
-      console.warn('同步邀请发起者信息失败', error)
+      console.warn('同步公开资料失败', error)
     }
   }
 
-  await inviteDocRef.update({
-    data: {
-      status: nextInviteStatus,
-      updatedAt: now as unknown as Date
-    }
-  })
-
-  const updatedCurrent = await fetchUserByOpenId(db, current._id)
-  if (!updatedCurrent) {
-    throw new Error('处理好友邀请后未找到当前用户记录')
-  }
-
-  if (!requester) {
-    return { status: 'not-found', user: updatedCurrent }
-  }
-
-  return { status: accept ? 'accepted' : 'declined', user: updatedCurrent }
-}
-
-type RemoveFriendResult =
-  | { status: 'ok'; user: UserDocument }
-  | { status: 'not-found'; user: UserDocument }
-
-export async function removeFriend(targetUid: string): Promise<RemoveFriendResult> {
-  const db = await ensureCloud()
-  const users = getUsersCollection(db)
-  const current = await ensureCurrentUser()
-
-  if (!current.buddyList.includes(targetUid)) {
-    return { status: 'not-found', user: current }
-  }
-
-  const target = await fetchUserByUid(db, targetUid)
-  const now = db.serverDate ? db.serverDate() : new Date()
-
-  const nextCurrentBuddyList = removeUid(current.buddyList, targetUid)
-  const nextCurrentIncoming = removeUid(current.incomingRequests, targetUid)
-  const nextCurrentOutgoing = removeUid(current.outgoingRequests, targetUid)
-
-  await users.doc(current._id).update({
-    data: {
-      buddyList: nextCurrentBuddyList,
-      incomingRequests: nextCurrentIncoming,
-      outgoingRequests: nextCurrentOutgoing,
-      updatedAt: now as unknown as Date
-    }
-  })
-
-  if (target) {
-    const nextTargetBuddyList = removeUid(target.buddyList, current.uid)
-    const nextTargetIncoming = removeUid(target.incomingRequests, current.uid)
-    const nextTargetOutgoing = removeUid(target.outgoingRequests, current.uid)
-
-    await users.doc(target._id).update({
-      data: {
-        buddyList: nextTargetBuddyList,
-        incomingRequests: nextTargetIncoming,
-        outgoingRequests: nextTargetOutgoing,
-        updatedAt: now as unknown as Date
-      }
-    })
-  }
-
-  const updatedCurrent = await fetchUserByOpenId(db, current._id)
-  if (!updatedCurrent) {
-    throw new Error('解除好友关系后未找到当前用户记录')
-  }
-
-  return { status: 'ok', user: updatedCurrent }
-}
-
-function clampSleeptimeBucket(targetHM: string): string {
-  const minutes = parseTimeStringToMinutes(targetHM, 22 * 60 + 30)
-  const bucket = Math.round(minutes / 30) * 30
-  return formatMinutesToTime(bucket)
-}
-
-async function syncPublicProfileBasics(
-  db: CloudDatabase,
-  user: UserDocument,
-  timestamp: Date | CloudServerDate
-): Promise<void> {
-  const publicProfiles = getPublicProfilesCollection(db)
-  const doc = publicProfiles.doc(user.uid)
-  const updatePayload = {
-    nickname: user.nickname,
-    sleeptime: clampSleeptimeBucket(user.targetHM),
-    updatedAt: timestamp as unknown as Date
-  }
-
-  try {
-    await doc.update({
-      data: updatePayload
-    })
-    return
-  } catch (error) {
-    console.warn('更新公开资料失败，尝试创建新的记录', error)
-  }
-
-  await doc.set({
-    data: {
-      uid: user.uid,
-      nickname: updatePayload.nickname,
-      sleeptime: updatePayload.sleeptime,
-      streak: 0,
-      todayStatus: 'pending',
-      updatedAt: timestamp as unknown as Date
-    }
-  })
+  return updated
 }
