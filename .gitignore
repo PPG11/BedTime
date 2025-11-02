@@ -48,6 +48,7 @@ coverage/
 *.tsbuildinfo
 .npm/
 .yarn-integrity
+cloudfunctions/.deploy-cache.json
 
 # 环境变量文件
 .env
