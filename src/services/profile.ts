@@ -1,5 +1,5 @@
 import { COLLECTIONS } from '../config/cloud'
-import { formatMinutesToTime, parseTimeStringToMinutes } from '../utils/time'
+import { clampSleeptimeBucket } from '../utils/sleep'
 import { ensureCloud, type CloudDatabase, type DbCollection } from './cloud'
 import { fetchCheckins, type CheckinStatus, computeHitStreak } from './checkin'
 import type { UserDocument } from './user'
@@ -25,12 +25,6 @@ export type FriendProfileSnapshot = {
 
 function getPublicProfilesCollection(db: CloudDatabase): DbCollection<PublicProfileDocument> {
   return db.collection<PublicProfileDocument>(COLLECTIONS.publicProfiles)
-}
-
-function clampSleeptimeBucket(targetHM: string): string {
-  const minutes = parseTimeStringToMinutes(targetHM, 22 * 60 + 30)
-  const bucket = Math.round(minutes / 30) * 30
-  return formatMinutesToTime(bucket)
 }
 
 export async function refreshPublicProfile(

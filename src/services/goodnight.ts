@@ -12,6 +12,8 @@ import {
   type CloudDocumentSnapshot,
   type DbCollection
 } from './cloud'
+import { createTimedCache } from '../utils/cache'
+import { coerceDate, normalizeOptionalString, normalizeString } from '../utils/normalize'
 
 export type GoodnightMessageDocument = {
   _id?: string
@@ -31,11 +33,6 @@ export type GoodnightMessageDocument = {
 
 type GoodnightMessageRecord = GoodnightMessageDocument
 
-type CacheEntry<T> = {
-  timestamp: number
-  value: T
-}
-
 type GoodnightReactionFunctionResponse = {
   code?: string
   message?: string
@@ -45,29 +42,15 @@ type GoodnightReactionFunctionResponse = {
 
 const MESSAGE_CACHE_TTL = 60 * 1000
 const RANDOM_CACHE_TTL = 60 * 1000
-const goodnightMessageCache = new Map<string, CacheEntry<GoodnightMessage | null>>()
-const randomMessageCache = new Map<string, CacheEntry<GoodnightMessage | null>>()
-
-function isCacheFresh<T>(entry: CacheEntry<T> | null | undefined, ttl: number): entry is CacheEntry<T> {
-  if (!entry) {
-    return false
-  }
-  return Date.now() - entry.timestamp < ttl
-}
-
-function setCacheEntry<T>(store: Map<string, CacheEntry<T>>, key: string, value: T): void {
-  store.set(key, {
-    timestamp: Date.now(),
-    value
-  })
-}
+const goodnightMessageCache = createTimedCache<GoodnightMessage | null>(MESSAGE_CACHE_TTL)
+const randomMessageCache = createTimedCache<GoodnightMessage | null>(RANDOM_CACHE_TTL)
 
 function invalidateRandomCache(key?: string): void {
-  if (!key) {
-    randomMessageCache.clear()
+  if (key) {
+    randomMessageCache.delete(key)
     return
   }
-  randomMessageCache.delete(key)
+  randomMessageCache.clear()
 }
 
 function getGoodnightMessagesCollection(
@@ -85,42 +68,19 @@ function mapGoodnightMessage(
   raw: Partial<GoodnightMessageRecord> & { _id?: string },
   fallback?: { uid?: string; content?: string }
 ): GoodnightMessage {
-  const createdSource = raw.createdAt
-  const createdAt =
-    createdSource instanceof Date
-      ? createdSource
-      : new Date(
-          typeof createdSource === 'number' || typeof createdSource === 'string'
-            ? createdSource
-            : Date.now()
-        )
-
-  const normalizedContent =
-    typeof raw.content === 'string' && raw.content.trim().length
-      ? raw.content.trim()
-      : typeof raw.text === 'string' && raw.text.trim().length
-      ? raw.text.trim()
-      : typeof fallback?.content === 'string'
-      ? fallback.content
-      : ''
-
-  const normalizedUid =
-    typeof raw.uid === 'string' && raw.uid.trim().length
-      ? raw.uid.trim()
-      : typeof fallback?.uid === 'string' && fallback.uid.trim().length
-      ? fallback.uid.trim()
-      : ''
+  const createdAt = coerceDate(raw.createdAt) ?? new Date()
+  const normalizedContent = normalizeString(
+    raw.content ?? raw.text ?? fallback?.content ?? ''
+  )
+  const normalizedUid = normalizeString(raw.uid ?? fallback?.uid ?? '')
 
   return {
-    _id:
-      typeof raw._id === 'string' && raw._id.trim().length
-        ? raw._id.trim()
-        : fallbackId,
+    _id: normalizeString(raw._id, fallbackId),
     uid: normalizedUid,
     content: normalizedContent,
     likes: typeof raw.likes === 'number' ? raw.likes : 0,
     dislikes: typeof raw.dislikes === 'number' ? raw.dislikes : 0,
-    date: typeof raw.date === 'string' ? raw.date : '',
+    date: normalizeString(raw.date ?? ''),
     createdAt
   }
 }
@@ -175,50 +135,49 @@ export async function fetchGoodnightMessageForDate(
 ): Promise<GoodnightMessage | null> {
   const docId = getGoodnightMessageId(uid, date)
   const cached = goodnightMessageCache.get(docId)
-  if (isCacheFresh(cached, MESSAGE_CACHE_TTL)) {
-    return cached.value
+  if (cached !== undefined) {
+    return cached
   }
 
-  const db = await ensureCloud()
-  const collection = getGoodnightMessagesCollection(db)
-  let message: GoodnightMessage | null = null
+  return goodnightMessageCache.getOrLoad(docId, async () => {
+    const db = await ensureCloud()
+    const collection = getGoodnightMessagesCollection(db)
+    let message: GoodnightMessage | null = null
 
-  try {
-    const openid = await getCurrentOpenId()
-    const result = await collection
-      .where({
-        userId: openid,
-        date
-      })
-      .limit(1)
-      .get()
+    try {
+      const openid = await getCurrentOpenId()
+      const result = await collection
+        .where({
+          userId: openid,
+          date
+        })
+        .limit(1)
+        .get()
 
-    if (Array.isArray(result.data) && result.data.length > 0) {
-      const record = result.data[0]
-      const resolvedId =
-        typeof record._id === 'string' && record._id.trim().length
-          ? record._id.trim()
-          : docId
-      message = mapGoodnightMessage(resolvedId, record, {
-        uid,
-        content: typeof record.text === 'string' ? record.text : record.content
-      })
+      if (Array.isArray(result.data) && result.data.length > 0) {
+        const record = result.data[0]
+        const resolvedId = normalizeString(record._id, docId)
+        message = mapGoodnightMessage(resolvedId, record, {
+          uid,
+          content: typeof record.text === 'string' ? record.text : record.content
+        })
+      }
+    } catch (error) {
+      console.warn('按 userId 查询晚安心语失败，退回按文档 ID 查询', error)
     }
-  } catch (error) {
-    console.warn('按 userId 查询晚安心语失败，退回按文档 ID 查询', error)
-  }
 
-  if (!message) {
-    const doc = collection.doc(docId)
-    const snapshot = await getSnapshotOrNull(doc)
-    message = snapshot ? mapSnapshot(docId, snapshot, { uid }) : null
-  }
+    if (!message) {
+      const doc = collection.doc(docId)
+      const snapshot = await getSnapshotOrNull(doc)
+      message = snapshot ? mapSnapshot(docId, snapshot, { uid }) : null
+    }
 
-  setCacheEntry(goodnightMessageCache, docId, message)
-  if (message) {
-    setCacheEntry(goodnightMessageCache, message._id, message)
-  }
-  return message
+    if (message && message._id !== docId) {
+      goodnightMessageCache.set(message._id, message)
+    }
+
+    return message
+  })
 }
 
 export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMessage | null> {
@@ -227,15 +186,15 @@ export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMe
   }
 
   const cached = goodnightMessageCache.get(id)
-  if (isCacheFresh(cached, MESSAGE_CACHE_TTL)) {
-    return cached.value
+  if (cached !== undefined) {
+    return cached
   }
 
   const db = await ensureCloud()
   const doc = getGoodnightMessagesCollection(db).doc(id)
   const snapshot = await getSnapshotOrNull(doc)
   const message = snapshot ? mapSnapshot(id, snapshot) : null
-  setCacheEntry(goodnightMessageCache, id, message)
+  goodnightMessageCache.set(id, message)
   return message
 }
 
@@ -326,7 +285,7 @@ export async function submitGoodnightMessage(params: {
       (key): key is string => typeof key === 'string' && key.length > 0
     )
   )
-  cacheKeys.forEach((key) => setCacheEntry(goodnightMessageCache, key, normalizedMessage))
+  cacheKeys.forEach((key) => goodnightMessageCache.set(key, normalizedMessage))
 
   invalidateRandomCache()
   return normalizedMessage
@@ -345,85 +304,75 @@ export async function fetchRandomGoodnightMessage(
 ): Promise<GoodnightMessage | null> {
   const cacheKey = excludeUid ?? '__all__'
   const cached = randomMessageCache.get(cacheKey)
-  if (isCacheFresh(cached, RANDOM_CACHE_TTL)) {
-    return cached.value
+  if (cached !== undefined) {
+    return cached
   }
 
-  let response: GoodnightRandomFunctionResponse | undefined
-  try {
-    response = await callCloudFunction<GoodnightRandomFunctionResponse>({
-      name: 'gnGetRandom',
-      data: {
-        // `gnGetRandom` 默认会按照用户偏好推荐并规避本人投稿
-        preferSlot: true
-      }
-    })
-  } catch (error) {
-    console.warn('调用 gnGetRandom 失败', error)
-    setCacheEntry(randomMessageCache, cacheKey, null)
-    return null
-  }
+  return randomMessageCache.getOrLoad(cacheKey, async () => {
+    let response: GoodnightRandomFunctionResponse | undefined
+    try {
+      response = await callCloudFunction<GoodnightRandomFunctionResponse>({
+        name: 'gnGetRandom',
+        data: {
+          // `gnGetRandom` 默认会按照用户偏好推荐并规避本人投稿
+          preferSlot: true
+        }
+      })
+    } catch (error) {
+      console.warn('调用 gnGetRandom 失败', error)
+      return null
+    }
 
-  if (!response) {
-    setCacheEntry(randomMessageCache, cacheKey, null)
-    return null
-  }
+    if (!response) {
+      return null
+    }
 
-  const code = typeof response.code === 'string' ? response.code : 'OK'
-  if (code !== 'OK') {
-    const message =
-      typeof response.message === 'string' && response.message.length
-        ? response.message
-        : '抽取晚安心语失败'
-    setCacheEntry(randomMessageCache, cacheKey, null)
-    throw new Error(message)
-  }
+    const code = typeof response.code === 'string' ? response.code : 'OK'
+    if (code !== 'OK') {
+      const message =
+        typeof response.message === 'string' && response.message.length
+          ? response.message
+          : '抽取晚安心语失败'
+      throw new Error(message)
+    }
 
-  const messageId =
-    typeof response.messageId === 'string' && response.messageId.trim().length
-      ? response.messageId.trim()
-      : null
+    const messageId = normalizeOptionalString(response.messageId) ?? null
 
-  if (!messageId) {
-    setCacheEntry(randomMessageCache, cacheKey, null)
-    return null
-  }
+    if (!messageId) {
+      return null
+    }
 
-  let resolved: GoodnightMessage | null = null
-  try {
-    resolved = await fetchGoodnightMessageById(messageId)
-  } catch (error) {
-    console.warn('加载晚安心语详情失败', error)
-  }
+    let resolved: GoodnightMessage | null = null
+    try {
+      resolved = await fetchGoodnightMessageById(messageId)
+    } catch (error) {
+      console.warn('加载晚安心语详情失败', error)
+    }
 
-  if (resolved) {
-    setCacheEntry(randomMessageCache, cacheKey, resolved)
-    return resolved
-  }
+    if (resolved) {
+      goodnightMessageCache.set(messageId, resolved)
+      return resolved
+    }
 
-  const fallbackText =
-    typeof response.text === 'string' && response.text.trim().length
-      ? response.text.trim()
-      : null
+    const fallbackText = normalizeOptionalString(response.text) ?? null
 
-  if (!fallbackText) {
-    setCacheEntry(randomMessageCache, cacheKey, null)
-    return null
-  }
+    if (!fallbackText) {
+      return null
+    }
 
-  const fallback: GoodnightMessage = {
-    _id: messageId,
-    uid: '',
-    content: fallbackText,
-    likes: 0,
-    dislikes: 0,
-    date: '',
-    createdAt: new Date()
-  }
+    const fallback: GoodnightMessage = {
+      _id: messageId,
+      uid: '',
+      content: fallbackText,
+      likes: 0,
+      dislikes: 0,
+      date: '',
+      createdAt: new Date()
+    }
 
-  setCacheEntry(randomMessageCache, cacheKey, fallback)
-  setCacheEntry(goodnightMessageCache, messageId, fallback)
-  return fallback
+    goodnightMessageCache.set(messageId, fallback)
+    return fallback
+  })
 }
 
 export async function voteGoodnightMessage(
@@ -435,15 +384,10 @@ export async function voteGoodnightMessage(
   }
 
   const cached = goodnightMessageCache.get(id)
-  let current: GoodnightMessage | null = null
-  if (cached && isCacheFresh(cached, MESSAGE_CACHE_TTL) && cached.value) {
-    current = cached.value
-  } else {
-    current = await fetchGoodnightMessageById(id)
-  }
+  const current = cached === undefined ? await fetchGoodnightMessageById(id) : cached
 
   if (!current) {
-    setCacheEntry(goodnightMessageCache, id, null)
+    goodnightMessageCache.set(id, null)
     return null
   }
 
@@ -469,7 +413,7 @@ export async function voteGoodnightMessage(
   }
 
   if (!response.queued) {
-    setCacheEntry(goodnightMessageCache, id, current)
+    goodnightMessageCache.set(id, current)
     return current
   }
 
@@ -481,7 +425,7 @@ export async function voteGoodnightMessage(
     likes: nextLikes,
     dislikes: nextDislikes
   }
-  setCacheEntry(goodnightMessageCache, id, updated)
+  goodnightMessageCache.set(id, updated)
   invalidateRandomCache()
   return updated
 }
