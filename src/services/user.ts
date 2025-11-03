@@ -1,4 +1,6 @@
 import { COLLECTIONS } from '../config/cloud'
+import { clampSleeptimeBucket } from '../utils/sleep'
+import { coerceDate, normalizeNumber, normalizeString } from '../utils/normalize'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../utils/time'
 import {
   callCloudFunction,
@@ -83,42 +85,6 @@ function normalizeTodayStatus(value: unknown): UserTodayStatus {
   return 'none'
 }
 
-function toDate(value: unknown): Date {
-  if (value instanceof Date) {
-    return value
-  }
-
-  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
-    try {
-      const converted = (value as { toDate: () => Date }).toDate()
-      if (converted instanceof Date && !Number.isNaN(converted.getTime())) {
-        return converted
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  if (typeof value === 'number' || typeof value === 'string') {
-    const parsed = new Date(value)
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed
-    }
-  }
-
-  return new Date()
-}
-
-function normalizeString(value: unknown, fallback = ''): string {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (trimmed.length) {
-      return trimmed
-    }
-  }
-  return fallback
-}
-
 function mapUserResponse(openid: string, payload: CloudUserEnsureResponse | null | undefined): UserDocument {
   if (!payload) {
     throw new Error('未获取到用户资料')
@@ -130,18 +96,14 @@ function mapUserResponse(openid: string, payload: CloudUserEnsureResponse | null
   }
 
   const nickname = normalizeString(payload.nickname, `睡眠伙伴${uid.slice(-4)}`)
-  const tzOffset = Number.isFinite(payload.tzOffset)
-    ? Math.max(Math.min(Math.trunc(payload.tzOffset as number), 14 * 60), -12 * 60)
-    : 8 * 60
+  const tzOffset = typeof payload.tzOffset === 'number' ? payload.tzOffset : 8 * 60
   const targetHM = normalizeString(payload.targetHM, DEFAULT_TARGET_HM)
   const slotKey = normalizeString(payload.slotKey, targetHM)
   const todayStatus = normalizeTodayStatus(payload.todayStatus)
-  const streak = Number.isFinite(payload.streak) ? Math.max(0, Math.trunc(payload.streak as number)) : 0
-  const totalDays = Number.isFinite(payload.totalDays)
-    ? Math.max(0, Math.trunc(payload.totalDays as number))
-    : 0
+  const streak = normalizeNumber(payload.streak) ?? 0
+  const totalDays = normalizeNumber(payload.totalDays) ?? 0
   const lastCheckinDate = normalizeString(payload.lastCheckinDate)
-  const createdAt = toDate(payload.createdAt)
+  const createdAt = coerceDate(payload.createdAt) ?? new Date()
 
   return {
     _id: openid,
@@ -201,12 +163,6 @@ async function syncPublicProfileBasics(
   }
 }
 
-function clampSleeptimeBucket(targetHM: string): string {
-  const minutes = parseTimeStringToMinutes(targetHM, 22 * 60 + 30)
-  const bucket = Math.round(minutes / 30) * 30
-  return formatMinutesToTime(bucket)
-}
-
 export async function fetchCurrentUser(): Promise<UserDocument | null> {
   try {
     return await ensureCurrentUser()
@@ -256,7 +212,9 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
   }
 
   if (typeof patch.tzOffset === 'number') {
-    sanitized.tzOffset = Math.max(Math.min(Math.trunc(patch.tzOffset), 14 * 60), -12 * 60)
+    if (Number.isFinite(patch.tzOffset)) {
+      sanitized.tzOffset = Math.trunc(patch.tzOffset)
+    }
   }
 
   if (!Object.keys(sanitized).length) {
