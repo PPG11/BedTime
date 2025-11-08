@@ -1,8 +1,8 @@
-import { Component } from 'react'
-import { PropsWithChildren } from 'react'
+import { Component, createElement, type PropsWithChildren } from 'react'
 import './sdk'
 
 import './app.scss'
+import { AppDataProvider } from './state/appData'
 
 class App extends Component<PropsWithChildren> {
   componentDidMount () {}
@@ -13,7 +13,7 @@ class App extends Component<PropsWithChildren> {
 
   // this.props.children 是将要会渲染的页面
   render () {
-    return this.props.children
+    return createElement(AppDataProvider, null, this.props.children)
   }
 }
 

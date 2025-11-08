@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { FriendProfile, readFriends, readUserUid, saveFriends } from '../../utils/storage'
+import { FriendProfile, readFriends, saveFriends } from '../../utils/storage'
 import { formatMinutesToTime } from '../../utils/time'
 import { FriendUidCard } from '../../components/friends/FriendUidCard'
 import { FriendForm } from '../../components/friends/FriendForm'
@@ -10,15 +10,13 @@ import { FriendRequestList, type FriendRequestItem } from '../../components/frie
 import {
   type CheckinStatus,
   type FriendsOverview,
-  type UserDocument,
   confirmFriendRequest,
-  ensureCurrentUser,
   fetchFriendsOverview,
   removeFriend,
   respondFriendRequest,
-  sendFriendRequest,
-  supportsCloud
+  sendFriendRequest
 } from '../../services'
+import { useAppData } from '../../state/appData'
 import './index.scss'
 
 const statusLabels: Record<CheckinStatus, string> = {
@@ -115,16 +113,19 @@ function buildRequestItemsFromSummaries(requests: FriendRequestSummary[]): Frien
 }
 
 export default function Friends() {
+  const { canUseCloud, user: userDoc, localUid, refresh } = useAppData()
   const [friendItems, setFriendItems] = useState<FriendListItem[]>([])
   const [, setFriendAliases] = useState<FriendProfile[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequestItem[]>([])
   const [outgoingRequests, setOutgoingRequests] = useState<FriendsOverview['requests']['outgoing']>([])
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
-  const [userUid, setUserUid] = useState('')
-  const [userDoc, setUserDoc] = useState<UserDocument | null>(null)
+  const userUid = useMemo(() => (canUseCloud && userDoc ? userDoc.uid : localUid), [canUseCloud, localUid, userDoc])
+  const userDocRef = useRef(userDoc)
+  useEffect(() => {
+    userDocRef.current = userDoc
+  }, [userDoc])
   const [isSyncing, setIsSyncing] = useState(false)
-  const [canUseCloud] = useState(() => supportsCloud())
 
   const friendAliasesRef = useRef<FriendProfile[]>([])
 
@@ -232,43 +233,60 @@ export default function Friends() {
   [applyOverview]
 )
 
-  const hydrate = useCallback(async () => {
-    const aliases = readFriends()
-    friendAliasesRef.current = aliases
-    setFriendAliases(aliases)
+  const lastHydrateRef = useRef(0)
 
-    if (canUseCloud) {
+  const hydrate = useCallback(
+    async (force = false) => {
+      const now = Date.now()
+      if (!force && now - lastHydrateRef.current < 30 * 1000 && friendItems.length) {
+        return
+      }
+
+      const aliases = readFriends()
+      friendAliasesRef.current = aliases
+      setFriendAliases(aliases)
+
+      if (!canUseCloud) {
+        setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
+        setFriendRequests([])
+        setOutgoingRequests([])
+        lastHydrateRef.current = now
+        return
+      }
+
+      if (!userDocRef.current) {
+        try {
+          await refresh()
+        } catch (error) {
+          console.warn('刷新用户信息失败', error)
+        }
+      }
+
+      if (!userDocRef.current) {
+        setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
+        setFriendRequests([])
+        setOutgoingRequests([])
+        return
+      }
+
       setIsSyncing(true)
       try {
-        const user = await ensureCurrentUser()
-        setUserDoc(user)
-        setUserUid(user.uid)
-
         const overview = await fetchFriendsOverview()
         applyOverview(overview, aliases)
         await ensureOutgoingConfirmed(overview.requests.outgoing)
+        lastHydrateRef.current = Date.now()
       } catch (error) {
         console.error('同步好友数据失败，使用本地数据', error)
         Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
-        setUserDoc(null)
-        const fallbackUid = readUserUid()
-        setUserUid((prev) => (prev ? prev : fallbackUid))
         setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
         setFriendRequests([])
         setOutgoingRequests([])
       } finally {
         setIsSyncing(false)
       }
-      return
-    }
-
-    const fallbackUid = readUserUid()
-    setUserUid((prev) => (prev ? prev : fallbackUid))
-    setUserDoc(null)
-    setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
-    setFriendRequests([])
-    setOutgoingRequests([])
-  }, [applyOverview, canUseCloud])
+    },
+    [applyOverview, canUseCloud, ensureOutgoingConfirmed, friendItems.length, refresh]
+  )
 
   useEffect(() => {
     void hydrate()
