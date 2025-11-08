@@ -168,6 +168,10 @@ export default function Index() {
     const diff = recommendedBedTime.getTime() - currentTime.getTime();
     return formatCountdown(diff);
   }, [currentTime, recommendedBedTime]);
+  const recommendedBedTimeText = useMemo(
+    () => formatTime(recommendedBedTime),
+    [recommendedBedTime]
+  );
   const todayRecord = useMemo(() => {
     const stored = records[todayKey];
     if (typeof stored === "number" && stored > 0) {
@@ -529,6 +533,8 @@ export default function Index() {
         weekdayLabel={weekdayLabels[todayDate.getDay()]}
         dateLabel={todayLabel}
         countdownText={countdownText}
+        recommendedSleepTime={recommendedBedTimeText}
+        isLateNow={isLateNow}
       />
       <CheckInCard
         windowHint={windowHint}
