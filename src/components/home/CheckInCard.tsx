@@ -10,6 +10,7 @@ type CheckInCardProps = {
   isLateNow: boolean
   onCheckIn: () => void
   disabled?: boolean
+  awaitingCloudData?: boolean
 }
 
 export function CheckInCard({
@@ -21,9 +22,13 @@ export function CheckInCard({
   hasCheckedInToday,
   isLateNow,
   onCheckIn,
-  disabled = false
+  disabled = false,
+  awaitingCloudData = false
 }: CheckInCardProps) {
   const statusClasses = ['checkin-card__status']
+  const isButtonDisabled =
+    !isWindowOpen || hasCheckedInToday || disabled || awaitingCloudData
+
   if (hasCheckedInToday) {
     statusClasses.push(isLateCheckIn ? 'checkin-card__status--late' : 'checkin-card__status--hit')
   } else if (isLateNow) {
@@ -37,7 +42,9 @@ export function CheckInCard({
     )
   }
 
-  const statusText = hasCheckedInToday
+  const statusText = awaitingCloudData
+    ? '☁️ 正在等待云端返回数据，请稍候'
+    : hasCheckedInToday
     ? isLateCheckIn
       ? '⌛ 今日稍晚完成打卡，今晚早点休息'
       : '✨ 今日按时完成打卡，继续保持'
@@ -51,13 +58,29 @@ export function CheckInCard({
       : `已在 ${lastCheckInTime} 完成打卡`
     : `目标入睡时间 ${targetTimeText} 之前完成打卡`
 
-  const statePill = hasCheckedInToday
+  const statePill = awaitingCloudData
+    ? { icon: '☁️', text: '同步云端数据中' }
+    : hasCheckedInToday
     ? { icon: '✅', text: '今日打卡完成' }
     : isWindowOpen
     ? { icon: '🚀', text: '打卡窗口开放' }
     : { icon: '🌙', text: '耐心等待适合入睡' }
 
-  const progressWidth = hasCheckedInToday ? '100%' : isWindowOpen ? '72%' : '38%'
+  const progressWidth = awaitingCloudData
+    ? '24%'
+    : hasCheckedInToday
+    ? '100%'
+    : isWindowOpen
+    ? '72%'
+    : '38%'
+
+  const buttonText = awaitingCloudData
+    ? '等待云端返回数据'
+    : hasCheckedInToday
+    ? '今日已完成'
+    : isWindowOpen
+    ? '立即打卡'
+    : '等待打卡'
 
   return (
     <View className='checkin-card'>
@@ -75,10 +98,10 @@ export function CheckInCard({
       <Button
         className='checkin-card__button'
         type='primary'
-        disabled={!isWindowOpen || hasCheckedInToday || disabled}
+        disabled={isButtonDisabled}
         onClick={onCheckIn}
       >
-        {hasCheckedInToday ? '今日已完成' : isWindowOpen ? '立即打卡' : '等待打卡'}
+        {buttonText}
       </Button>
     </View>
   )

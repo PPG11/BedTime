@@ -100,6 +100,7 @@ function createRecentCheckIns(
 
 export default function Index() {
   const {
+    ready,
     canUseCloud,
     records,
     setRecords,
@@ -116,6 +117,11 @@ export default function Index() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousTodayKeyRef = useRef<string | null>(null);
   const lastRefreshRef = useRef(0);
+
+  const isAwaitingCloudData = useMemo(
+    () => canUseCloud && !ready,
+    [canUseCloud, ready]
+  );
 
   const windowOptions = useMemo<CheckInWindowOptions>(
     () => ({ targetSleepMinute: settings.targetSleepMinute }),
@@ -311,7 +317,6 @@ export default function Index() {
     isSubmitting: isSubmittingGoodnight,
     submit: handleGoodnightSubmit,
     presentReward: presentGoodnightReward,
-    fetchRewardForToday,
     modalVisible: goodnightModalVisible,
     modalMessage: goodnightModalMessage,
     rewardMessage: receivedGoodnightMessage,
@@ -462,6 +467,10 @@ export default function Index() {
   );
 
   const handleCheckIn = useCallback(async () => {
+    if (isAwaitingCloudData) {
+      Taro.showToast({ title: "正在等待云端数据，请稍候", icon: "none" });
+      return;
+    }
     if (hasCheckedInToday || isSyncing) {
       Taro.showToast({ title: "今天已经打过卡了", icon: "none" });
       return;
@@ -509,6 +518,7 @@ export default function Index() {
     isSyncing,
     isWindowOpen,
     userDoc,
+    isAwaitingCloudData,
   ]);
 
   useDidShow(() => {
@@ -546,7 +556,8 @@ export default function Index() {
         isWindowOpen={isWindowOpen}
         hasCheckedInToday={hasCheckedInToday}
         isLateNow={isLateNow}
-        disabled={isSyncing}
+        disabled={isSyncing || isAwaitingCloudData}
+        awaitingCloudData={isAwaitingCloudData}
         onCheckIn={handleCheckIn}
       />
       {receivedGoodnightMessage ? (
