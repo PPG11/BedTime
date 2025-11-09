@@ -745,16 +745,21 @@ async function fetchCheckinViaCloudFunction(
   }
 }
 
-export async function fetchTodayCheckinStatus(date?: string): Promise<TodayCheckinStatus | null> {
+export async function fetchTodayCheckinStatus(date: string): Promise<TodayCheckinStatus | null> {
   const trimmedInput = typeof date === 'string' ? date.trim() : ''
-  const normalizedInput = trimmedInput ? normalizeDateKey(trimmedInput) ?? '' : ''
-  const cacheKey = normalizedInput || ''
+  if (!trimmedInput) {
+    throw new Error('fetchTodayCheckinStatus 需要提供有效日期')
+  }
+  const normalizedInput = normalizeDateKey(trimmedInput) ?? trimmedInput
+  const cacheKey = normalizedInput
   return todayStatusCache.getOrLoad(cacheKey, async () => {
     try {
       const response = await callCloudFunction<CheckinStatusFunctionResponse>({
         name: 'checkinStatus',
-        data: cacheKey ? { date: cacheKey } : undefined
+        data: { date: cacheKey }
       })
+      console.log('cacheKey', cacheKey)
+      console.log('response', response)
 
       if (!response) {
         return null

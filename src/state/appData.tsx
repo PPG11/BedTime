@@ -157,14 +157,14 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
     try {
       const user = await ensureCurrentUser()
       const settings = deriveSettingsFromUser(user)
+      const windowOptions = { targetSleepMinute: settings.targetSleepMinute }
+      const cycle = resolveCheckInCycle(new Date(), settings.targetSleepMinute, windowOptions)
       const [todayStatus, checkins] = await Promise.all([
-        fetchTodayCheckinStatus(),
+        fetchTodayCheckinStatus(cycle.dateKey),
         fetchCheckins(user.uid, 365)
       ])
 
       const records = mapCheckinsToRecord(checkins)
-      const windowOptions = { targetSleepMinute: settings.targetSleepMinute }
-      const cycle = resolveCheckInCycle(new Date(), settings.targetSleepMinute, windowOptions)
       const normalizedRecords = ensureTodayRecord(records, todayStatus, cycle.dateKey)
 
       try {

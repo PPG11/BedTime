@@ -132,6 +132,7 @@ export default function Index() {
     [currentTime, settings.targetSleepMinute, windowOptions]
   );
   const todayKey = checkinCycle.dateKey;
+  console.log('todayKey', todayKey)
   const todayDate = useMemo(
     () => new Date(checkinCycle.date.getTime()),
     [checkinCycle.date]
@@ -174,6 +175,7 @@ export default function Index() {
   );
   const todayRecord = useMemo(() => {
     const stored = records[todayKey];
+    console.log('stored', stored)
     if (typeof stored === "number" && stored > 0) {
       return stored;
     }
