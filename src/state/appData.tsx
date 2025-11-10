@@ -155,7 +155,7 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
     setState((prev) => ({ ...prev, loading: true, error: null }))
 
     try {
-      const user = await ensureCurrentUser()
+      const user = await ensureCurrentUser({})
       const settings = deriveSettingsFromUser(user)
       const windowOptions = { targetSleepMinute: settings.targetSleepMinute }
       const cycle = resolveCheckInCycle(new Date(), settings.targetSleepMinute, windowOptions)

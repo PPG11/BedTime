@@ -1,5 +1,11 @@
 import { COLLECTIONS } from '../config/cloud'
-import { formatDateKey, normalizeDateKey, ONE_DAY_MS, parseDateKey } from '../utils/checkin'
+import {
+  formatDateKey,
+  normalizeDateKey,
+  ONE_DAY_MS,
+  parseDateKey,
+  type CheckInWindowOptions
+} from '../utils/checkin'
 import { createTimedCache } from '../utils/cache'
 import { coerceDate, normalizeOptionalString, normalizeString } from '../utils/normalize'
 import {
@@ -104,6 +110,7 @@ const TODAY_STATUS_CACHE_TTL = 15 * 1000
 const checkinListCache = createTimedCache<CheckinDocument[]>(CHECKIN_LIST_CACHE_TTL)
 const checkinInfoCache = createTimedCache<CheckinDocument | null>(CHECKIN_INFO_CACHE_TTL)
 const todayStatusCache = createTimedCache<TodayCheckinStatus | null>(TODAY_STATUS_CACHE_TTL)
+const EMPTY_WINDOW_OPTIONS: CheckInWindowOptions = Object.freeze({})
 
 function makeListCacheKey(uid: string, limit: number): string {
   return `${uid}:${limit}`
@@ -113,7 +120,7 @@ function makeInfoCacheKey(uid: string, normalizedDate: string): string {
   return `${uid}:${normalizedDate}`
 }
 
-function invalidateCheckinInfos(uid: string, normalizedDate?: string): void {
+function invalidateCheckinInfos(uid: string, normalizedDate: string | undefined): void {
   const targetKey = normalizedDate ? `${uid}:${normalizedDate}` : null
   const keys = Array.from(checkinInfoCache.keys())
   keys.forEach((key) => {
@@ -136,7 +143,7 @@ function invalidateTodayStatusCache(): void {
   todayStatusCache.clear()
 }
 
-function invalidateCheckinCaches(uid: string, normalizedDate?: string): void {
+function invalidateCheckinCaches(uid: string, normalizedDate: string | undefined): void {
   invalidateCheckinLists(uid)
   invalidateCheckinInfos(uid, normalizedDate)
   invalidateTodayStatusCache()
@@ -167,12 +174,17 @@ function normalizeInfoList(record: CheckinsAggregateRecord | undefined): Checkin
   return record.info
 }
 
-function mapEntryToDocument(uid: string, entry: CheckinEntry, fallbackDate?: string): CheckinDocument {
-  const baseDate = entry?.date ?? fallbackDate ?? formatDateKey(new Date())
-  const normalizedDate = normalizeDateKey(baseDate) ?? formatDateKey(new Date())
+function mapEntryToDocument(
+  uid: string,
+  entry: CheckinEntry,
+  fallbackDate: string | undefined
+): CheckinDocument {
+  const baseDate = entry?.date ?? fallbackDate ?? formatDateKey(new Date(), EMPTY_WINDOW_OPTIONS)
+  const normalizedDate =
+    normalizeDateKey(baseDate) ?? formatDateKey(new Date(), EMPTY_WINDOW_OPTIONS)
   const tzOffset = typeof entry?.tzOffset === 'number' ? entry.tzOffset : 0
   const fallbackTimestamp = (() => {
-    const parsed = parseDateKey(normalizedDate)
+    const parsed = parseDateKey(normalizedDate, EMPTY_WINDOW_OPTIONS)
     parsed.setHours(22, 0, 0, 0)
     return parsed
   })()
@@ -200,21 +212,23 @@ function mapEntryToDocument(uid: string, entry: CheckinEntry, fallbackDate?: str
 function mapCloudCheckinRecord(
   uid: string,
   record: CloudCheckinRecord | null | undefined,
-  defaults: { date?: string; status?: CheckinStatus; tzOffset?: number } = {}
+  defaults: { date?: string; status?: CheckinStatus; tzOffset?: number } | undefined
 ): CheckinDocument | null {
   if (!record) {
     return null
   }
 
+  const resolvedDefaults = defaults ?? {}
+
   const resolvedUid = normalizeString(record.uid, uid)
-  const baseDate = normalizeString(record.date, defaults.date ?? '')
-  const resolvedDate = normalizeDateKey(baseDate) ?? defaults.date
+  const baseDate = normalizeString(record.date, resolvedDefaults.date ?? '')
+  const resolvedDate = normalizeDateKey(baseDate) ?? resolvedDefaults.date
 
   if (!resolvedDate) {
     return null
   }
 
-  const resolvedStatus = normalizeStatus(record.status ?? defaults.status ?? 'hit')
+  const resolvedStatus = normalizeStatus(record.status ?? resolvedDefaults.status ?? 'hit')
   const resolvedId = normalizeString(record._id, `${resolvedUid}#${resolvedDate}`)
 
   const ts =
@@ -227,8 +241,8 @@ function mapCloudCheckinRecord(
   const tzOffset =
     typeof record.tzOffset === 'number'
       ? record.tzOffset
-      : typeof defaults.tzOffset === 'number'
-      ? defaults.tzOffset
+      : typeof resolvedDefaults.tzOffset === 'number'
+      ? resolvedDefaults.tzOffset
       : 0
 
   return {
@@ -246,14 +260,16 @@ function mapCloudCheckinRecord(
 function mapCloudCheckinList(
   uid: string,
   list: CloudCheckinRecord[] | undefined,
-  defaults: { tzOffset?: number } = {}
+  defaults: { tzOffset?: number } | undefined
 ): CheckinDocument[] {
   if (!Array.isArray(list) || !list.length) {
     return []
   }
 
+  const resolvedDefaults = defaults ?? {}
+
   const mapped = list
-    .map((item) => mapCloudCheckinRecord(uid, item, { tzOffset: defaults.tzOffset }))
+    .map((item) => mapCloudCheckinRecord(uid, item, { tzOffset: resolvedDefaults.tzOffset }))
     .filter((item): item is CheckinDocument => Boolean(item))
 
   return mapped
@@ -645,7 +661,7 @@ async function submitCheckinViaCloudFunction(params: {
           message: requestGnMsgId,
           tzOffset: params.tzOffset,
           ts: new Date()
-        })
+        }, resolvedDate)
 
       return {
         document,
@@ -682,7 +698,7 @@ async function submitCheckinViaCloudFunction(params: {
           message: requestGnMsgId,
           tzOffset: params.tzOffset,
           ts: new Date()
-        }),
+        }, params.date),
         status: 'already_exists'
       }
     }
@@ -857,10 +873,14 @@ async function appendCheckinEntry(params: {
   })
 
   return {
-    document: mapEntryToDocument(params.uid, {
-      ...entry,
-      ts: new Date()
-    }),
+    document: mapEntryToDocument(
+      params.uid,
+      {
+        ...entry,
+        ts: new Date()
+      },
+      undefined
+    ),
     status: 'created'
   }
 }
@@ -956,15 +976,19 @@ export async function updateCheckinGoodnightMessage(params: {
     }
   })
 
-  const document = mapEntryToDocument(params.uid, {
-    ...updatedEntry,
-    ts: updatedEntry.ts ?? new Date()
-  })
+  const document = mapEntryToDocument(
+    params.uid,
+    {
+      ...updatedEntry,
+      ts: updatedEntry.ts ?? new Date()
+    },
+    normalizedDate
+  )
   invalidateCheckinCaches(params.uid, normalizedDate)
   return document
 }
 
-export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDocument[]> {
+export async function fetchCheckins(uid: string, limit: number): Promise<CheckinDocument[]> {
   const normalizedLimit = Math.max(1, Math.min(1000, limit))
   const cacheKey = makeListCacheKey(uid, normalizedLimit)
   return checkinListCache.getOrLoad(cacheKey, async () => {
@@ -977,10 +1001,11 @@ export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDo
 
       while (remaining > 0) {
         const batchLimit = Math.min(50, remaining)
-        const page = await fetchCheckinPageViaCloud(uid, {
-          limit: batchLimit,
-          cursor: cursor ?? undefined
-        })
+        const request: { limit: number; cursor?: string } = { limit: batchLimit }
+        if (cursor) {
+          request.cursor = cursor
+        }
+        const page = await fetchCheckinPageViaCloud(uid, request)
 
         if (page === null) {
           break
@@ -1019,7 +1044,8 @@ export async function fetchCheckins(uid: string, limit = 120): Promise<CheckinDo
       })
       .slice(0, normalizedLimit)
 
-    return sorted.map((entry) => mapEntryToDocument(uid, entry))
+    const fallbackDate = formatDateKey(new Date(), EMPTY_WINDOW_OPTIONS)
+    return sorted.map((entry) => mapEntryToDocument(uid, entry, fallbackDate))
   })
 }
 
@@ -1063,12 +1089,15 @@ export async function fetchCheckinsInRange(
     let usedCloud = false
 
     while (true) {
-      const page = await fetchCheckinPageViaCloud(uid, {
+      const request: { from: string; to: string; limit: number; cursor?: string } = {
         from,
         to,
-        limit: 50,
-        cursor: cursor ?? undefined
-      })
+        limit: 50
+      }
+      if (cursor) {
+        request.cursor = cursor
+      }
+      const page = await fetchCheckinPageViaCloud(uid, request)
 
       if (page === null) {
         break
@@ -1098,6 +1127,7 @@ export async function fetchCheckinsInRange(
   const { record } = await ensureCheckinsDocument(db, uid, openid)
   const infoList = normalizeInfoList(record)
 
+  const fallbackDate = formatDateKey(new Date(), EMPTY_WINDOW_OPTIONS)
   return infoList
     .filter((entry) => {
       const date = normalizeDateKey(entry.date ?? '')
@@ -1106,7 +1136,7 @@ export async function fetchCheckinsInRange(
       }
       return date >= from && date <= to
     })
-    .map((entry) => mapEntryToDocument(uid, entry))
+    .map((entry) => mapEntryToDocument(uid, entry, fallbackDate))
     .sort((a, b) => a.date.localeCompare(b.date))
 }
 
@@ -1130,7 +1160,7 @@ export function computeHitStreak(records: CheckinDocument[], todayKey: string): 
 }
 
 function shiftDateKey(key: string, delta: number): string {
-  const date = parseDateKey(key)
+  const date = parseDateKey(key, EMPTY_WINDOW_OPTIONS)
   date.setTime(date.getTime() + delta * ONE_DAY_MS)
-  return formatDateKey(date)
+  return formatDateKey(date, EMPTY_WINDOW_OPTIONS)
 }

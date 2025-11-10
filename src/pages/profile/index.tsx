@@ -31,8 +31,8 @@ export default function Profile() {
 
   const uid = canUseCloud && userDoc ? userDoc.uid : localUid
 
-  useShareAppMessage(() => getShareAppMessageOptions(uid))
-  useShareTimeline(() => getShareTimelineOptions(uid))
+  useShareAppMessage(() => getShareAppMessageOptions(uid ?? ''))
+  useShareTimeline(() => getShareTimelineOptions(uid ?? ''))
 
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),

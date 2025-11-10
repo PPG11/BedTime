@@ -166,7 +166,9 @@ export function createLocalGoodnightMessage(params: {
   return message
 }
 
-export function pickRandomLocalGoodnightMessage(excludeUid?: string): GoodnightMessage | null {
+export function pickRandomLocalGoodnightMessage(
+  excludeUid: string | undefined
+): GoodnightMessage | null {
   const list = readStoredMessages().map(fromStored)
   const candidates = excludeUid ? list.filter((item) => item.uid !== excludeUid) : list
   if (!candidates.length) {

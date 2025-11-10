@@ -15,6 +15,8 @@ import {
 import { createTimedCache } from '../utils/cache'
 import { coerceDate, normalizeOptionalString, normalizeString } from '../utils/normalize'
 
+const EMPTY_GOODNIGHT_FALLBACK: { uid?: string; content?: string } = {}
+
 export type GoodnightMessageDocument = {
   _id?: string
   uid?: string
@@ -45,7 +47,7 @@ const RANDOM_CACHE_TTL = 60 * 1000
 const goodnightMessageCache = createTimedCache<GoodnightMessage | null>(MESSAGE_CACHE_TTL)
 const randomMessageCache = createTimedCache<GoodnightMessage | null>(RANDOM_CACHE_TTL)
 
-function invalidateRandomCache(key?: string): void {
+function invalidateRandomCache(key: string | null): void {
   if (key) {
     randomMessageCache.delete(key)
     return
@@ -66,13 +68,14 @@ function getGoodnightMessageId(uid: string, date: string): string {
 function mapGoodnightMessage(
   fallbackId: string,
   raw: Partial<GoodnightMessageRecord> & { _id?: string },
-  fallback?: { uid?: string; content?: string }
+  fallback: { uid?: string; content?: string } | undefined
 ): GoodnightMessage {
   const createdAt = coerceDate(raw.createdAt) ?? new Date()
   const normalizedContent = normalizeString(
-    raw.content ?? raw.text ?? fallback?.content ?? ''
+    raw.content ?? raw.text ?? fallback?.content ?? '',
+    ''
   )
-  const normalizedUid = normalizeString(raw.uid ?? fallback?.uid ?? '')
+  const normalizedUid = normalizeString(raw.uid ?? fallback?.uid ?? '', '')
 
   return {
     _id: normalizeString(raw._id, fallbackId),
@@ -80,7 +83,7 @@ function mapGoodnightMessage(
     content: normalizedContent,
     likes: typeof raw.likes === 'number' ? raw.likes : 0,
     dislikes: typeof raw.dislikes === 'number' ? raw.dislikes : 0,
-    date: normalizeString(raw.date ?? ''),
+    date: normalizeString(raw.date ?? '', ''),
     createdAt
   }
 }
@@ -88,7 +91,7 @@ function mapGoodnightMessage(
 function mapSnapshot(
   docId: string,
   snapshot: CloudDocumentSnapshot<GoodnightMessageRecord>,
-  fallback?: { uid?: string; content?: string }
+  fallback: { uid?: string; content?: string } | undefined
 ): GoodnightMessage | null {
   if (!snapshot.data) {
     return null
@@ -156,7 +159,7 @@ export async function fetchGoodnightMessageForDate(
 
       if (Array.isArray(result.data) && result.data.length > 0) {
         const record = result.data[0]
-        const resolvedId = normalizeString(record._id, docId)
+      const resolvedId = normalizeString(record._id, docId)
         message = mapGoodnightMessage(resolvedId, record, {
           uid,
           content: typeof record.text === 'string' ? record.text : record.content
@@ -193,7 +196,7 @@ export async function fetchGoodnightMessageById(id: string): Promise<GoodnightMe
   const db = await ensureCloud()
   const doc = getGoodnightMessagesCollection(db).doc(id)
   const snapshot = await getSnapshotOrNull(doc)
-  const message = snapshot ? mapSnapshot(id, snapshot) : null
+  const message = snapshot ? mapSnapshot(id, snapshot, EMPTY_GOODNIGHT_FALLBACK) : null
   goodnightMessageCache.set(id, message)
   return message
 }
@@ -287,7 +290,7 @@ export async function submitGoodnightMessage(params: {
   )
   cacheKeys.forEach((key) => goodnightMessageCache.set(key, normalizedMessage))
 
-  invalidateRandomCache()
+  invalidateRandomCache(null)
   return normalizedMessage
 }
 
@@ -426,6 +429,6 @@ export async function voteGoodnightMessage(
     dislikes: nextDislikes
   }
   goodnightMessageCache.set(id, updated)
-  invalidateRandomCache()
+  invalidateRandomCache(null)
   return updated
 }

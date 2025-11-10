@@ -132,8 +132,8 @@ export default function Index() {
     [canUseCloud, localUid, userDoc]
   );
 
-  useShareAppMessage(() => getShareAppMessageOptions(shareUid));
-  useShareTimeline(() => getShareTimelineOptions(shareUid));
+  useShareAppMessage(() => getShareAppMessageOptions(shareUid ?? ''));
+  useShareTimeline(() => getShareTimelineOptions(shareUid ?? ''));
 
   const isAwaitingCloudData = useMemo(
     () => canUseCloud && !ready,
@@ -508,7 +508,7 @@ export default function Index() {
           rewardCandidate = await fetchRandomGoodnightMessage(effectiveUid);
         } else {
           // 本地模式：从本地存储中随机选择一个晚安心语
-          rewardCandidate = pickRandomLocalGoodnightMessage(effectiveUid);
+          rewardCandidate = pickRandomLocalGoodnightMessage(effectiveUid ?? '');
         }
       } catch (error) {
         console.warn("获取今日晚安心语失败", error);

@@ -36,7 +36,7 @@ function formatUpdatedAtLabel(date: Date): string {
   return `${month}-${day} ${hours}:${minutes}`
 }
 
-function createPlaceholderItem(uid: string, remark?: string): FriendListItem {
+function createPlaceholderItem(uid: string, remark: string | undefined): FriendListItem {
   const trimmedRemark = remark?.trim() ?? ''
   const digits = uid.split('').map(Number)
   const base = digits.reduce((sum, value, index) => sum + value * (index + 3), 0)
@@ -122,8 +122,8 @@ export default function Friends() {
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
   const userUid = useMemo(() => (canUseCloud && userDoc ? userDoc.uid : localUid), [canUseCloud, localUid, userDoc])
-  useShareAppMessage(() => getShareAppMessageOptions(userUid))
-  useShareTimeline(() => getShareTimelineOptions(userUid))
+  useShareAppMessage(() => getShareAppMessageOptions(userUid ?? ''))
+  useShareTimeline(() => getShareTimelineOptions(userUid ?? ''))
   const userDocRef = useRef(userDoc)
   useEffect(() => {
     userDocRef.current = userDoc
@@ -133,13 +133,13 @@ export default function Friends() {
   const friendAliasesRef = useRef<FriendProfile[]>([])
 
   const persistAliases = useCallback((next: FriendProfile[]) => {
-    friendAliasesRef.current = next
-    setFriendAliases(next)
-    saveFriends(next)
-  }, [])
+      friendAliasesRef.current = next
+      setFriendAliases(next)
+      saveFriends(next)
+    }, [])
 
   const upsertAlias = useCallback(
-    (uid: string, remark?: string) => {
+    (uid: string, remark: string | undefined) => {
       const trimmed = remark?.trim() ?? ''
       const current = friendAliasesRef.current
       const filtered = current.filter((item) => item.uid !== uid)
@@ -172,7 +172,7 @@ export default function Friends() {
   )
 
   const applyOverview = useCallback(
-    (overview: FriendsOverview, aliasSource?: FriendProfile[]) => {
+    (overview: FriendsOverview, aliasSource: FriendProfile[] | undefined) => {
       const source = aliasSource ?? friendAliasesRef.current
       const sourceMap = new Map(source.map((item) => [item.uid, item.remark]))
       const aliasPool = new Set<string>([
@@ -226,8 +226,8 @@ export default function Friends() {
 
     if (didConfirm) {
       try {
-        const refreshed = await fetchFriendsOverview()
-        applyOverview(refreshed)
+        const refreshed = await fetchFriendsOverview({})
+        applyOverview(refreshed, friendAliasesRef.current)
       } catch (error) {
         console.warn('刷新好友数据失败', error)
       }
@@ -274,7 +274,7 @@ export default function Friends() {
 
       setIsSyncing(true)
       try {
-        const overview = await fetchFriendsOverview()
+        const overview = await fetchFriendsOverview({})
         applyOverview(overview, aliases)
         await ensureOutgoingConfirmed(overview.requests.outgoing)
         lastHydrateRef.current = Date.now()
@@ -315,8 +315,8 @@ export default function Friends() {
   )
 
   const refreshOverview = useCallback(async () => {
-    const overview = await fetchFriendsOverview()
-    applyOverview(overview)
+    const overview = await fetchFriendsOverview({})
+    applyOverview(overview, friendAliasesRef.current)
     await ensureOutgoingConfirmed(overview.requests.outgoing)
   }, [applyOverview, ensureOutgoingConfirmed])
 
