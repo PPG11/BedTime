@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View } from '@tarojs/components'
 import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
-import { DEFAULT_SLEEP_MINUTE, DEFAULT_USER_NAME, type UserSettings } from '../../utils/storage'
+import { DEFAULT_SLEEP_MINUTE, DEFAULT_USER_NAME } from '../../utils/storage'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../../utils/time'
 import { ProfileUidCard } from '../../components/profile/ProfileUidCard'
 import { ProfilePreferencesCard } from '../../components/profile/ProfilePreferencesCard'
@@ -17,19 +17,11 @@ const profileTips = [
 ]
 
 export default function Profile() {
-  const {
-    settings,
-    setSettings,
-    user: userDoc,
-    setUser: setUserDoc,
-    canUseCloud,
-    localUid,
-    refresh
-  } = useAppData()
+  const { settings, user: userDoc, setUser: setUserDoc, refresh } = useAppData()
   const [isSyncing, setIsSyncing] = useState(false)
   const [nameDraft, setNameDraft] = useState<string>(settings.name || DEFAULT_USER_NAME)
 
-  const uid = canUseCloud && userDoc ? userDoc.uid : localUid
+  const uid = userDoc?.uid ?? ''
 
   useShareAppMessage(() => getShareAppMessageOptions(uid ?? ''))
   useShareTimeline(() => getShareTimelineOptions(uid ?? ''))
@@ -42,13 +34,6 @@ export default function Profile() {
   useEffect(() => {
     setNameDraft(settings.name)
   }, [settings.name])
-
-  const persistLocalSettings = useCallback(
-    (next: UserSettings) => {
-      setSettings(next)
-    },
-    [setSettings]
-  )
 
   const handleNameInput = useCallback(
     async (event: { detail: { value: string } }) => {
@@ -69,30 +54,25 @@ export default function Profile() {
         setNameDraft(settings.name)
         return
       }
-      if (canUseCloud && userDoc) {
-        setIsSyncing(true)
-        try {
-          const updated = await updateCurrentUser({ nickname: nextName })
-          setUserDoc(updated)
-          Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
-        } catch (error) {
-          console.error('更新昵称失败', error)
-          Taro.showToast({ title: '更新昵称失败', icon: 'none' })
-          await refresh()
-        } finally {
-          setIsSyncing(false)
-        }
+      if (!userDoc) {
+        Taro.showToast({ title: '未获取到用户信息，请稍后重试', icon: 'none' })
+        setNameDraft(settings.name)
         return
       }
-      const nextSettings: UserSettings = {
-        ...settings,
-        name: nextName
+      setIsSyncing(true)
+      try {
+        const updated = await updateCurrentUser({ nickname: nextName })
+        setUserDoc(updated)
+        Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
+      } catch (error) {
+        console.error('更新昵称失败', error)
+        Taro.showToast({ title: '更新昵称失败', icon: 'none' })
+        await refresh()
+      } finally {
+        setIsSyncing(false)
       }
-      setNameDraft(nextName)
-      persistLocalSettings(nextSettings)
-      Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
     },
-    [canUseCloud, isSyncing, persistLocalSettings, refresh, settings, userDoc]
+    [isSyncing, refresh, settings, setUserDoc, userDoc]
   )
 
   const handleTargetTimeChange = useCallback(
@@ -102,28 +82,24 @@ export default function Profile() {
         return
       }
       const targetHM = formatMinutesToTime(nextMinutes)
-      if (canUseCloud && userDoc) {
-        setIsSyncing(true)
-        try {
-          const updated = await updateCurrentUser({ targetHM })
-          setUserDoc(updated)
-          Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
-        } catch (error) {
-          console.error('更新目标就寝时间失败', error)
-          Taro.showToast({ title: '更新时间失败', icon: 'none' })
-          await refresh()
-        } finally {
-          setIsSyncing(false)
-        }
+      if (!userDoc) {
+        Taro.showToast({ title: '未获取到用户信息，请稍后重试', icon: 'none' })
         return
       }
-      persistLocalSettings({
-        ...settings,
-        targetSleepMinute: nextMinutes
-      })
-      Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
+      setIsSyncing(true)
+      try {
+        const updated = await updateCurrentUser({ targetHM })
+        setUserDoc(updated)
+        Taro.showToast({ title: '修改成功', icon: 'success', duration: 800 })
+      } catch (error) {
+        console.error('更新目标就寝时间失败', error)
+        Taro.showToast({ title: '更新时间失败', icon: 'none' })
+        await refresh()
+      } finally {
+        setIsSyncing(false)
+      }
     },
-    [canUseCloud, isSyncing, persistLocalSettings, refresh, settings, userDoc]
+    [isSyncing, refresh, settings, setUserDoc, userDoc]
   )
 
   const handleCopyUid = useCallback(() => {

@@ -52,7 +52,6 @@ import {
   type GoodnightMessage,
   type GoodnightVoteType,
 } from "../../types/goodnight";
-import { pickRandomLocalGoodnightMessage } from "../../utils/goodnight";
 import { useGoodnightInteraction } from "./useGoodnight";
 import { useAppData } from "../../state/appData";
 import {
@@ -110,7 +109,6 @@ function createRecentCheckIns(
 export default function Index() {
   const {
     ready,
-    canUseCloud,
     records,
     setRecords,
     settings,
@@ -118,7 +116,6 @@ export default function Index() {
     setTodayStatus,
     user: userDoc,
     setUser: setUserDoc,
-    localUid,
     refresh,
   } = useAppData();
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -127,18 +124,12 @@ export default function Index() {
   const previousTodayKeyRef = useRef<string | null>(null);
   const lastRefreshRef = useRef(0);
 
-  const shareUid = useMemo(
-    () => (canUseCloud && userDoc ? userDoc.uid : localUid),
-    [canUseCloud, localUid, userDoc]
-  );
+  const shareUid = useMemo(() => (userDoc ? userDoc.uid : ''), [userDoc]);
 
   useShareAppMessage(() => getShareAppMessageOptions(shareUid ?? ''));
   useShareTimeline(() => getShareTimelineOptions(shareUid ?? ''));
 
-  const isAwaitingCloudData = useMemo(
-    () => canUseCloud && !ready,
-    [canUseCloud, ready]
-  );
+  const isAwaitingCloudData = useMemo(() => !ready, [ready]);
 
   const windowOptions = useMemo<CheckInWindowOptions>(
     () => ({ targetSleepMinute: settings.targetSleepMinute }),
@@ -265,7 +256,7 @@ export default function Index() {
     () => settings.name || DEFAULT_USER_NAME,
     [settings.name]
   );
-  const effectiveUid = userDoc?.uid ?? localUid;
+  const effectiveUid = userDoc?.uid ?? null;
 
   const persistRecords = useCallback(
     (next: CheckInMap | ((prev: CheckInMap) => CheckInMap)) => {
@@ -276,9 +267,6 @@ export default function Index() {
 
   const requestRefresh = useCallback(
     (force = false) => {
-      if (!canUseCloud) {
-        return;
-      }
       const now = Date.now();
       if (!force && now - lastRefreshRef.current < 30 * 1000) {
         return;
@@ -286,7 +274,7 @@ export default function Index() {
       lastRefreshRef.current = now;
       void refresh();
     },
-    [canUseCloud, refresh]
+    [refresh]
   );
 
   useEffect(() => {
@@ -342,7 +330,6 @@ export default function Index() {
     hasVoted: hasVotedGoodnight,
     isVoting: isVotingGoodnight,
   } = useGoodnightInteraction({
-    canUseCloud,
     userDoc,
     effectiveUid,
     todayKey,
@@ -446,43 +433,6 @@ export default function Index() {
     ]
   );
 
-  const checkInLocally = useCallback(
-    async (status: CheckinStatus, rewardCandidate: GoodnightMessage | null) => {
-      // 使用最新的目标睡眠时间重新计算应该使用的日期
-      const actualWindowOptions: CheckInWindowOptions = {
-        targetSleepMinute: settings.targetSleepMinute,
-      };
-      const actualCycle = resolveCheckInCycle(
-        currentTime,
-        settings.targetSleepMinute,
-        actualWindowOptions
-      );
-      const actualDateKey = actualCycle.dateKey;
-      const now = new Date();
-      const updated = { ...records, [actualDateKey]: now.getTime() };
-      persistRecords(updated);
-      setTodayStatus({
-        checkedIn: true,
-        date: actualDateKey,
-        status,
-        goodnightMessageId: rewardCandidate?._id ?? null,
-        timestamp: now,
-      });
-      Taro.showToast({ title: "打卡成功，早睡加油！", icon: "success" });
-      await presentGoodnightReward({
-        message: rewardCandidate,
-        syncToCheckin: true,
-      });
-    },
-    [
-      persistRecords,
-      presentGoodnightReward,
-      records,
-      settings.targetSleepMinute,
-      currentTime,
-    ]
-  );
-
   const handleCheckIn = useCallback(async () => {
     if (isAwaitingCloudData) {
       Taro.showToast({ title: "正在等待云端数据，请稍候", icon: "none" });
@@ -502,32 +452,26 @@ export default function Index() {
     try {
       // 打卡时先通过 gnGetRandom 获取一个晚安心语
       let rewardCandidate: GoodnightMessage | null = null;
+      if (!userDoc) {
+        Taro.showToast({ title: "未获取到用户信息，请稍后再试", icon: "none" });
+        return;
+      }
+
       try {
-        if (canUseCloud && userDoc) {
-          // 云端模式：调用 gnGetRandom 云函数获取随机晚安心语
-          rewardCandidate = await fetchRandomGoodnightMessage(effectiveUid);
-        } else {
-          // 本地模式：从本地存储中随机选择一个晚安心语
-          rewardCandidate = pickRandomLocalGoodnightMessage(effectiveUid ?? '');
-        }
+        rewardCandidate = effectiveUid
+          ? await fetchRandomGoodnightMessage(effectiveUid)
+          : null;
       } catch (error) {
         console.warn("获取今日晚安心语失败", error);
         // 如果获取失败，仍然允许打卡，只是不携带晚安心语ID
       }
 
       const checkinStatus: CheckinStatus = isLateNow ? "late" : "hit";
-      if (canUseCloud && userDoc) {
-        await checkInWithCloud(checkinStatus, rewardCandidate);
-        return;
-      }
-
-      await checkInLocally(checkinStatus, rewardCandidate);
+      await checkInWithCloud(checkinStatus, rewardCandidate);
     } finally {
       setIsSyncing(false);
     }
   }, [
-    canUseCloud,
-    checkInLocally,
     checkInWithCloud,
     effectiveUid,
     hasCheckedInToday,

@@ -9,7 +9,12 @@ import {
   type ReactNode
 } from 'react'
 import Taro from '@tarojs/taro'
-import { DEFAULT_SLEEP_MINUTE, DEFAULT_USER_NAME, readCheckIns, readSettings, readUserUid, saveCheckIns, saveSettings, type CheckInMap, type UserSettings } from '../utils/storage'
+import {
+  DEFAULT_SLEEP_MINUTE,
+  DEFAULT_USER_NAME,
+  type CheckInMap,
+  type UserSettings
+} from '../utils/storage'
 import { parseTimeStringToMinutes } from '../utils/time'
 import { mapCheckinsToRecord } from '../utils/checkinsMap'
 import { resolveCheckInCycle } from '../utils/checkin'
@@ -26,12 +31,10 @@ import {
 type AppDataState = {
   ready: boolean
   loading: boolean
-  canUseCloud: boolean
   user: UserDocument | null
   settings: UserSettings
   todayStatus: TodayCheckinStatus | null
   records: CheckInMap
-  localUid: string
   error: string | null
 }
 
@@ -80,28 +83,20 @@ function ensureTodayRecord(records: CheckInMap, status: TodayCheckinStatus | nul
 }
 
 export function AppDataProvider({ children }: { children: ReactNode }): JSX.Element {
-  const canUseCloud = supportsCloud()
   const [state, setState] = useState<AppDataState>(() => ({
     ready: false,
     loading: false,
-    canUseCloud,
     user: null,
-    settings: canUseCloud ? defaultSettings : readSettings(),
+    settings: defaultSettings,
     todayStatus: null,
-    records: canUseCloud ? {} : readCheckIns(),
-    localUid: readUserUid(),
+    records: {},
     error: null
   }))
-
-  const canUseCloudRef = useRef(canUseCloud)
-  canUseCloudRef.current = canUseCloud
 
   const setUser = useCallback((updater: Updater<UserDocument | null>) => {
     setState((prev) => {
       const nextUser = resolveUpdater(updater, prev.user)
-      const nextSettings = canUseCloudRef.current
-        ? deriveSettingsFromUser(nextUser)
-        : prev.settings
+      const nextSettings = deriveSettingsFromUser(nextUser)
       return {
         ...prev,
         user: nextUser,
@@ -113,9 +108,6 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
   const setSettings = useCallback((updater: Updater<UserSettings>) => {
     setState((prev) => {
       const next = resolveUpdater(updater, prev.settings)
-      if (!canUseCloudRef.current) {
-        saveSettings(next)
-      }
       return { ...prev, settings: next }
     })
   }, [])
@@ -123,9 +115,6 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
   const setRecords = useCallback((updater: Updater<CheckInMap>) => {
     setState((prev) => {
       const next = resolveUpdater(updater, prev.records)
-      if (!canUseCloudRef.current) {
-        saveCheckIns(next)
-      }
       return { ...prev, records: next }
     })
   }, [])
@@ -138,16 +127,17 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
   }, [])
 
   const hydrate = useCallback(async () => {
-    if (!canUseCloud) {
+    if (!supportsCloud()) {
+      const message = '当前环境不支持微信云开发，请稍后再试'
+      Taro.showToast({ title: message, icon: 'none', duration: 2000 })
       setState((prev) => ({
         ...prev,
         ready: true,
         loading: false,
-        records: readCheckIns(),
-        settings: readSettings(),
-        todayStatus: null,
         user: null,
-        error: null
+        todayStatus: null,
+        records: {},
+        error: message
       }))
       return
     }
@@ -197,7 +187,7 @@ export function AppDataProvider({ children }: { children: ReactNode }): JSX.Elem
         error: message
       }))
     }
-  }, [canUseCloud])
+  }, [])
 
   const inflightRef = useRef<Promise<void> | null>(null)
 

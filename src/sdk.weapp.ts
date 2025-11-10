@@ -53,18 +53,33 @@ if (ENABLE_ANALYTICS) {
   console.info('已跳过有数埋点 SDK 初始化（ENABLE_ANALYTICS 未开启）')
 }
 
-if (CLOUD_SHOULD_ENABLE && Taro.cloud) {
-  const envId = CLOUD_ENV_ID.trim()
+const cloudInitErrorToast = (message: string, detail?: unknown) => {
+  console.error(message, detail)
   try {
-    Taro.cloud.init({
-      traceUser: true,
-      env: envId || undefined
-    })
-  } catch (error) {
-    console.warn('初始化微信云开发失败', error)
+    Taro.showToast({ title: message, icon: 'none', duration: 2000 })
+  } catch (toastError) {
+    console.error('展示错误提示失败', toastError)
   }
-} else if (CLOUD_SHOULD_ENABLE) {
-  console.warn('当前环境不支持 Taro.cloud，已跳过云开发初始化')
-} else if (process.env.NODE_ENV !== 'production') {
-  console.info('云开发未配置，应用将使用本地模式')
+}
+
+const envId = CLOUD_ENV_ID.trim()
+
+if (!CLOUD_SHOULD_ENABLE) {
+  cloudInitErrorToast('未配置云开发环境，应用无法运行')
+  throw new Error('CLOUD_ENV_ID 未配置')
+}
+
+if (!Taro.cloud) {
+  cloudInitErrorToast('当前环境不支持微信云开发，应用无法运行')
+  throw new Error('Taro.cloud 不可用')
+}
+
+try {
+  Taro.cloud.init({
+    traceUser: true,
+    env: envId || undefined
+  })
+} catch (error) {
+  cloudInitErrorToast('初始化微信云开发失败', error)
+  throw error
 }
