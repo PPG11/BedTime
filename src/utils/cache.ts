@@ -6,7 +6,7 @@ export type TimedCacheEntry<T> = {
 export type TimedCache<T> = {
   get(key: string): T | undefined
   set(key: string, value: T): void
-  delete(key?: string): void
+  delete(key: string | undefined): void
   clear(): void
   keys(): IterableIterator<string>
   getOrLoad(key: string, loader: () => Promise<T>): Promise<T>
@@ -35,7 +35,7 @@ export function createTimedCache<T>(ttl: number): TimedCache<T> {
     })
   }
 
-  function remove(key?: string): void {
+  function remove(key: string | undefined): void {
     if (typeof key === 'string') {
       store.delete(key)
       inflight.delete(key)
@@ -75,7 +75,7 @@ export function createTimedCache<T>(ttl: number): TimedCache<T> {
     get,
     set,
     delete: remove,
-    clear: () => remove(),
+    clear: () => remove(undefined),
     keys: () => store.keys(),
     getOrLoad
   }

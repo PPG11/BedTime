@@ -101,7 +101,7 @@ export type CheckInCycleResolution = {
 export function resolveCheckInCycle(
   currentTime: Date,
   targetSleepMinute: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): CheckInCycleResolution {
   const { targetMinute, closeOffsetMinutes } = resolveWindowOptions(targetSleepMinute, options)
   const currentMinute = getMinutesSinceMidnight(currentTime)
@@ -164,7 +164,7 @@ export function resolveCheckInCycle(
   }
 }
 
-export function getCheckInDayStart(date: Date, options?: CheckInWindowOptions): Date {
+export function getCheckInDayStart(date: Date, options: CheckInWindowOptions | undefined): Date {
   const { resetMinute } = resolveWindowBoundaries(undefined, options)
   const shifted = shiftByReset(date, resetMinute)
   shifted.setHours(0, 0, 0, 0)
@@ -203,7 +203,7 @@ export function normalizeDateKey(input: string | null | undefined): string | nul
   return `${normalizedYear}${normalizedMonth}${normalizedDay}`
 }
 
-export function formatDateKey(date: Date, options?: CheckInWindowOptions): string {
+export function formatDateKey(date: Date, options: CheckInWindowOptions | undefined): string {
   const shifted = shiftByReset(date, resolveWindowBoundaries(undefined, options).resetMinute)
   const year = String(shifted.getFullYear()).padStart(4, '0')
   const month = `${shifted.getMonth() + 1}`.padStart(2, '0')
@@ -211,7 +211,7 @@ export function formatDateKey(date: Date, options?: CheckInWindowOptions): strin
   return `${year}${month}${day}`
 }
 
-export function parseDateKey(key: string, options?: CheckInWindowOptions): Date {
+export function parseDateKey(key: string, options: CheckInWindowOptions | undefined): Date {
   const normalized = normalizeDateKey(key)
   if (!normalized) {
     return getCheckInDayStart(new Date(), options)
@@ -231,14 +231,14 @@ export function getMinutesSinceMidnight(date: Date): number {
 
 export function getCheckInWindowStartMinute(
   targetSleepMinute: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): number {
   return resolveWindowBoundaries(targetSleepMinute, options).startMinute
 }
 
 export function getCheckInWindowEndMinute(
   targetSleepMinute: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): number {
   return resolveWindowBoundaries(targetSleepMinute, options).resetMinute
 }
@@ -265,7 +265,7 @@ export function formatCountdown(durationMs: number): string {
 export function computeCurrentStreak(
   records: CheckInMap,
   today: Date,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): number {
   let streak = 0
   const cursor = getCheckInDayStart(today, options)
@@ -284,7 +284,7 @@ export function computeCurrentStreak(
 
 export function computeBestStreak(
   records: CheckInMap,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): number {
   const keys = Object.keys(records)
   if (keys.length === 0) {
@@ -317,7 +317,7 @@ export function getRecentDays(
   records: CheckInMap,
   current: Date,
   length: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): RecentDay[] {
   const items: RecentDay[] = []
   const cursor = getCheckInDayStart(current, options)
@@ -339,7 +339,7 @@ export function getRecentDays(
 export function computeCompletionRate(
   records: CheckInMap,
   today: Date,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): number {
   const keys = Object.keys(records)
   if (!keys.length) {
@@ -365,7 +365,7 @@ export function formatWindowHint(
   targetTime: Date,
   isWindowOpen: boolean,
   targetMinutes: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): string {
   const minutesNow = getMinutesSinceMidnight(currentTime)
   const boundaries = resolveWindowBoundaries(targetMinutes, options)
@@ -391,7 +391,7 @@ export function formatWindowHint(
 export function computeRecommendedBedTime(
   currentTime: Date,
   targetMinutes: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): Date {
   const windowOptions: CheckInWindowOptions = {
     ...(options ?? {}),
@@ -414,7 +414,7 @@ export function computeRecommendedBedTime(
 export function isCheckInWindowOpen(
   minutesNow: number,
   targetSleepMinute: number,
-  options?: CheckInWindowOptions
+  options: CheckInWindowOptions | undefined
 ): boolean {
   const currentMinute = normalizeMinute(minutesNow)
   const { startMinute, resetMinute } = resolveWindowBoundaries(targetSleepMinute, options)

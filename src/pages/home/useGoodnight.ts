@@ -47,7 +47,7 @@ type UseGoodnightInteractionResult = {
   hasSubmitted: boolean
   isSubmitting: boolean
   submit: () => Promise<void>
-  presentReward: (options?: PresentRewardOptions) => Promise<GoodnightMessage | null>
+  presentReward: (options: PresentRewardOptions | undefined) => Promise<GoodnightMessage | null>
   fetchRewardForToday: () => Promise<GoodnightMessage | null>
   modalVisible: boolean
   modalMessage: GoodnightMessage | null
@@ -64,8 +64,9 @@ export function useGoodnightInteraction({
   effectiveUid,
   todayKey,
   hasCheckedInToday,
-  prefetchedGoodnightId = null
+  prefetchedGoodnightId
 }: UseGoodnightInteractionParams): UseGoodnightInteractionResult {
+  const resolvedPrefetchedGoodnightId = prefetchedGoodnightId ?? null
   const [input, setInput] = useState('')
   const [submittedMessage, setSubmittedMessage] = useState<GoodnightMessage | null>(null)
   const [hasSubmitted, setHasSubmitted] = useState(false)
@@ -83,12 +84,11 @@ export function useGoodnightInteraction({
   } | null>(null)
 
   const resolveRewardMessage = useCallback(
-    async ({
-      existing,
-      forceRefresh = false
-    }: { existing?: GoodnightMessage | null; forceRefresh?: boolean } = {}): Promise<
-      GoodnightMessage | null
-    > => {
+    async (
+      options: { existing?: GoodnightMessage | null; forceRefresh?: boolean } | undefined
+    ): Promise<GoodnightMessage | null> => {
+      const existing = options?.existing
+      const forceRefresh = options?.forceRefresh ?? false
       if (!effectiveUid) {
         return null
       }
@@ -100,8 +100,9 @@ export function useGoodnightInteraction({
       if (canUseCloud && userDoc) {
         if (hasCheckedInToday) {
           let resolvedMessageId =
-            typeof prefetchedGoodnightId === 'string' && prefetchedGoodnightId.trim().length
-              ? prefetchedGoodnightId.trim()
+            typeof resolvedPrefetchedGoodnightId === 'string' &&
+            resolvedPrefetchedGoodnightId.trim().length
+              ? resolvedPrefetchedGoodnightId.trim()
               : null
           if (!resolvedMessageId) {
             try {
@@ -140,9 +141,16 @@ export function useGoodnightInteraction({
       if (stored) {
         return stored
       }
-      return pickRandomLocalGoodnightMessage(effectiveUid)
+      return pickRandomLocalGoodnightMessage(effectiveUid ?? undefined)
     },
-    [canUseCloud, effectiveUid, hasCheckedInToday, prefetchedGoodnightId, todayKey, userDoc]
+    [
+      canUseCloud,
+      effectiveUid,
+      hasCheckedInToday,
+      resolvedPrefetchedGoodnightId,
+      todayKey,
+      userDoc
+    ]
   )
 
   const loadSubmittedMessage = useCallback(async () => {
@@ -252,7 +260,7 @@ export function useGoodnightInteraction({
       return cache.message
     }
 
-    const message = await resolveRewardMessage()
+    const message = await resolveRewardMessage(undefined)
     pendingRewardRef.current = {
       key: todayKey,
       uid: effectiveUid,
@@ -262,7 +270,7 @@ export function useGoodnightInteraction({
   }, [effectiveUid, resolveRewardMessage, todayKey])
 
   const presentReward = useCallback(
-    async (options?: PresentRewardOptions): Promise<GoodnightMessage | null> => {
+    async (options: PresentRewardOptions | undefined): Promise<GoodnightMessage | null> => {
       const shouldShowModal = options?.showModal ?? true
       const shouldSync = options?.syncToCheckin ?? true
       if (!effectiveUid) {

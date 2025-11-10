@@ -143,21 +143,23 @@ function toDate(value: unknown): Date | null {
   return null
 }
 
-function normalizeString(value: unknown, fallback = ''): string {
+function normalizeString(value: unknown, fallback: string | undefined): string {
+  const resolvedFallback = typeof fallback === 'string' ? fallback : ''
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if (trimmed.length) {
       return trimmed
     }
   }
-  return fallback
+  return resolvedFallback
 }
 
-function normalizeNumber(value: unknown, fallback = 0): number {
+function normalizeNumber(value: unknown, fallback: number | undefined): number {
+  const resolvedFallback = typeof fallback === 'number' ? fallback : 0
   if (Number.isFinite(value)) {
     return Math.trunc(value as number)
   }
-  return fallback
+  return resolvedFallback
 }
 
 function mapFriendList(list: FriendsPageFunctionResponse['list']): FriendSummary[] {
@@ -167,7 +169,7 @@ function mapFriendList(list: FriendsPageFunctionResponse['list']): FriendSummary
 
   return list
     .map((entry) => {
-      const uid = normalizeString(entry?.uid)
+      const uid = normalizeString(entry?.uid, undefined)
       if (!uid) {
         return null
       }
@@ -175,11 +177,14 @@ function mapFriendList(list: FriendsPageFunctionResponse['list']): FriendSummary
       return {
         uid,
         nickname: normalizeString(entry?.nickname, `睡眠伙伴${uid.slice(-4)}`),
-        targetHM: normalizeString(entry?.targetHM),
-        slotKey: normalizeString(entry?.slotKey, normalizeString(entry?.targetHM)),
+        targetHM: normalizeString(entry?.targetHM, undefined),
+        slotKey: normalizeString(
+          entry?.slotKey,
+          normalizeString(entry?.targetHM, undefined)
+        ),
         todayStatus: normalizeStatus(entry?.todayStatus),
-        streak: Math.max(0, normalizeNumber(entry?.streak)),
-        totalDays: Math.max(0, normalizeNumber(entry?.totalDays))
+        streak: Math.max(0, normalizeNumber(entry?.streak, undefined)),
+        totalDays: Math.max(0, normalizeNumber(entry?.totalDays, undefined))
       } satisfies FriendSummary
     })
     .filter((item): item is FriendSummary => Boolean(item))
@@ -198,8 +203,8 @@ function mapRequests(list: FriendsPageFunctionResponse['requests']): {
 
     return entries
       .map((entry) => {
-        const requestId = normalizeString(entry?.requestId)
-        const uid = normalizeString(entry?.uid)
+        const requestId = normalizeString(entry?.requestId, undefined)
+        const uid = normalizeString(entry?.uid, undefined)
         if (!requestId || !uid) {
           return null
         }
@@ -208,10 +213,10 @@ function mapRequests(list: FriendsPageFunctionResponse['requests']): {
           requestId,
           uid,
           nickname: normalizeString(entry?.nickname, `睡眠伙伴${uid.slice(-4)}`),
-          targetHM: normalizeString(entry?.targetHM),
+          targetHM: normalizeString(entry?.targetHM, undefined),
           todayStatus: normalizeStatus(entry?.todayStatus),
-          streak: Math.max(0, normalizeNumber(entry?.streak)),
-          totalDays: Math.max(0, normalizeNumber(entry?.totalDays)),
+          streak: Math.max(0, normalizeNumber(entry?.streak, undefined)),
+          totalDays: Math.max(0, normalizeNumber(entry?.totalDays, undefined)),
           status: normalizeRequestStatus(entry?.status),
           createdAt: toDate(entry?.createdAt)
         } satisfies FriendRequestSummary
@@ -226,13 +231,19 @@ function mapRequests(list: FriendsPageFunctionResponse['requests']): {
 }
 
 export async function fetchFriendsOverview(
-  options: { limit?: number; cursor?: string | null } = {}
+  options: { limit?: number; cursor?: string | null } | undefined
 ): Promise<FriendsOverview> {
+  const resolvedOptions = options ?? {}
   const response = await callCloudFunction<FriendsPageFunctionResponse>({
     name: 'friendsPage',
     data: {
-      limit: Number.isFinite(options.limit) ? Math.trunc(options.limit as number) : undefined,
-      cursor: typeof options.cursor === 'string' && options.cursor.trim().length ? options.cursor : undefined
+      limit: Number.isFinite(resolvedOptions.limit)
+        ? Math.trunc(resolvedOptions.limit as number)
+        : undefined,
+      cursor:
+        typeof resolvedOptions.cursor === 'string' && resolvedOptions.cursor.trim().length
+          ? resolvedOptions.cursor
+          : undefined
     }
   })
 
@@ -258,7 +269,7 @@ export async function fetchFriendsOverview(
 }
 
 export async function sendFriendRequest(toUid: string): Promise<{ requestId: string }> {
-  const normalized = normalizeString(toUid)
+  const normalized = normalizeString(toUid, undefined)
   if (!/^[0-9A-Za-z]{6,12}$/.test(normalized)) {
     throw new Error('缺少有效的好友 UID')
   }
@@ -277,7 +288,7 @@ export async function sendFriendRequest(toUid: string): Promise<{ requestId: str
     throw new Error(message)
   }
 
-  const requestId = normalizeString(response?.requestId)
+  const requestId = normalizeString(response?.requestId, undefined)
   if (!requestId) {
     throw new Error('发送好友申请失败：缺少申请标识')
   }
@@ -289,7 +300,7 @@ export async function respondFriendRequest(
   requestId: string,
   accept: boolean
 ): Promise<FriendRequestStatus> {
-  const normalizedId = normalizeString(requestId)
+  const normalizedId = normalizeString(requestId, undefined)
   if (!normalizedId) {
     throw new Error('缺少好友申请标识')
   }
@@ -314,7 +325,7 @@ export async function respondFriendRequest(
 }
 
 export async function confirmFriendRequest(requestId: string): Promise<boolean> {
-  const normalizedId = normalizeString(requestId)
+  const normalizedId = normalizeString(requestId, undefined)
   if (!normalizedId) {
     throw new Error('缺少好友申请标识')
   }
@@ -337,7 +348,7 @@ export async function confirmFriendRequest(requestId: string): Promise<boolean> 
 }
 
 export async function removeFriend(targetUid: string): Promise<void> {
-  const normalized = normalizeString(targetUid)
+  const normalized = normalizeString(targetUid, undefined)
   if (!normalized) {
     throw new Error('缺少好友 UID')
   }

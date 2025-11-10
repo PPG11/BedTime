@@ -6,5 +6,5 @@ const detectedEnv =
 
 export const env: EnvLike = detectedEnv
 
-export const getEnvVar = (key: string, defaultValue?: string) =>
+export const getEnvVar = (key: string, defaultValue: string | undefined) =>
   env[key] ?? defaultValue
