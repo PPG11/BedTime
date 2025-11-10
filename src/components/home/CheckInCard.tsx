@@ -25,6 +25,14 @@ export function CheckInCard({
   disabled = false,
   awaitingCloudData = false
 }: CheckInCardProps) {
+  const showHitEffects = hasCheckedInToday && !isLateCheckIn
+  const showLateEffects = (hasCheckedInToday && isLateCheckIn) || (!hasCheckedInToday && isLateNow)
+  const cardClasses = ['checkin-card']
+  if (showHitEffects) {
+    cardClasses.push('checkin-card--hit')
+  } else if (showLateEffects) {
+    cardClasses.push('checkin-card--late')
+  }
   const statusClasses = ['checkin-card__status']
   const isButtonDisabled =
     !isWindowOpen || hasCheckedInToday || disabled || awaitingCloudData
@@ -83,7 +91,30 @@ export function CheckInCard({
     : '等待打卡'
 
   return (
-    <View className='checkin-card'>
+    <View className={cardClasses.join(' ')}>
+      <View className='checkin-card__effects' aria-hidden='true'>
+        {showHitEffects && (
+          <View className='checkin-card__hit-effects'>
+            <View className='checkin-card__hit-glow' />
+            <View className='checkin-card__hit-glow checkin-card__hit-glow--secondary' />
+            <View className='checkin-card__hit-ring' />
+            <View className='checkin-card__hit-spark checkin-card__hit-spark--one' />
+            <View className='checkin-card__hit-spark checkin-card__hit-spark--two' />
+            <View className='checkin-card__hit-spark checkin-card__hit-spark--three' />
+          </View>
+        )}
+        {showLateEffects && (
+          <View className='checkin-card__late-effects'>
+            <View className='checkin-card__late-trail' />
+            <View className='checkin-card__late-trail checkin-card__late-trail--two' />
+            <View className='checkin-card__late-orb' />
+            <View className='checkin-card__late-shock' />
+            <View className='checkin-card__late-clock'>
+              <View className='checkin-card__late-hand' />
+            </View>
+          </View>
+        )}
+      </View>
       <View className='checkin-card__pill'>
         <Text className='checkin-card__pill-icon'>{statePill.icon}</Text>
         <Text className='checkin-card__pill-text'>{statePill.text}</Text>

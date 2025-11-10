@@ -57,6 +57,86 @@
   }
 }
 
+@keyframes hitPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.35;
+  }
+}
+
+@keyframes hitSparkle {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.7);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  70% {
+    transform: translate3d(26px, -24px, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(38px, -46px, 0) scale(0.7);
+    opacity: 0;
+  }
+}
+
+@keyframes hitOrbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes lateTrailSweep {
+  0% {
+    transform: translateX(-30%) rotate(-8deg);
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(30%) rotate(-8deg);
+    opacity: 0.2;
+  }
+}
+
+@keyframes lateShock {
+  0% {
+    transform: scale(0.95) rotate(-2deg);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.05) rotate(2deg);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(0.95) rotate(-2deg);
+    opacity: 0.4;
+  }
+}
+
+@keyframes lateClockHand {
+  0% {
+    transform: rotate(-40deg);
+  }
+  100% {
+    transform: rotate(320deg);
+  }
+}
+
 .index {
   min-height: 100vh;
   padding: 52px 32px 96px;
@@ -348,6 +428,165 @@
   z-index: 0;
 }
 
+.checkin-card--hit {
+  box-shadow: 0 24px 58px rgba(43, 206, 171, 0.3);
+}
+
+.checkin-card--late {
+  box-shadow: 0 24px 58px rgba(255, 126, 146, 0.28);
+}
+
+.checkin-card__effects {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.checkin-card__hit-effects,
+.checkin-card__late-effects {
+  position: absolute;
+  inset: 0;
+}
+
+.checkin-card__hit-glow {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  top: -80px;
+  right: -40px;
+  background: radial-gradient(circle, rgba(86, 255, 207, 0.7), rgba(86, 255, 207, 0));
+  filter: blur(4px);
+  animation: hitPulse 4.4s ease-in-out infinite;
+}
+
+.checkin-card__hit-glow--secondary {
+  width: 280px;
+  height: 280px;
+  top: auto;
+  bottom: -140px;
+  right: auto;
+  left: -120px;
+  background: radial-gradient(circle, rgba(118, 157, 255, 0.75), rgba(118, 157, 255, 0));
+  animation-duration: 5.2s;
+}
+
+.checkin-card__hit-ring {
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  border: 2px dashed rgba(81, 224, 184, 0.5);
+  top: 50%;
+  left: 50%;
+  margin: -130px 0 0 -130px;
+  animation: hitOrbit 10s linear infinite;
+  opacity: 0.6;
+}
+
+.checkin-card__hit-spark {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7ef7d5, #64d8ff);
+  box-shadow: 0 0 16px rgba(126, 247, 213, 0.9);
+  animation: hitSparkle 2.4s ease-in-out infinite;
+}
+
+.checkin-card__hit-spark--one {
+  top: 36%;
+  right: 18%;
+}
+
+.checkin-card__hit-spark--two {
+  top: 18%;
+  left: 26%;
+  animation-delay: 0.4s;
+}
+
+.checkin-card__hit-spark--three {
+  bottom: 10%;
+  right: 30%;
+  animation-delay: 0.8s;
+}
+
+.checkin-card__late-trail {
+  position: absolute;
+  width: 160%;
+  height: 140px;
+  top: 8%;
+  left: -30%;
+  border-radius: 50%;
+  background: linear-gradient(90deg, rgba(255, 141, 170, 0), rgba(255, 141, 170, 0.6), rgba(255, 208, 166, 0));
+  filter: blur(10px);
+  transform: rotate(-8deg);
+  animation: lateTrailSweep 3.2s ease-in-out infinite;
+  mix-blend-mode: screen;
+}
+
+.checkin-card__late-trail--two {
+  top: auto;
+  bottom: 6%;
+  transform: rotate(6deg);
+  animation-duration: 2.4s;
+  animation-delay: 0.3s;
+}
+
+.checkin-card__late-orb {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  bottom: -140px;
+  right: -90px;
+  background: radial-gradient(circle, rgba(255, 168, 168, 0.7), rgba(255, 168, 168, 0));
+  filter: blur(6px);
+  animation: lateShock 5.6s ease-in-out infinite;
+}
+
+.checkin-card__late-shock {
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  border-radius: 40% 60% 70% 30%;
+  border: 1px solid rgba(255, 154, 154, 0.4);
+  top: 32%;
+  left: 8%;
+  filter: blur(0.5px);
+  animation: lateShock 2.8s ease-in-out infinite;
+}
+
+.checkin-card__late-clock {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  top: 16px;
+  right: 30px;
+  box-shadow: 0 0 24px rgba(255, 141, 170, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.18);
+  animation: lateShock 4s ease-in-out infinite;
+}
+
+.checkin-card__late-hand {
+  position: absolute;
+  width: 2px;
+  height: 42px;
+  top: 28px;
+  left: 50%;
+  margin-left: -1px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.85));
+  border-radius: 2px;
+  transform-origin: bottom center;
+  animation: lateClockHand 3.6s linear infinite;
+}
 .checkin-card__pill {
   align-self: flex-start;
   padding: 10px 20px;
