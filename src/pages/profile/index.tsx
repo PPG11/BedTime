@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { View } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { DEFAULT_SLEEP_MINUTE, DEFAULT_USER_NAME, type UserSettings } from '../../utils/storage'
 import { formatMinutesToTime, parseTimeStringToMinutes } from '../../utils/time'
 import { ProfileUidCard } from '../../components/profile/ProfileUidCard'
@@ -8,6 +8,7 @@ import { ProfilePreferencesCard } from '../../components/profile/ProfilePreferen
 import { ProfileTips } from '../../components/profile/ProfileTips'
 import { updateCurrentUser } from '../../services'
 import { useAppData } from '../../state/appData'
+import { getShareAppMessageOptions, getShareTimelineOptions } from '../../utils/share'
 import './index.scss'
 
 const profileTips = [
@@ -29,6 +30,9 @@ export default function Profile() {
   const [nameDraft, setNameDraft] = useState<string>(settings.name || DEFAULT_USER_NAME)
 
   const uid = canUseCloud && userDoc ? userDoc.uid : localUid
+
+  useShareAppMessage(() => getShareAppMessageOptions(uid))
+  useShareTimeline(() => getShareTimelineOptions(uid))
 
   const targetTimeText = useMemo(
     () => formatMinutesToTime(settings.targetSleepMinute),
