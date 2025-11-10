@@ -36,30 +36,6 @@ function formatUpdatedAtLabel(date: Date): string {
   return `${month}-${day} ${hours}:${minutes}`
 }
 
-function createPlaceholderItem(uid: string, remark: string | undefined): FriendListItem {
-  const trimmedRemark = remark?.trim() ?? ''
-  const digits = uid.split('').map(Number)
-  const base = digits.reduce((sum, value, index) => sum + value * (index + 3), 0)
-  const streak = (base % 12) + 1
-  const statuses: CheckinStatus[] = ['hit', 'late', 'miss', 'pending']
-  const todayStatus = statuses[base % statuses.length]
-  const sleepMinutes = 21 * 60 + (base % 120)
-  const fallbackName = `早睡伙伴 ${uid.slice(-4)}`
-  const updatedAt = new Date(Date.now() - (base % 120) * 60 * 1000)
-
-  return {
-    uid,
-    nickname: fallbackName,
-    displayName: trimmedRemark || fallbackName,
-    remark: trimmedRemark || undefined,
-    streak,
-    todayStatus,
-    todayStatusLabel: statusLabels[todayStatus],
-    sleeptime: formatMinutesToTime(sleepMinutes),
-    updatedAtLabel: formatUpdatedAtLabel(updatedAt)
-  }
-}
-
 type FriendSummary = FriendsOverview['friends'][number]
 type FriendRequestSummary = FriendsOverview['requests']['incoming'][number]
 
@@ -114,14 +90,14 @@ function buildRequestItemsFromSummaries(requests: FriendRequestSummary[]): Frien
 }
 
 export default function Friends() {
-  const { canUseCloud, user: userDoc, localUid, refresh } = useAppData()
+  const { user: userDoc, refresh } = useAppData()
   const [friendItems, setFriendItems] = useState<FriendListItem[]>([])
   const [, setFriendAliases] = useState<FriendProfile[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequestItem[]>([])
   const [outgoingRequests, setOutgoingRequests] = useState<FriendsOverview['requests']['outgoing']>([])
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
-  const userUid = useMemo(() => (canUseCloud && userDoc ? userDoc.uid : localUid), [canUseCloud, localUid, userDoc])
+  const userUid = useMemo(() => userDoc?.uid ?? '', [userDoc])
   useShareAppMessage(() => getShareAppMessageOptions(userUid ?? ''))
   useShareTimeline(() => getShareTimelineOptions(userUid ?? ''))
   const userDocRef = useRef(userDoc)
@@ -249,14 +225,6 @@ export default function Friends() {
       friendAliasesRef.current = aliases
       setFriendAliases(aliases)
 
-      if (!canUseCloud) {
-        setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
-        setFriendRequests([])
-        setOutgoingRequests([])
-        lastHydrateRef.current = now
-        return
-      }
-
       if (!userDocRef.current) {
         try {
           await refresh()
@@ -266,7 +234,8 @@ export default function Friends() {
       }
 
       if (!userDocRef.current) {
-        setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
+        Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none', duration: 2000 })
+        setFriendItems([])
         setFriendRequests([])
         setOutgoingRequests([])
         return
@@ -279,16 +248,13 @@ export default function Friends() {
         await ensureOutgoingConfirmed(overview.requests.outgoing)
         lastHydrateRef.current = Date.now()
       } catch (error) {
-        console.error('同步好友数据失败，使用本地数据', error)
-        Taro.showToast({ title: '云端同步失败，使用本地模式', icon: 'none', duration: 2000 })
-        setFriendItems(aliases.map((alias) => createPlaceholderItem(alias.uid, alias.remark)))
-        setFriendRequests([])
-        setOutgoingRequests([])
+        console.error('同步好友数据失败', error)
+        Taro.showToast({ title: '好友数据同步失败，请稍后再试', icon: 'none', duration: 2000 })
       } finally {
         setIsSyncing(false)
       }
     },
-    [applyOverview, canUseCloud, ensureOutgoingConfirmed, friendItems.length, refresh]
+    [applyOverview, ensureOutgoingConfirmed, friendItems.length, refresh]
   )
 
   useEffect(() => {
@@ -348,33 +314,32 @@ export default function Friends() {
 
     const remark = aliasInput.trim()
 
-    if (canUseCloud && userDoc) {
-      setIsSyncing(true)
-      try {
-        await sendFriendRequest(normalizedUid)
-        if (remark) {
-          upsertAlias(normalizedUid, remark)
-        }
-        await refreshOverview()
-        resetForm()
-        Taro.showToast({ title: '好友申请已发送', icon: 'success' })
-      } catch (error) {
-        console.error('发送好友申请失败', error)
-        const message =
-          error instanceof Error && typeof error.message === 'string' && error.message.length
-            ? error.message
-            : '发送好友申请失败，请稍后重试'
-        Taro.showToast({ title: message, icon: 'none' })
-      } finally {
-        setIsSyncing(false)
-      }
+    if (!userDoc) {
+      Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none' })
       return
     }
 
-    Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
+    setIsSyncing(true)
+    try {
+      await sendFriendRequest(normalizedUid)
+      if (remark) {
+        upsertAlias(normalizedUid, remark)
+      }
+      await refreshOverview()
+      resetForm()
+      Taro.showToast({ title: '好友申请已发送', icon: 'success' })
+    } catch (error) {
+      console.error('发送好友申请失败', error)
+      const message =
+        error instanceof Error && typeof error.message === 'string' && error.message.length
+          ? error.message
+          : '发送好友申请失败，请稍后重试'
+      Taro.showToast({ title: message, icon: 'none' })
+    } finally {
+      setIsSyncing(false)
+    }
   }, [
     aliasInput,
-    canUseCloud,
     incomingRequestSet,
     isSyncing,
     knownUids,
@@ -401,32 +366,30 @@ export default function Friends() {
           if (!res.confirm) {
             return
           }
-          if (canUseCloud && userDoc) {
-            setIsSyncing(true)
-            try {
-              await removeFriend(targetUid)
-              removeAlias(targetUid)
-              await refreshOverview()
-              Taro.showToast({ title: '已解除好友关系', icon: 'none' })
-            } catch (error) {
-              console.error('解除好友关系失败', error)
-              const message =
-                error instanceof Error && typeof error.message === 'string' && error.message.length
-                  ? error.message
-                  : '操作失败，请稍后再试'
-              Taro.showToast({ title: message, icon: 'none' })
-            } finally {
-              setIsSyncing(false)
-            }
+          if (!userDoc) {
+            Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none' })
             return
           }
-          removeAlias(targetUid)
-          setFriendItems((prev) => prev.filter((item) => item.uid !== targetUid))
-          Taro.showToast({ title: '已解除好友关系', icon: 'none' })
+          setIsSyncing(true)
+          try {
+            await removeFriend(targetUid)
+            removeAlias(targetUid)
+            await refreshOverview()
+            Taro.showToast({ title: '已解除好友关系', icon: 'none' })
+          } catch (error) {
+            console.error('解除好友关系失败', error)
+            const message =
+              error instanceof Error && typeof error.message === 'string' && error.message.length
+                ? error.message
+                : '操作失败，请稍后再试'
+            Taro.showToast({ title: message, icon: 'none' })
+          } finally {
+            setIsSyncing(false)
+          }
         }
       })
     },
-    [canUseCloud, friendItems, isSyncing, refreshOverview, removeAlias, userDoc]
+    [friendItems, isSyncing, refreshOverview, removeAlias, userDoc]
   )
 
   const handleAcceptRequest = useCallback(
@@ -434,8 +397,8 @@ export default function Friends() {
       if (isSyncing) {
         return
       }
-      if (!canUseCloud || !userDoc) {
-        Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
+      if (!userDoc) {
+        Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none' })
         return
       }
       setIsSyncing(true)
@@ -458,7 +421,7 @@ export default function Friends() {
         setIsSyncing(false)
       }
     },
-    [canUseCloud, isSyncing, refreshOverview, userDoc]
+    [isSyncing, refreshOverview, userDoc]
   )
 
   const handleRejectRequest = useCallback(
@@ -466,8 +429,8 @@ export default function Friends() {
       if (isSyncing) {
         return
       }
-      if (!canUseCloud || !userDoc) {
-        Taro.showToast({ title: '当前模式不支持好友申请', icon: 'none' })
+      if (!userDoc) {
+        Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none' })
         return
       }
       setIsSyncing(true)
@@ -490,7 +453,7 @@ export default function Friends() {
         setIsSyncing(false)
       }
     },
-    [canUseCloud, isSyncing, refreshOverview, userDoc]
+    [isSyncing, refreshOverview, userDoc]
   )
 
   const handleRefreshFriend = useCallback(
@@ -498,34 +461,26 @@ export default function Friends() {
       if (isSyncing) {
         return
       }
-      if (canUseCloud && userDoc) {
-        if (!friendItems.some((item) => item.uid === targetUid)) {
-          Taro.showToast({ title: '未找到该好友', icon: 'none' })
-          return
-        }
-        setIsSyncing(true)
-        try {
-          await refreshOverview()
-          Taro.showToast({ title: '好友状态已更新', icon: 'success' })
-        } catch (error) {
-          console.error('刷新好友失败', error)
-          Taro.showToast({ title: '刷新失败，请稍后再试', icon: 'none' })
-        } finally {
-          setIsSyncing(false)
-        }
+      if (!userDoc) {
+        Taro.showToast({ title: '未获取到用户信息，请稍后再试', icon: 'none' })
         return
       }
-
-      setFriendItems((prev) =>
-        prev.map((item) =>
-          item.uid === targetUid
-            ? createPlaceholderItem(item.uid, item.remark)
-            : item
-        )
-      )
-      Taro.showToast({ title: '好友状态已更新', icon: 'success' })
+      if (!friendItems.some((item) => item.uid === targetUid)) {
+        Taro.showToast({ title: '未找到该好友', icon: 'none' })
+        return
+      }
+      setIsSyncing(true)
+      try {
+        await refreshOverview()
+        Taro.showToast({ title: '好友状态已更新', icon: 'success' })
+      } catch (error) {
+        console.error('刷新好友失败', error)
+        Taro.showToast({ title: '刷新失败，请稍后再试', icon: 'none' })
+      } finally {
+        setIsSyncing(false)
+      }
     },
-    [canUseCloud, friendItems, isSyncing, refreshOverview, userDoc]
+    [friendItems, isSyncing, refreshOverview, userDoc]
   )
 
   return (

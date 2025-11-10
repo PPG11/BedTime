@@ -11,14 +11,6 @@ import {
   type UserDocument
 } from '../../services'
 import {
-  createLocalGoodnightMessage,
-  pickRandomLocalGoodnightMessage,
-  readLocalGoodnightMessage,
-  readReceivedGoodnightReward,
-  saveReceivedGoodnightReward,
-  voteLocalGoodnightMessage
-} from '../../utils/goodnight'
-import {
   GOODNIGHT_ERROR_ALREADY_SUBMITTED,
   GOODNIGHT_MESSAGE_MAX_LENGTH,
   type GoodnightMessage,
@@ -26,7 +18,6 @@ import {
 } from '../../types/goodnight'
 
 type UseGoodnightInteractionParams = {
-  canUseCloud: boolean
   userDoc: UserDocument | null
   effectiveUid: string | null
   todayKey: string
@@ -59,7 +50,6 @@ type UseGoodnightInteractionResult = {
 }
 
 export function useGoodnightInteraction({
-  canUseCloud,
   userDoc,
   effectiveUid,
   todayKey,
@@ -89,7 +79,7 @@ export function useGoodnightInteraction({
     ): Promise<GoodnightMessage | null> => {
       const existing = options.existing
       const forceRefresh = options.forceRefresh ?? false
-      if (!effectiveUid) {
+      if (!effectiveUid || !userDoc) {
         return null
       }
 
@@ -97,54 +87,46 @@ export function useGoodnightInteraction({
         return existing
       }
 
-      if (canUseCloud && userDoc) {
-        if (hasCheckedInToday) {
-          let resolvedMessageId =
-            typeof resolvedPrefetchedGoodnightId === 'string' &&
-            resolvedPrefetchedGoodnightId.trim().length
-              ? resolvedPrefetchedGoodnightId.trim()
-              : null
-          if (!resolvedMessageId) {
-            try {
-              const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
-              const candidate =
-                typeof checkin?.goodnightMessageId === 'string' && checkin.goodnightMessageId.trim().length
-                  ? checkin.goodnightMessageId.trim()
-                  : typeof checkin?.message === 'string' && checkin.message.trim().length
-                  ? checkin.message.trim()
-                  : null
-              resolvedMessageId = candidate
-            } catch (error) {
-              console.warn('加载今日打卡详情失败', error)
-            }
-          }
-          if (resolvedMessageId) {
-            try {
-              const message = await fetchGoodnightMessageById(resolvedMessageId)
-              if (message) {
-                return message
-              }
-            } catch (error) {
-              console.warn('加载今日晚安心语详情失败', error)
-            }
+      if (hasCheckedInToday) {
+        let resolvedMessageId =
+          typeof resolvedPrefetchedGoodnightId === 'string' &&
+          resolvedPrefetchedGoodnightId.trim().length
+            ? resolvedPrefetchedGoodnightId.trim()
+            : null
+        if (!resolvedMessageId) {
+          try {
+            const checkin = await fetchCheckinInfoForDate(userDoc.uid, todayKey)
+            const candidate =
+              typeof checkin?.goodnightMessageId === 'string' && checkin.goodnightMessageId.trim().length
+                ? checkin.goodnightMessageId.trim()
+                : typeof checkin?.message === 'string' && checkin.message.trim().length
+                ? checkin.message.trim()
+                : null
+            resolvedMessageId = candidate
+          } catch (error) {
+            console.warn('加载今日打卡详情失败', error)
           }
         }
-        try {
-          return await fetchRandomGoodnightMessage(effectiveUid)
-        } catch (error) {
-          console.warn('抽取晚安心语失败', error)
-          return null
+        if (resolvedMessageId) {
+          try {
+            const message = await fetchGoodnightMessageById(resolvedMessageId)
+            if (message) {
+              return message
+            }
+          } catch (error) {
+            console.warn('加载今日晚安心语详情失败', error)
+          }
         }
       }
 
-      const stored = readReceivedGoodnightReward(effectiveUid, todayKey)
-      if (stored) {
-        return stored
+      try {
+        return await fetchRandomGoodnightMessage(effectiveUid)
+      } catch (error) {
+        console.warn('抽取晚安心语失败', error)
+        return null
       }
-      return pickRandomLocalGoodnightMessage(effectiveUid ?? '')
     },
     [
-      canUseCloud,
       effectiveUid,
       hasCheckedInToday,
       resolvedPrefetchedGoodnightId,
@@ -165,12 +147,9 @@ export function useGoodnightInteraction({
     }
 
     try {
-      let message: GoodnightMessage | null
-      if (canUseCloud && userDoc) {
-        message = await fetchGoodnightMessageForDate(effectiveUid, todayKey)
-      } else {
-        message = readLocalGoodnightMessage(effectiveUid, todayKey)
-      }
+      const message = userDoc
+        ? await fetchGoodnightMessageForDate(effectiveUid, todayKey)
+        : null
 
       setSubmittedMessage(message)
       setHasSubmitted(Boolean(message))
@@ -185,7 +164,7 @@ export function useGoodnightInteraction({
     } catch (error) {
       console.warn('加载晚安心语失败', error)
     }
-  }, [canUseCloud, effectiveUid, todayKey, userDoc])
+  }, [effectiveUid, todayKey, userDoc])
 
   useEffect(() => {
     let active = true
@@ -303,36 +282,21 @@ export function useGoodnightInteraction({
         setModalMessage(message)
       }
 
-      if (shouldSync) {
-        if (canUseCloud && userDoc) {
-          try {
-            await updateCheckinGoodnightMessage({
-              uid: userDoc.uid,
-              date: todayKey,
-              goodnightMessageId: message._id
-            })
-          } catch (error) {
-            console.warn('同步晚安心语奖励信息失败', error)
-          }
-        } else {
-          saveReceivedGoodnightReward({
-            uid: effectiveUid,
+      if (shouldSync && userDoc) {
+        try {
+          await updateCheckinGoodnightMessage({
+            uid: userDoc.uid,
             date: todayKey,
-            message
+            goodnightMessageId: message._id
           })
+        } catch (error) {
+          console.warn('同步晚安心语奖励信息失败', error)
         }
       }
 
       return message
     },
-    [
-      canUseCloud,
-      effectiveUid,
-      resolveRewardMessage,
-      rewardMessage,
-      todayKey,
-      userDoc
-    ]
+    [effectiveUid, resolveRewardMessage, rewardMessage, todayKey, userDoc]
   )
 
   const submit = useCallback(async () => {
@@ -351,27 +315,18 @@ export function useGoodnightInteraction({
       return
     }
 
-    if (!effectiveUid) {
+    if (!effectiveUid || !userDoc) {
       Taro.showToast({ title: '请稍后再试', icon: 'none' })
       return
     }
 
     setIsSubmitting(true)
     try {
-      let message: GoodnightMessage
-      if (canUseCloud && userDoc) {
-        message = await submitGoodnightMessage({
-          uid: userDoc.uid,
-          content: trimmed,
-          date: todayKey
-        })
-      } else {
-        message = createLocalGoodnightMessage({
-          uid: effectiveUid,
-          content: trimmed,
-          date: todayKey
-        })
-      }
+      const message = await submitGoodnightMessage({
+        uid: userDoc.uid,
+        content: trimmed,
+        date: todayKey
+      })
 
       setSubmittedMessage(message)
       setHasSubmitted(true)
@@ -390,7 +345,6 @@ export function useGoodnightInteraction({
       setIsSubmitting(false)
     }
   }, [
-    canUseCloud,
     effectiveUid,
     hasSubmitted,
     input,
@@ -410,12 +364,7 @@ export function useGoodnightInteraction({
       try {
         const messageId = modalMessage._id
 
-        let updated: GoodnightMessage | null
-        if (canUseCloud && userDoc) {
-          updated = await voteGoodnightMessage(messageId, voteType)
-        } else {
-          updated = voteLocalGoodnightMessage(messageId, voteType)
-        }
+        const updated = await voteGoodnightMessage(messageId, voteType)
 
         if (!updated) {
           Taro.showToast({ title: '当前晚安心语不可用', icon: 'none' })
@@ -434,7 +383,7 @@ export function useGoodnightInteraction({
         setIsVoting(false)
       }
     },
-    [canUseCloud, hasVoted, isVoting, modalMessage, userDoc]
+    [hasVoted, isVoting, modalMessage]
   )
 
   const closeModal = useCallback(() => {
