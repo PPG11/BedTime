@@ -1,5 +1,5 @@
-export function normalizeString(value: unknown, fallback: string | undefined): string {
-  const resolvedFallback = typeof fallback === 'string' ? fallback : ''
+export function normalizeString(value: unknown, fallback: string): string {
+  const resolvedFallback = fallback
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if (trimmed.length > 0) {
@@ -10,7 +10,7 @@ export function normalizeString(value: unknown, fallback: string | undefined): s
 }
 
 export function normalizeOptionalString(value: unknown): string | undefined {
-  const normalized = normalizeString(value, undefined)
+  const normalized = normalizeString(value, '')
   return normalized.length > 0 ? normalized : undefined
 }
 

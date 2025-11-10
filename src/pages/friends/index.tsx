@@ -122,8 +122,8 @@ export default function Friends() {
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
   const userUid = useMemo(() => (canUseCloud && userDoc ? userDoc.uid : localUid), [canUseCloud, localUid, userDoc])
-  useShareAppMessage(() => getShareAppMessageOptions(userUid ?? undefined))
-  useShareTimeline(() => getShareTimelineOptions(userUid ?? undefined))
+  useShareAppMessage(() => getShareAppMessageOptions(userUid ?? ''))
+  useShareTimeline(() => getShareTimelineOptions(userUid ?? ''))
   const userDocRef = useRef(userDoc)
   useEffect(() => {
     userDocRef.current = userDoc
@@ -226,8 +226,8 @@ export default function Friends() {
 
     if (didConfirm) {
       try {
-        const refreshed = await fetchFriendsOverview(undefined)
-        applyOverview(refreshed, undefined)
+        const refreshed = await fetchFriendsOverview({})
+        applyOverview(refreshed, friendAliasesRef.current)
       } catch (error) {
         console.warn('刷新好友数据失败', error)
       }
@@ -274,7 +274,7 @@ export default function Friends() {
 
       setIsSyncing(true)
       try {
-        const overview = await fetchFriendsOverview(undefined)
+        const overview = await fetchFriendsOverview({})
         applyOverview(overview, aliases)
         await ensureOutgoingConfirmed(overview.requests.outgoing)
         lastHydrateRef.current = Date.now()
@@ -315,8 +315,8 @@ export default function Friends() {
   )
 
   const refreshOverview = useCallback(async () => {
-    const overview = await fetchFriendsOverview(undefined)
-    applyOverview(overview, undefined)
+    const overview = await fetchFriendsOverview({})
+    applyOverview(overview, friendAliasesRef.current)
     await ensureOutgoingConfirmed(overview.requests.outgoing)
   }, [applyOverview, ensureOutgoingConfirmed])
 

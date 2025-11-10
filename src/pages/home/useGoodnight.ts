@@ -47,7 +47,7 @@ type UseGoodnightInteractionResult = {
   hasSubmitted: boolean
   isSubmitting: boolean
   submit: () => Promise<void>
-  presentReward: (options: PresentRewardOptions | undefined) => Promise<GoodnightMessage | null>
+  presentReward: (options: PresentRewardOptions) => Promise<GoodnightMessage | null>
   fetchRewardForToday: () => Promise<GoodnightMessage | null>
   modalVisible: boolean
   modalMessage: GoodnightMessage | null
@@ -85,10 +85,10 @@ export function useGoodnightInteraction({
 
   const resolveRewardMessage = useCallback(
     async (
-      options: { existing?: GoodnightMessage | null; forceRefresh?: boolean } | undefined
+      options: { existing?: GoodnightMessage | null; forceRefresh?: boolean }
     ): Promise<GoodnightMessage | null> => {
-      const existing = options?.existing
-      const forceRefresh = options?.forceRefresh ?? false
+      const existing = options.existing
+      const forceRefresh = options.forceRefresh ?? false
       if (!effectiveUid) {
         return null
       }
@@ -141,7 +141,7 @@ export function useGoodnightInteraction({
       if (stored) {
         return stored
       }
-      return pickRandomLocalGoodnightMessage(effectiveUid ?? undefined)
+      return pickRandomLocalGoodnightMessage(effectiveUid ?? '')
     },
     [
       canUseCloud,
@@ -260,7 +260,7 @@ export function useGoodnightInteraction({
       return cache.message
     }
 
-    const message = await resolveRewardMessage(undefined)
+    const message = await resolveRewardMessage({})
     pendingRewardRef.current = {
       key: todayKey,
       uid: effectiveUid,
@@ -270,14 +270,14 @@ export function useGoodnightInteraction({
   }, [effectiveUid, resolveRewardMessage, todayKey])
 
   const presentReward = useCallback(
-    async (options: PresentRewardOptions | undefined): Promise<GoodnightMessage | null> => {
-      const shouldShowModal = options?.showModal ?? true
-      const shouldSync = options?.syncToCheckin ?? true
+    async (options: PresentRewardOptions): Promise<GoodnightMessage | null> => {
+      const shouldShowModal = options.showModal ?? true
+      const shouldSync = options.syncToCheckin ?? true
       if (!effectiveUid) {
         return null
       }
 
-      let message = options?.message ?? rewardMessage
+      let message = options.message ?? rewardMessage
       if (!message) {
         message = await resolveRewardMessage({ existing: rewardMessage })
       }

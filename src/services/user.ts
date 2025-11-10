@@ -90,7 +90,7 @@ function mapUserResponse(openid: string, payload: CloudUserEnsureResponse | null
     throw new Error('未获取到用户资料')
   }
 
-  const uid = normalizeString(payload.uid, undefined)
+  const uid = normalizeString(payload.uid, '')
   if (!uid) {
     throw new Error('用户 UID 缺失')
   }
@@ -102,7 +102,7 @@ function mapUserResponse(openid: string, payload: CloudUserEnsureResponse | null
   const todayStatus = normalizeTodayStatus(payload.todayStatus)
   const streak = normalizeNumber(payload.streak) ?? 0
   const totalDays = normalizeNumber(payload.totalDays) ?? 0
-  const lastCheckinDate = normalizeString(payload.lastCheckinDate, undefined)
+  const lastCheckinDate = normalizeString(payload.lastCheckinDate, '')
   const createdAt = coerceDate(payload.createdAt) ?? new Date()
 
   return {
@@ -165,7 +165,7 @@ async function syncPublicProfileBasics(
 
 export async function fetchCurrentUser(): Promise<UserDocument | null> {
   try {
-    return await ensureCurrentUser(undefined)
+    return await ensureCurrentUser({})
   } catch (error) {
     console.error('读取用户信息失败', error)
     return null
@@ -173,13 +173,14 @@ export async function fetchCurrentUser(): Promise<UserDocument | null> {
 }
 
 export async function ensureCurrentUser(
-  overrides: UserUpsertPayload | undefined
+  overrides: UserUpsertPayload
 ): Promise<UserDocument> {
   const openid = await getCurrentOpenId()
-  const response = await callCloudFunction<CloudUserEnsureResponse>({
-    name: 'userEnsure',
-    data: overrides && Object.keys(overrides).length ? overrides : undefined
-  })
+  const request: { name: string; data?: UserUpsertPayload } = { name: 'userEnsure' }
+  if (Object.keys(overrides).length) {
+    request.data = overrides
+  }
+  const response = await callCloudFunction<CloudUserEnsureResponse>(request)
 
   const code = typeof response?.code === 'string' ? response.code : 'OK'
   if (code !== 'OK') {
@@ -220,7 +221,7 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
   }
 
   if (!Object.keys(sanitized).length) {
-    return ensureCurrentUser(undefined)
+    return ensureCurrentUser({})
   }
 
   const now = db.serverDate ? db.serverDate() : new Date()
@@ -234,7 +235,7 @@ export async function updateCurrentUser(patch: UserUpsertPayload): Promise<UserD
       }
     })
 
-  const updated = await ensureCurrentUser(undefined)
+  const updated = await ensureCurrentUser({})
 
   if ('nickname' in sanitized || 'targetHM' in sanitized) {
     try {
