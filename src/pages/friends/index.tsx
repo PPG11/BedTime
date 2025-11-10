@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View } from '@tarojs/components'
-import Taro, { useDidShow } from '@tarojs/taro'
+import Taro, { useDidShow, useShareAppMessage, useShareTimeline } from '@tarojs/taro'
 import { FriendProfile, readFriends, saveFriends } from '../../utils/storage'
 import { formatMinutesToTime } from '../../utils/time'
 import { FriendUidCard } from '../../components/friends/FriendUidCard'
@@ -17,6 +17,7 @@ import {
   sendFriendRequest
 } from '../../services'
 import { useAppData } from '../../state/appData'
+import { getShareAppMessageOptions, getShareTimelineOptions } from '../../utils/share'
 import './index.scss'
 
 const statusLabels: Record<CheckinStatus, string> = {
@@ -121,6 +122,8 @@ export default function Friends() {
   const [uidInput, setUidInput] = useState('')
   const [aliasInput, setAliasInput] = useState('')
   const userUid = useMemo(() => (canUseCloud && userDoc ? userDoc.uid : localUid), [canUseCloud, localUid, userDoc])
+  useShareAppMessage(() => getShareAppMessageOptions(userUid))
+  useShareTimeline(() => getShareTimelineOptions(userUid))
   const userDocRef = useRef(userDoc)
   useEffect(() => {
     userDocRef.current = userDoc

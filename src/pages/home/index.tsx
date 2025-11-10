@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "@tarojs/components";
-import Taro, { useDidHide, useDidShow } from "@tarojs/taro";
+import Taro, {
+  useDidHide,
+  useDidShow,
+  useShareAppMessage,
+  useShareTimeline
+} from "@tarojs/taro";
 import {
   RecentDay,
   type CheckInWindowOptions,
@@ -50,6 +55,10 @@ import {
 import { pickRandomLocalGoodnightMessage } from "../../utils/goodnight";
 import { useGoodnightInteraction } from "./useGoodnight";
 import { useAppData } from "../../state/appData";
+import {
+  getShareAppMessageOptions,
+  getShareTimelineOptions
+} from "../../utils/share";
 import "./index.scss";
 
 const sleepTips = [
@@ -117,6 +126,14 @@ export default function Index() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousTodayKeyRef = useRef<string | null>(null);
   const lastRefreshRef = useRef(0);
+
+  const shareUid = useMemo(
+    () => (canUseCloud && userDoc ? userDoc.uid : localUid),
+    [canUseCloud, localUid, userDoc]
+  );
+
+  useShareAppMessage(() => getShareAppMessageOptions(shareUid));
+  useShareTimeline(() => getShareTimelineOptions(shareUid));
 
   const isAwaitingCloudData = useMemo(
     () => canUseCloud && !ready,
