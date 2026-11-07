@@ -1,0 +1,3 @@
+interface:
+  display_name: "BedTime 小程序开发"
+  short_description: "迭代 BedTime 微信小程序并验证打卡、心语与云函数"

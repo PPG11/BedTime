@@ -259,17 +259,14 @@ function mapCloudCheckinRecord(
 
 function mapCloudCheckinList(
   uid: string,
-  list: CloudCheckinRecord[] | undefined,
-  defaults: { tzOffset?: number } | undefined
+  list: CloudCheckinRecord[] | undefined
 ): CheckinDocument[] {
   if (!Array.isArray(list) || !list.length) {
     return []
   }
 
-  const resolvedDefaults = defaults ?? {}
-
   const mapped = list
-    .map((item) => mapCloudCheckinRecord(uid, item, { tzOffset: resolvedDefaults.tzOffset }))
+    .map((item) => mapCloudCheckinRecord(uid, item, {}))
     .filter((item): item is CheckinDocument => Boolean(item))
 
   return mapped

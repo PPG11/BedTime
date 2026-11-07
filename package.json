@@ -2,6 +2,7 @@
   "name": "BedTime",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "yarn@1.22.22",
   "workspaces": [
     "cloudfunctions/*"
   ],
@@ -13,6 +14,7 @@
     "framework": "React"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "build:h5": "taro build --type h5",
     "build:weapp": "taro build --type weapp",
     "build:swan": "taro build --type swan",
@@ -25,8 +27,8 @@
     "dev:alipay": "npm run build:alipay -- --watch",
     "dev:tt": "npm run build:tt -- --watch",
     "dev:qq": "npm run build:qq -- --watch",
-    "upload:cloudfunctions": "node scripts/upload-cloudfunctions.js",
-    "upload:cloudfunctions:sh": "bash scripts/upload-cloudfunctions.sh"
+    "cloud:preview": "node cloudfunctions/deploy.js --dry-run",
+    "upload:cloudfunctions": "node cloudfunctions/deploy.js --skip-focus --keep-lock --require-target"
   },
   "browserslist": [
     "defaults and fully supports es6-module",

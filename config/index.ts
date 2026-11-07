@@ -4,7 +4,7 @@ import devConfig from './dev'
 import prodConfig from './prod'
 
 // https://taro-docs.jd.com/docs/next/config#defineconfig-辅助函数
-export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
+export default defineConfig<'webpack5'>(async (merge) => {
   const baseConfig: UserConfigExport<'webpack5'> = {
     projectName: 'BedTime',
     date: '2025-10-10',
@@ -18,7 +18,8 @@ export default defineConfig<'webpack5'>(async (merge, { command, mode }) => {
     sourceRoot: 'src',
     outputRoot: 'dist',
     plugins: [],
-    defineConstants: {
+    env: {
+      TARO_APP_CLOUD_ENV_ID: JSON.stringify(process.env.TARO_APP_CLOUD_ENV_ID?.trim() || '')
     },
     copy: {
       patterns: [

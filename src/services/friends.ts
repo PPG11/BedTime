@@ -34,6 +34,18 @@ export type FriendsOverview = {
   nextCursor: string | null
 }
 
+type FriendRequestFunctionEntry = {
+  requestId?: string
+  uid?: string
+  nickname?: string
+  targetHM?: string
+  todayStatus?: string
+  streak?: number
+  totalDays?: number
+  status?: string
+  createdAt?: Date | string | number | Record<string, unknown>
+}
+
 type FriendsPageFunctionResponse = {
   code?: string
   message?: string
@@ -48,28 +60,8 @@ type FriendsPageFunctionResponse = {
   }>
   nextCursor?: string | null
   requests?: {
-    incoming?: Array<{
-      requestId?: string
-      uid?: string
-      nickname?: string
-      targetHM?: string
-      todayStatus?: string
-      streak?: number
-      totalDays?: number
-      status?: string
-      createdAt?: Date | string | number | Record<string, unknown>
-    }>
-    outgoing?: Array<{
-      requestId?: string
-      uid?: string
-      nickname?: string
-      targetHM?: string
-      todayStatus?: string
-      streak?: number
-      totalDays?: number
-      status?: string
-      createdAt?: Date | string | number | Record<string, unknown>
-    }>
+    incoming?: FriendRequestFunctionEntry[]
+    outgoing?: FriendRequestFunctionEntry[]
   }
 }
 
@@ -191,9 +183,7 @@ function mapRequests(list: FriendsPageFunctionResponse['requests']): {
   incoming: FriendRequestSummary[]
   outgoing: FriendRequestSummary[]
 } {
-  type RequestEntry = NonNullable<FriendsPageFunctionResponse['requests']>['incoming'][number]
-
-  const mapList = (entries: Array<RequestEntry> | undefined) => {
+  const mapList = (entries: FriendRequestFunctionEntry[] | undefined) => {
     if (!Array.isArray(entries) || !entries.length) {
       return []
     }

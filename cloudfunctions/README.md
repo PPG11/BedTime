@@ -1,35 +1,35 @@
 # 云函数与数据库说明
 
-本目录包含微信小程序·云开发（TCB）环境中全部后台函数与共享模块。当前实现遵循「前端统一走云函数」的设计，所有敏感写操作都在云端校验 `OPENID` 并落实幂等控制。本文件汇总每个函数的职责、入参/返回体、涉及的集合，以及在前端的调用位置，便于排查与扩展。
+本目录包含 BedTime 的微信云开发函数与共享模块。小程序通过专用云函数和 `databaseProxy` 访问云数据库。部署入口见[云开发与部署](../docs/cloud-deployment.md)，业务路径及权限边界见[业务链路](../docs/checkin-and-friends-backend.md)。
 
 ## 数据库结构
 
 | 集合 | 主键 | 说明 | 主要写入入口 |
 | --- | --- | --- | --- |
 | `users` | `_id = OPENID` | 用户档案、目标作息与统计字段 | `userEnsure`, `checkinSubmit`, `databaseProxy (users)` |
-| `checkins` | `_id = {uid}`（汇总）/ `{uid}#{yyyymmdd}`（每日打卡） | `_id = {uid}` 的汇总文档存放打卡历史 `info[]`，每日记录用于幂等校验与排行榜 | `checkinSubmit`, `ensureCheckinsDoc`, `databaseProxy (checkins)` |
+| `checkins` | `_id = {uid}#{yyyymmdd}`（每日打卡）/ `{uid}`（旧格式） | 每日记录保存状态、时间戳和心语 ID，旧格式汇总文档保存 `info[]` | `checkinSubmit`, `ensureCheckinsDoc`, `databaseProxy (checkins)` |
 | `goodnight_messages` | `_id = {uid}_{yyyymmdd}` | 晚安心语正文、打分与随机抽取字段 | `gnSubmit`, `databaseProxy (goodnight_messages)` |
 | `gn_reactions_dedupe` | `_id = md5({uid}#{messageId})` | 点赞/点踩去重与增量累积 | `gnReact` 写入，`gnReactionsConsume` 消费并清理 |
 | `friend_requests` | `_id` 自动生成 | 好友申请队列 | `friendRequestSend`, `friendRequestUpdate` |
 | `friendships` | `_id = {minUid}#{maxUid}` | 好友无向边 | `friendRequestUpdate`, `friendFinish`, `friendRemove` |
-| `public_profiles` | `_id = uid` | 好友列表展示用公开资料（昵称、睡眠时段、 streak） | `databaseProxy (public_profiles)`，前端 `refreshPublicProfile` |
+| `public_profiles` | `_id = uid` | 用户公开资料快照（昵称、睡眠时段、连续打卡、今日状态） | `databaseProxy (public_profiles)`，前端 `refreshPublicProfile` |
 | `slot_daily` | `_id = {slotKey}#{yyyymmdd}` | 按睡眠时间段统计打卡人数与命中率 | `slotRollup` 定时写入 |
 
 ### 字段约定
 
-- 日期统一为 `yyyymmdd` 字符串，基于用户 `tzOffset` 计算。
-- `uid` 为 8–10 位短码，在 `users` 集合唯一；`slotKey` 量化为 `HH:00` / `HH:30`。
+- 日期使用 `yyyymmdd` 字符串。打卡提交读取前端传入的周期日期，部分接口在日期缺省时根据用户 `tzOffset` 计算。
+- `uid` 为 8–10 位短码，创建用户时会查重。`slotKey` 量化为 `HH:00` / `HH:30`。
 - 打卡状态仅允许 `hit` 或 `late`（前端 `miss/pending` 处理为只读状态）。
 - 晚安心语参与随机抽选字段：`status`, `slotKey`, `rand`, `score`。
-- 去重表中的 `deltaLikes/deltaDislikes/deltaScore` 会被批量消费后归零并删除。
+- 去重表中的 `deltaLikes/deltaDislikes/deltaScore` 会被批量消费，消费成功后删除对应记录。
 
 ## 晚安心语（GN）流程速览
 
-1. **投稿 (`gnSubmit`)**：为 `uid` + 当日生成唯一文档，补全随机权重、初始得分。
-2. **抽取 (`gnGetRandom` / `checkinSubmit`)**：通过 `common/goodnight.pickRandomMessage`，根据 `slotKey`、`score` 与避让规则抽取。
-3. **打卡奖励 (`checkinSubmit`)**：在创建打卡记录时写入随机到的 `gnMsgId`，前端奖励弹窗从这里同步。
-4. **互动 (`gnReact`)**：将点赞/点踩写入 `gn_reactions_dedupe` 的幂等文档，累计增量。
-5. **增量消费 (`gnReactionsConsume`)**：定时把增量合并到 `goodnight_messages`，成功后清理对应的去重记录。
+1. **投稿（`gnSubmit`）** 按 `uid` 和日期生成文档 ID，记录初始随机值和得分。
+2. **抽取（`gnGetRandom` / `checkinSubmit`）** 调用 `common/goodnight.pickRandomMessage`，根据 `slotKey`、`score` 与避让规则抽取，结果可以为空。
+3. **打卡奖励（`checkinSubmit`）** 创建打卡记录时写入 `gnMsgId`。心语投稿和打卡奖励目前由各自的操作触发。
+4. **互动（`gnReact`）** 将点赞或点踩写入 `gn_reactions_dedupe`，记录待消费的增量。
+5. **增量消费（`gnReactionsConsume`）** 定时把增量合并到 `goodnight_messages`，成功后清理对应的去重记录。
 
 ## 云函数清单
 
@@ -64,7 +64,7 @@
 - **前端调用**：`src/services/checkin.ts#fetchCheckinPageViaCloud`、`#fetchCheckinViaCloudFunction`。
 
 ### checkinSubmit
-- **作用**：提交打卡，幂等创建 `{uid}#{date}` 记录并回写用户 streak。
+- **作用**：按 `{uid}#{date}` 检查已有记录，写入打卡记录后更新用户统计。
 - **主要入参**：`status ('hit'|'late')`、`date`、可选 `gnMsgId`。
 - **返回**：成功时 `{ code: 'OK', date, status, gnMsgId, streak, totalDays, todayStatus, slotKey }`；重复时 `code: 'ALREADY_EXISTS'` 与现有记录。
 - **数据库**：`checkins`, `users`, `goodnight_messages`（抽奖）。
@@ -75,10 +75,10 @@
 - **主要入参**：同用户 `uid`（可选，默认当前）。
 - **返回**：`{ ok: true, data: { documentId, uid, ownerOpenid, info[], createdAt, updatedAt } }`。
 - **数据库**：`checkins`, `users`。
-- **前端调用**：`src/services/checkin.ts#ensureCheckinsDocument`（云函数缺失时退回直接读写）。
+- **前端调用**：`src/services/checkin.ts#ensureCheckinsDocument`（云函数缺失时通过 `databaseProxy` 处理旧格式）。
 
 ### databaseProxy
-- **作用**：前端所有 DB 读写的集中入口，序列化命令描述符并做权限检查。
+- **作用**：代理部分集合的读写操作，反序列化命令描述符并根据集合和操作检查权限。
 - **主要入参**：`collection`、`action`、`id/query`、`data`。
 - **返回**：包裹在 `{ ok, result | error }` 中。
 - **数据库**：代理 `users`、`checkins`、`public_profiles`、`goodnight_messages`。
@@ -120,14 +120,14 @@
 - **前端调用**：`src/services/friends.ts#fetchFriendsOverview`。
 
 ### gnSubmit
-- **作用**：提交当日晚安心语，按 `(uid, date)` 保证唯一。
-- **主要入参**：`text`。
+- **作用**：提交指定日期的晚安心语，按 `(uid, date)` 检查重复投稿。
+- **主要入参**：`text`，以及可选的 `date`。
 - **返回**：`{ code: 'OK', messageId }` 或 `{ code: 'ALREADY_EXISTS', messageId }`。
 - **数据库**：`goodnight_messages`。
 - **前端调用**：`src/services/goodnight.ts#submitGoodnightMessage`。
 
 ### gnGetRandom
-- **作用**：按用户 `slotKey` 优先级抽取晚安心语，默认避开本人投稿。
+- **作用**：默认按用户 `slotKey` 筛选晚安心语并避开本人投稿。该时段无合格消息时可返回空。
 - **主要入参**：`preferSlot`（默认 `true`）、`avoidSelf`（默认 `true`）、`minScore`。
 - **返回**：`{ code: 'OK', messageId, text, score }`。
 - **数据库**：`goodnight_messages`。
@@ -145,21 +145,23 @@
 - **主要入参**：无。
 - **返回**：`{ code: 'OK', consumed, grouped }`。
 - **数据库**：`gn_reactions_dedupe`, `goodnight_messages`。
-- **触发**：建议使用云函数定时触发器（参考下文）。
+- **触发**：见下方仓库定时配置。
 
 ### slotRollup
 - **作用**：统计指定日期各 `slotKey` 的参与人数与命中率。
 - **主要入参**：可选 `date`（默认统计前一日）。
 - **返回**：`{ code: 'OK', date, slots }`。
 - **数据库**：`checkins`, `users`, `slot_daily`。
-- **触发**：每天定时运行（例如 `0 1 * * *`）。
+- **触发**：见下方仓库定时配置。
 
-## 触发器建议
+## 仓库定时配置
 
-| 函数 | 类型 | Cron 示例 | 说明 |
+| 函数 | 类型 | Cron | 说明 |
 | --- | --- | --- | --- |
-| `gnReactionsConsume` | 定时触发 | `*/30 * * * * *` | 高频消费点赞增量，保证榜单实时 |
-| `slotRollup` | 定时触发 | `0 1 * * *` | 统计前一日的睡眠时段表现 |
+| `gnReactionsConsume` | 定时触发 | `0 0 3 * * * *` | 每天 03:00 消费投票增量 |
+| `slotRollup` | 定时触发 | `0 0 3 * * * *` | 每天 03:00 汇总睡眠时段 |
+
+实际触发器的安装状态和时区以云开发控制台为准。
 
 ## 共享模块
 

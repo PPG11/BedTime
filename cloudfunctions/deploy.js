@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { execSync, spawnSync } = require('child_process');
+const { stripVTControlCharacters } = require('util');
 
 const workspaceRoot = path.resolve(__dirname, '..');
 const cloudfunctionsDir = __dirname;
@@ -13,7 +14,6 @@ const projectRoot = workspaceRoot;
 const skipDirs = new Set(['common', 'node_modules']);
 
 const CACHE_VERSION = 1;
-const CACHE_FILE = path.join(cloudfunctionsDir, '.deploy-cache.json');
 
 const HASH_IGNORE_DIRS = new Set(['node_modules', '.git', '.svn', '.hg', '.idea', '.vscode']);
 const HASH_IGNORE_FILES = new Set(['.DS_Store']);
@@ -44,13 +44,13 @@ function parseArgs(argv) {
   return { options, names };
 }
 
-function loadCache() {
-  if (!fs.existsSync(CACHE_FILE)) {
+function loadCache(cacheFile) {
+  if (!fs.existsSync(cacheFile)) {
     return { version: CACHE_VERSION, entries: {} };
   }
 
   try {
-    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
     if (!raw || typeof raw !== 'object') {
       return { version: CACHE_VERSION, entries: {} };
     }
@@ -62,7 +62,7 @@ function loadCache() {
   }
 }
 
-function saveCache(cache) {
+function saveCache(cache, cacheFile) {
   const payload = JSON.stringify(
     {
       version: CACHE_VERSION,
@@ -71,7 +71,7 @@ function saveCache(cache) {
     null,
     2
   );
-  fs.writeFileSync(CACHE_FILE, payload);
+  fs.writeFileSync(cacheFile, payload);
 }
 
 function pruneCache(cache, validNames) {
@@ -200,13 +200,13 @@ function resolveCloudEnvId() {
     return cachedEnvId;
   }
 
-  let envId = process.env.CLOUD_ENV_ID;
+  let envId = process.env.TARO_APP_CLOUD_ENV_ID?.trim() || process.env.CLOUD_ENV_ID?.trim();
   if (!envId) {
     const cloudConfigPath = path.join(projectRoot, 'src', 'config', 'cloud.ts');
     if (fs.existsSync(cloudConfigPath)) {
       try {
         const content = fs.readFileSync(cloudConfigPath, 'utf8');
-        const match = content.match(/CLOUD_ENV_ID\s*=\s*['"]([^'"]+)['"]/);
+        const match = content.match(/\bDEFAULT_CLOUD_ENV_ID\s*=\s*['"]([^'"]+)['"]/);
         if (match && match[1]) {
           envId = match[1];
         }
@@ -254,33 +254,38 @@ function resolveCliCommand() {
 }
 
 function createDeployArgs({ envId, remoteNpm, project, names, cliCommand }) {
-  const baseArgs = ['cloud', 'functions', 'deploy', '--env', envId, '--project', project];
-
-  if (names.length === 1) {
-    baseArgs.push('--name', names[0]);
-  } else {
-    baseArgs.push('--names', ...names);
-  }
+  const baseArgs = ['cloud', 'functions', 'deploy', '--env', envId, '--project', project, '--names', ...names];
 
   if (remoteNpm) {
     baseArgs.push('--remote-npm-install');
   }
 
-  return { cliCommand, args: baseArgs };
+  return { cliCommand, args: baseArgs, names };
 }
 
-function runDeploy({ cliCommand, args }) {
+function runDeploy({ cliCommand, args, names }) {
   const result = spawnSync(cliCommand, args, {
     cwd: projectRoot,
-    stdio: 'inherit',
+    stdio: ['inherit', 'pipe', 'inherit'],
+    encoding: 'utf8',
     env: process.env
   });
 
+  if (result.stdout) process.stdout.write(result.stdout);
   if (result.error) {
     throw result.error;
   }
 
-  return typeof result.status === 'number' ? result.status === 0 : false;
+  const confirmed = new Set();
+  if (result.status !== 0) return confirmed;
+
+  // DevTools can exit 0 after a deploy error. Its result table has the name and success in the first two columns.
+  const requested = new Set(names);
+  for (const line of stripVTControlCharacters(result.stdout || '').split('\n')) {
+    const [, name, success] = line.split('│').map((cell) => cell.trim());
+    if (success === 'true' && requested.has(name)) confirmed.add(name);
+  }
+  return confirmed;
 }
 
 function syncCommonDependents({
@@ -445,43 +450,17 @@ function syncCommonDependents({
   return { synced: selected.map((item) => item.dirName) };
 }
 
-function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
+function uploadFunctions(targets, { envId, cliCommand, dryRun, sequentialOnly, remoteNpm }) {
   const targetNames = targets.map((item) => item.name);
 
-  const envId = resolveCloudEnvId();
-  if (!envId) {
-    console.error('❌ Missing CLOUD_ENV_ID. Set it via env var or src/config/cloud.ts');
-    return { success: [], failed: targetNames, batchAttempted: false, aborted: true };
-  }
-
-  const cliCommand = resolveCliCommand();
-  if (!cliCommand) {
-    console.error('❌ Could not locate the WeChat Developer Tools CLI.');
-    console.error('   Set WECHAT_CLI_PATH or ensure `cli` is available in PATH.');
-    return { success: [], failed: targetNames, batchAttempted: false, aborted: true };
-  }
-
   if (dryRun) {
-    const previewArgs = [
-      cliCommand,
-      'cloud',
-      'functions',
-      'deploy',
-      '--env',
-      envId,
-      '--project',
-      projectRoot
-    ];
-    if (targetNames.length === 1) {
-      previewArgs.push('--name', targetNames[0]);
-    } else {
-      previewArgs.push('--names', ...targetNames);
+    const groups = sequentialOnly ? targetNames.map((name) => [name]) : [targetNames];
+    for (const names of groups) {
+      const { args } = createDeployArgs({ envId, remoteNpm, project: projectRoot, names, cliCommand });
+      console.info('Dry run CLI:', cliCommand);
+      console.info('Dry run arguments:', JSON.stringify(args));
     }
-    if (remoteNpm) {
-      previewArgs.push('--remote-npm-install');
-    }
-    console.info(`Dry run command: ${previewArgs.join(' ')}`);
-    return { success: [], failed: [], batchAttempted: false, aborted: false };
+    return { success: [], failed: [], batchAttempted: false };
   }
 
   const success = new Set();
@@ -498,11 +477,9 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
         names: targetNames,
         cliCommand
       });
-      const ok = runDeploy(batchOptions);
-      if (ok) {
-        targetNames.forEach((name) => success.add(name));
-      } else {
-        console.warn('Batch upload failed; retrying sequentially.');
+      for (const name of runDeploy(batchOptions)) success.add(name);
+      if (success.size !== targets.length) {
+        console.warn('Batch upload did not confirm all functions; retrying unconfirmed functions sequentially.');
       }
     } catch (error) {
       console.warn('Batch upload error; retrying sequentially.');
@@ -523,10 +500,10 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
           names: [item.name],
           cliCommand
         });
-        const ok = runDeploy(singleOptions);
-        if (ok) {
+        if (runDeploy(singleOptions).has(item.name)) {
           success.add(item.name);
         } else {
+          console.warn(`❌ ${item.name} upload was not confirmed by the WeChat Developer Tools CLI.`);
           failed.add(item.name);
         }
       } catch (error) {
@@ -551,8 +528,7 @@ function uploadFunctions(targets, { dryRun, sequentialOnly, remoteNpm }) {
   return {
     success: Array.from(success),
     failed: Array.from(failed),
-    batchAttempted,
-    aborted: false
+    batchAttempted
   };
 }
 
@@ -571,18 +547,25 @@ function main() {
     options.has('--all') || options.has('-a') || names.includes('all') || options.has('--force-all');
 
   const explicitNames = names.filter((name) => name !== 'all');
+  if (options.has('--require-target') && explicitNames.length === 0 && !forceAll) {
+    console.error('❌ Name the cloud functions to deploy, or pass --all.');
+    process.exitCode = 1;
+    return;
+  }
 
   const allFunctions = discoverFunctions();
   const knownNames = new Set(allFunctions.map((item) => item.name));
 
   const unknownNames = explicitNames.filter((name) => !knownNames.has(name));
-  const filteredNames = explicitNames.filter((name) => knownNames.has(name));
-
-  logSection('⚠️  Unknown cloud function directories (skipped):', unknownNames);
+  if (unknownNames.length > 0) {
+    logSection('❌ Unknown cloud function directories:', unknownNames);
+    process.exitCode = 1;
+    return;
+  }
 
   const targets =
-    filteredNames.length > 0
-      ? allFunctions.filter((item) => filteredNames.includes(item.name))
+    explicitNames.length > 0
+      ? allFunctions.filter((item) => explicitNames.includes(item.name))
       : allFunctions;
 
   const validTargets = targets.filter((item) => item.hasIndex || item.hasPackageJson);
@@ -599,6 +582,15 @@ function main() {
     return;
   }
 
+  const envId = resolveCloudEnvId();
+  if (!envId) {
+    console.error('❌ Missing cloud environment ID. Set TARO_APP_CLOUD_ENV_ID or CLOUD_ENV_ID.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const envHash = crypto.createHash('sha256').update(envId).digest('hex');
+  const cacheFile = path.join(cloudfunctionsDir, `.deploy-cache.${envHash}.json`);
   const dependents = collectDependents();
   const dependentNames = new Set(dependents.map((item) => item.dirName));
   const commonSignature =
@@ -607,8 +599,8 @@ function main() {
       : '';
 
   const incrementalAllowed =
-    !forceAll && filteredNames.length === 0 && !disableIncremental && !options.has('--incremental-off');
-  const cache = loadCache();
+    !forceAll && explicitNames.length === 0 && !disableIncremental && !options.has('--incremental-off');
+  const cache = loadCache(cacheFile);
   pruneCache(cache, knownNames);
 
   const signaturesBefore = new Map();
@@ -620,7 +612,7 @@ function main() {
   });
 
   let targetsToUpload;
-  if (filteredNames.length > 0 || forceAll) {
+  if (explicitNames.length > 0 || forceAll) {
     targetsToUpload = [...validTargets];
   } else if (incrementalAllowed) {
     targetsToUpload = validTargets.filter((item) => {
@@ -633,8 +625,8 @@ function main() {
   }
 
   const modeLabel =
-    filteredNames.length > 0
-      ? `📦 Requested functions: ${filteredNames.join(', ')}`
+    explicitNames.length > 0
+      ? `📦 Requested functions: ${explicitNames.join(', ')}`
       : forceAll
       ? '📦 Forcing full upload (--all)'
       : incrementalAllowed
@@ -644,6 +636,15 @@ function main() {
 
   if (targetsToUpload.length === 0) {
     console.info('No cloud functions changed; nothing to upload. Use `--all` to force a full deploy.');
+    return;
+  }
+
+  // Preview never needs to discover or run the actual CLI.
+  const cliCommand = dryRun ? process.env.WECHAT_CLI_PATH || 'cli' : resolveCliCommand();
+  if (!cliCommand) {
+    console.error('❌ Could not locate the WeChat Developer Tools CLI.');
+    console.error('   Set WECHAT_CLI_PATH or ensure `cli` is available in PATH.');
+    process.exitCode = 1;
     return;
   }
 
@@ -660,13 +661,8 @@ function main() {
     keepLock
   });
 
+  const uploadResult = uploadFunctions(targetsToUpload, { envId, cliCommand, dryRun, sequentialOnly, remoteNpm });
   if (dryRun) {
-    uploadFunctions(targetsToUpload, { dryRun, sequentialOnly, remoteNpm });
-    return;
-  }
-
-  const uploadResult = uploadFunctions(targetsToUpload, { dryRun, sequentialOnly, remoteNpm });
-  if (uploadResult.aborted) {
     return;
   }
 
@@ -693,7 +689,7 @@ function main() {
     };
   }
 
-  saveCache(cache);
+  saveCache(cache, cacheFile);
 }
 
 main();

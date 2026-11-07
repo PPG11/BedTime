@@ -1,84 +1,31 @@
-# 打卡与好友功能后端交互说明
+# 打卡、晚安心语与好友链路
 
-本文档梳理了小程序内「每日打卡」与「添加好友」功能与云开发数据库之间的主要交互逻辑，便于后续对业务流程进行调整与扩展。
+本页记录当前代码实现。云函数接口与集合字段见[云函数与数据库](../cloudfunctions/README.md)。
 
-## 数据集合概览
+## 用户初始化
 
-| 集合 | 作用 | 关键字段 |
-| ---- | ---- | -------- |
-| `users` | 保存用户主档信息与打卡摘要 | `uid`、`nickname`、`tzOffset`、`targetHM`、`slotKey`、`todayStatus`、`streak`、`totalDays`、`lastCheckinDate`、`createdAt` |
-| `checkins` | 以用户维度聚合打卡状态 | `_id`（用户 UID）、`uid`、`ownerOpenid`、`info[]`（`date`、`status`、`message`、`tzOffset`、`ts`）、`createdAt`、`updatedAt` |
-| `public_profiles` | 好友列表展示所需的公开资料与状态 | `_id`、`uid`、`nickname`、`sleeptime`、`streak`、`todayStatus`、`updatedAt` |
-| `friend_requests` | 好友申请记录 | `_id`、`fromUid`、`toUid`、`status`、`createdAt` |
-| `friendships` | 好友无向边 | `_id = {minUid}#{maxUid}`、`aUid`、`bUid`、`createdAt` |
+`AppDataProvider` 加载当前用户、今日状态和打卡历史，首页与个人页通过 `useAppData` 共享数据。新用户由 `userEnsure` 根据微信上下文中的 `OPENID` 创建档案，并分配用于添加好友的短 `uid`。昵称和目标就寝时间通过用户服务保存，公开资料由资料服务刷新。 [共享状态](../src/state/appData.tsx) · [用户服务](../src/services/user.ts) · [公开资料](../src/services/profile.ts)
 
-所有集合名称由 `COLLECTIONS` 常量统一维护，便于后续修改。【F:src/config/cloud.ts†L15-L20】
+## 打卡
 
-## 打卡业务流程
+1. 首页根据目标就寝时间计算按钮可用状态、`date` 和 `hit` 或 `late`。默认开放区间为目标时间前 12 小时至后 6 小时。 [打卡窗口](../src/utils/checkin.ts)
+2. 点击打卡后，首页尝试抽取一条心语，再调用 `checkinSubmit`，可携带抽中的消息 ID。服务端在无消息 ID 时也会尝试抽取。 [首页操作](../src/pages/home/index.tsx) · [提交函数](../cloudfunctions/checkinSubmit/index.js)
+3. `checkins` 的常用记录按 `{uid}#{yyyymmdd}` 保存，包含打卡状态、时间戳及可空的 `gnMsgId`。服务端另外更新 `users` 的打卡摘要。历史和今日状态由 `checkinRange` 和 `checkinStatus` 提供。旧部署还可能使用 `{uid}` 文档中的 `info[]`，前端服务保留了兼容分支。 [打卡服务](../src/services/checkin.ts) · [打卡数据模型](../cloudfunctions/common/checkins.js)
 
-### 数据模型
+已知边界包括跨午夜时首页周期与统计日期不一致、云端直接接受客户端提供的日期和状态，以及记录和统计分别写入导致部分失败后的重试无法补齐统计。改动打卡时应同时验证跨午夜、重复请求和旧格式数据。
 
-打卡服务以 `CheckinDocument` 描述单日打卡记录，但云端存储按用户聚合：`checkins` 集合以用户 UID 作为 `_id`，并在 `info` 数组内保存每日的 `date`、`status`、`message` 与时间戳等信息。【F:src/services/checkin.ts】
+## 晚安心语
 
-### 写入流程（`upsertCheckin`）
+- **投稿**由 `gnSubmit` 按用户和日期保存到 `goodnight_messages`。前端限制 80 字并展示已投稿内容，当前后端会截取到 240 个 UTF-16 码元并直接标为 `approved`。投稿完成后只更新投稿状态。 [心语交互](../src/pages/home/useGoodnight.ts) · [投稿函数](../cloudfunctions/gnSubmit/index.js)
+- **收到心语**当前是打卡奖励。抽样默认按目标就寝时间的半小时时段筛选，带有作者避让和最低分条件，可能返回空。前端会用打卡记录里的 `gnMsgId` 恢复奖励。若记录最初没有消息 ID，后续补抽的内容可能只展示在当次会话，当前正常查询路径不会回写这条消息 ID。 [抽样逻辑](../cloudfunctions/common/goodnight.js) · [打卡服务](../src/services/checkin.ts)
+- **投票**由 `gnReact` 写入待消费增量，`gnReactionsConsume` 汇总后清理记录。去重只在待消费记录存在期间有效。 [投票函数](../cloudfunctions/gnReact/index.js) · [消费函数](../cloudfunctions/gnReactionsConsume/index.js)
 
-1. 确保当前用户在 `checkins` 集合中存在以 UID 为 `_id` 的文档，如缺失则初始化空的 `info` 数组。
-2. 检查 `info` 中是否已有目标日期，若存在则直接返回该日的打卡记录。
-3. 若当日尚未打卡，则把新条目（`date`、`status`、`message`、`tzOffset`、`ts`）追加到 `info`，并返回归一化后的 `CheckinDocument`。【F:src/services/checkin.ts】
+产品设想中的「送出一条后收到一条」仍需单独实现。迭代时关注空池、重复投稿、重新进入后的奖励恢复，以及服务端授权。当前 `databaseProxy` 允许更改部分应由服务端维护的字段，并会返回原始心语文档，相关权限仍需收紧。 [代理权限](../cloudfunctions/databaseProxy/index.js)
 
-### 晚安心语同步
+## 好友互助
 
-`updateCheckinGoodnightMessage` 会在用户聚合文档的 `info` 数组中定位目标日期，更新对应条目的 `message` / `goodnightMessageId` 字段，保持两者同步。【F:src/services/checkin.ts】
+1. 好友页输入对方 `uid` 后调用 `friendRequestSend`，在 `friend_requests` 中创建申请。
+2. 接收方通过 `friendRequestUpdate` 接受或拒绝。接受时写入 `friendships`，无向关系使用排序后的双方 UID 组成主键。发送方读取已接受的申请时可调用 `friendFinish` 补写关系。
+3. `friendsPage` 从 `users` 批量读取好友与申请相关用户的展示字段。好友页用这些数据展示作息与打卡状态，备注保存在本机。解除好友关系调用 `friendRemove`。
 
-### 查询能力
-
-- `fetchCheckins`：确保用户聚合文档存在后，读取 `info` 数组并按日期降序映射为 `CheckinDocument` 列表，默认最多返回 1000 条。【F:src/services/checkin.ts】
-- `fetchCheckinInfoForDate`：优先通过云函数查询指定日期的打卡记录，若云函数不可用则在本地聚合文档中检索该日期。【F:src/services/checkin.ts】
-- `fetchCheckinsInRange`：在聚合文档的 `info` 中筛出日期位于区间内的条目并排序返回。【F:src/services/checkin.ts】
-- `computeHitStreak`：基于日期键回溯连续打卡天数，供前端展示 streak 信息。【F:src/services/checkin.ts】
-
-## 好友体系流程
-
-### 用户主档
-
-`userEnsure` 云函数确保 `users` 集合存在主档，并返回包含 UID、昵称、目标睡眠时间、 streak 等字段的摘要数据。前端通过 `ensureCurrentUser` 调用云函数并映射为 `UserDocument`，无须再直接读写数据库。【F:cloudfunctions/userEnsure/index.js†L1-L15】【F:src/services/user.ts†L101-L158】
-
-昵称或目标睡眠时间更新时，`updateCurrentUser` 直接更新 `users` 文档并在成功后调用 `syncPublicProfileBasics` 将核心展示字段写入 `public_profiles`，保证好友页读取到最新资料。【F:src/services/user.ts†L200-L278】
-
-### 好友申请发送（`sendFriendRequest`）
-
-1. `friendRequestSend` 云函数校验目标 UID 与去重条件，确认双方未建立好友关系后写入 `friend_requests`，状态为 `pending`。【F:cloudfunctions/friendRequestSend/index.js†L7-L53】
-2. 前端封装为 `sendFriendRequest`，只需传入目标 UID，成功后云函数返回申请 ID。【F:src/services/friends.ts†L204-L236】
-
-### 接收方处理申请（`respondFriendRequest`）
-
-1. `friendRequestUpdate` 在事务中读取申请文档，确认接收方 UID 后根据 `decision` 写入 `status`。【F:cloudfunctions/friendRequestUpdate/index.js†L17-L69】
-2. 接受时同步在 `friendships` 集合中创建无向边（若已存在则跳过），返回最新状态。前端通过 `respondFriendRequest` 调用云函数并据返回值反馈用户。【F:src/services/friends.ts†L238-L278】
-
-### 发送方确认结果（`confirmFriendRequest`）
-
-接收方接受申请后，发送方调用 `friendFinish` 进行幂等补写，确保好友边已存在。前端会在拉取好友数据时检测到 `accepted` 的外发申请，逐一调用 `confirmFriendRequest` 并刷新展示。【F:cloudfunctions/friendFinish/index.js†L7-L53】【F:src/services/friends.ts†L280-L320】【F:src/pages/friends/index.tsx†L139-L207】
-
-### 好友关系解除（`removeFriend`）
-
-`friendRemove` 云函数根据双方 UID 构造边主键并删除 `friendships` 文档。前端封装为 `removeFriend`，完成后再次拉取好友数据刷新界面。【F:cloudfunctions/friendRemove/index.js†L7-L38】【F:src/services/friends.ts†L322-L351】
-
-### 好友列表与申请分页（`friendsPage`）
-
-`friendsPage` 云函数基于 `friendships` 集合查询当前用户的好友边，同时拉取 `friend_requests` 中的待处理申请（收 / 发）。返回结构包含：
-
-- `list`：好友 UID 与展示所需的昵称、 streak、目标睡眠时间等；
-- `requests.incoming`：按创建时间倒序的待处理申请；
-- `requests.outgoing`：当前用户发出的申请及其状态；
-- `nextCursor`：用于分页的时间戳游标。
-
-云函数内部会一次性加载相关 UID 的用户资料，避免前端多次 round-trip。【F:cloudfunctions/friendsPage/index.js†L14-L162】
-
-前端通过 `fetchFriendsOverview` 获取该结构，结合本地备注生成好友列表与申请列表，并在需要时触发 `confirmFriendRequest` 更新状态。【F:src/services/friends.ts†L100-L202】【F:src/pages/friends/index.tsx†L209-L356】
-
-## 前端触发点概览
-
-- 首页打卡按钮调用 `upsertCheckin`，成功后立即刷新公开资料并在本地缓存打卡时间戳。【F:src/pages/home/index.tsx†L233-L330】
-- 好友页加载时通过 `ensureCurrentUser` 与 `fetchFriendsOverview` 获取好友、申请及分页信息；发送、接受、拒绝、删除好友均委托云函数完成，并在操作后重新拉取概览数据。【F:src/pages/friends/index.tsx†L80-L370】
-
-以上流程涵盖了打卡记录写入、晚安心语关联、好友关系的创建 / 接受 / 删除及公开资料同步的关键节点，可据此评估数据库结构调整或业务逻辑重构的影响范围。
+[好友页](../src/pages/friends/index.tsx) · [好友服务](../src/services/friends.ts) · [接受申请函数](../cloudfunctions/friendRequestUpdate/index.js) · [好友列表函数](../cloudfunctions/friendsPage/index.js)

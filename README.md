@@ -1,82 +1,41 @@
 # BedTime
 
-BedTime 是一款基于 **Taro + React** 构建的跨端应用，帮助用户记录就寝情况、与好友互助并保持良好作息。项目同时兼容微信小程序与 H5 运行时，通过统一的服务层整合云开发能力。
+BedTime「早睡助手」是一款微信小程序。用户可以设置目标就寝时间、记录每日打卡、查看好友的早睡状态，以及送出晚安心语。
 
-## 功能亮点
+当前版本把心语投稿和打卡奖励分开处理。投稿成功后显示「今日已分享」，打卡时尝试抽取一条其他用户的心语。产品设想中的「送出后收到一条」还没有接入投稿流程。
 
-- 📅 **每日打卡**：记录准时就寝、迟到或缺勤状态，并支持晚安留言。
-- 🤝 **好友互助**：支持搜索 UID、发送/接受好友邀请以及解除关系。
-- ☁️ **云端同步**：在微信小程序端启用云开发，确保数据持久化与多端同步。
-- 🧩 **模块化服务层**：业务逻辑集中在 `src/services` 内部，方便复用与测试。
+## 本地开发
 
-## 运行要求
+在仓库根目录使用 Node.js 22 和 Yarn Classic 1.22.22 安装依赖，再用项目内的 Taro CLI 构建。
 
-在开始之前，请确认已安装以下工具：
-
-- [Node.js](https://nodejs.org/) ≥ 16
-- [Yarn](https://yarnpkg.com/) 或 npm
-- 全局安装 [Taro CLI](https://taro.jd.com/): `npm install -g @tarojs/cli`
-- 微信云开发环境（仅运行在小程序端时必需）
-
-## 快速开始
-
-```bash
-# 安装依赖
-yarn install
-
-# 启动 H5 调试服务器
-yarn dev:h5
-
-# 构建微信小程序（监听模式）
+```sh
+yarn install --frozen-lockfile
+yarn typecheck
+yarn build:weapp
+# 日常开发可改用监听模式
 yarn dev:weapp
 ```
 
-构建完成后，可通过对应端的开发者工具打开 `dist` 目录进行调试。
+用微信开发者工具导入**仓库根目录**。`project.config.json` 会从 `dist/` 读取小程序产物，并识别 `cloudfunctions/` 中的云函数。打卡、心语和好友功能依赖已关联并部署的微信云开发环境。H5 构建脚本保留用于界面检查，业务数据加载依赖微信小程序运行时。 [本地开发指南](docs/local-development.md)
 
-## 脚本说明
+## 项目结构
 
-| 脚本 | 说明 |
+| 目录 | 用途 |
 | --- | --- |
-| `yarn dev:h5` | 构建并监听 H5 端代码变更 |
-| `yarn dev:weapp` | 构建并监听微信小程序端代码 |
-| `yarn build:h5` | 生成 H5 端生产构建 |
-| `yarn build:weapp` | 生成微信小程序端构建 |
-| `yarn build:<platform>` | 其它端（如 `alipay`、`tt`、`qq` 等）构建 |
+| `src/pages/`、`src/components/` | 「打卡」「好友」「我的」页面及 UI 组件 |
+| `src/state/` | 用户、作息设置和打卡记录的共享状态 |
+| `src/services/`、`src/utils/` | 云端调用、返回值转换、日期与统计工具 |
+| `src/config/`、`config/` | 应用云环境和 Taro 构建配置 |
+| `cloudfunctions/` | Node.js 云函数、共享包 `common` 和部署脚本 |
+| `docs/` | 开发、部署和业务链路说明 |
 
-## 目录结构
+## 维护入口
 
-```
-├─ src
-│  ├─ components        # 通用组件
-│  ├─ pages             # 页面与路由配置
-│  ├─ services          # 云函数与业务逻辑封装
-│  │  ├─ cloud.ts       # 云环境初始化与缓存
-│  │  ├─ user.ts        # 用户资料、好友关系、公开资料同步
-│  │  ├─ checkin.ts     # 打卡与统计逻辑
-│  │  └─ ...
-│  ├─ utils             # 时间、打卡等工具方法
-│  └─ config            # 项目及云环境配置
-├─ cloudfunctions       # 微信云函数目录（登录等）
-└─ types                # TypeScript 类型声明
-```
-
-## 云开发配置
-
-- 云环境信息在 `src/config/cloud.ts` 中维护，可通过环境变量或编译配置写入。
-- `supportsCloud` 会在运行时自动检测当前平台是否支持微信云开发。
-- 若在本地（H5）模式下运行，将优雅降级到本地数据，不会触发云端调用。
-
-> **提示**：首次部署云函数时，请在 `cloudfunctions` 目录执行 `npm install`，然后通过微信开发者工具上传部署。
-
-## 代码约定
-
-- 所有服务模块应返回经过格式化的实体，例如 `user.ts` 会统一 UID、时间字段并去重好友列表。
-- `fetchUserByUid` 通过拆分辅助方法（候选 UID、公开资料解析等）提升了可读性，便于后续扩展额外的查找策略。
-- 工具函数（如 `src/utils/time.ts`）保持纯函数设计，便于在不同端复用。
-
-## 测试与质量
-
-目前仓库未内置自动化测试脚本，建议在修改后至少执行一次构建（例如 `yarn build:weapp`）以验证类型检查与编译是否通过。若在 CI 环境运行，可根据目标端选择合适的 `build` 命令。
+- [AGENTS.md](AGENTS.md) 记录后续代码迭代的入口和验证要求。
+- [本地开发指南](docs/local-development.md) 说明工具链、微信开发者工具和本地检查。
+- [云开发与部署](docs/cloud-deployment.md) 说明云环境、依赖打包和上线核验。
+- [业务链路](docs/checkin-and-friends-backend.md) 说明打卡、晚安心语和好友功能的实现与已知边界。
+- [云函数与数据库](cloudfunctions/README.md) 汇总数据库集合、云函数入参和返回值。
 
 ## 许可
 

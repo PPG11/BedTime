@@ -1,9 +1,5 @@
 import Taro from '@tarojs/taro'
-import {
-  CLOUD_ENV_CONFIGURED,
-  CLOUD_ENV_ID,
-  CLOUD_SHOULD_ENABLE
-} from '../config/cloud'
+import { CLOUD_ENV_ID, CLOUD_SHOULD_ENABLE } from '../config/cloud'
 
 type CloudCommandDescriptor =
   | {
@@ -490,29 +486,10 @@ function ensureTaroCloud(): TaroCloud {
     throw new Error('Taro.cloud 未初始化')
   }
 
-  const envId = CLOUD_ENV_ID.trim()
-  if (envId) {
-    try {
-      cloud.init({
-        traceUser: true,
-        env: envId
-      })
-    } catch (error) {
-      console.warn('微信云开发初始化（带 envId）失败，使用默认环境', error)
-      cloud.init({
-        traceUser: true
-      })
-    }
-  } else if (CLOUD_ENV_CONFIGURED) {
-    console.warn('云开发环境 ID 为空字符串，已跳过自定义环境初始化')
-    cloud.init({
-      traceUser: true
-    })
-  } else {
-    cloud.init({
-      traceUser: true
-    })
-  }
+  cloud.init({
+    traceUser: true,
+    env: CLOUD_ENV_ID
+  })
 
   cloudInstance = cloud
   return cloudInstance
@@ -562,7 +539,7 @@ export function supportsCloud(): boolean {
 
 export async function ensureCloud(): Promise<CloudDatabase> {
   if (!CLOUD_SHOULD_ENABLE) {
-    throw new Error('未配置云开发环境，当前运行在本地模式')
+    throw new Error('微信云开发未启用')
   }
 
   if (!supportsCloud()) {

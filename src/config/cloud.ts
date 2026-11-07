@@ -1,16 +1,10 @@
-// 将下面的空字符串替换为你的云开发环境 ID
-// 例如：'cloud1-xxx' 或 'env-xxxxx'
-// 如果留空，应用会自动使用本地模式
 import { env } from './env'
 
-export const CLOUD_ENV_ID = 'cloud1-0gw1plhs593190e1'
+const DEFAULT_CLOUD_ENV_ID = 'cloud1-0gw1plhs593190e1'
 
-const trimmedEnvId = CLOUD_ENV_ID.trim()
+export const CLOUD_ENV_ID = process.env.TARO_APP_CLOUD_ENV_ID?.trim() || DEFAULT_CLOUD_ENV_ID
 
-export const CLOUD_ENV_CONFIGURED = trimmedEnvId.length > 0
-
-export const CLOUD_SHOULD_ENABLE =
-  CLOUD_ENV_CONFIGURED && env.TARO_APP_ENABLE_CLOUD !== 'false'
+export const CLOUD_SHOULD_ENABLE = Boolean(CLOUD_ENV_ID) && env.TARO_APP_ENABLE_CLOUD !== 'false'
 
 export const COLLECTIONS = {
   users: 'users',
