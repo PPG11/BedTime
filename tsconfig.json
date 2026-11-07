@@ -1,29 +1,19 @@
 {
   "compilerOptions": {
-    "target": "es2017",
-    "module": "commonjs",
-    "removeComments": false,
-    "preserveConstEnums": true,
-    "moduleResolution": "node",
-    "experimentalDecorators": true,
-    "noImplicitAny": false,
-    "allowSyntheticDefaultImports": true,
-    "outDir": "lib",
+    "target": "ES2017",
+    "module": "CommonJS",
+    "lib": ["ES2020"],
+    "moduleResolution": "Node",
+    "rootDir": "miniprogram",
+    "outDir": "dist",
+    "types": ["miniprogram-api-typings"],
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "strictNullChecks": true,
+    "noEmitOnError": true,
     "skipLibCheck": true,
-    "sourceMap": true,
-    "baseUrl": ".",
-    "rootDir": ".",
-    "jsx": "react-jsx",
-    "allowJs": true,
-    "resolveJsonModule": true,
-    "types": ["react", "webpack-env"],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "forceConsistentCasingInFileNames": true,
+    "sourceMap": true
   },
-  "include": ["./src", "./types", "./config"],
-  "compileOnSave": false
+  "include": ["miniprogram/**/*.ts"]
 }

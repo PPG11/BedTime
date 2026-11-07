@@ -1,65 +1,39 @@
-const MS_PER_MINUTE = 60 * 1000
+const MINUTE = 60_000
+const DAY = 1440 * MINUTE
+const TARGET_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
-function toDateString(date) {
-  const year = date.getUTCFullYear()
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-  const day = String(date.getUTCDate()).padStart(2, '0')
-  return `${year}${month}${day}`
+function dateKey(ms) {
+  return new Date(ms).toISOString().slice(0, 10).replace(/-/g, '')
 }
 
-function formatDateFromMs(ms) {
-  return toDateString(new Date(ms))
+function isDateKey(value) {
+  if (typeof value !== 'string' || !/^\d{8}$/.test(value)) return false
+  const ms = Date.parse(value.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') + 'T00:00:00Z')
+  return Number.isFinite(ms) && dateKey(ms) === value
 }
 
-function normalizeHm(value, fallback = '22:00') {
-  if (typeof value !== 'string') {
-    return fallback
+function previousDay(value) {
+  return dateKey(Date.parse(value.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') + 'T00:00:00Z') - DAY)
+}
+
+function resolveCycle(user, now = Date.now()) {
+  const [hours, minutes] = user.targetHM.split(':').map(Number)
+  const localNow = now + user.tzOffset * MINUTE
+  const localDay = Math.floor(localNow / DAY) * DAY
+  let target = localDay + (hours * 60 + minutes) * MINUTE
+  // After the window closes, advance to the next target. This also handles after-midnight targets.
+  while (localNow >= target + 360 * MINUTE) target += DAY
+  if (localNow < target - (1440 - 360) * MINUTE) target -= DAY
+
+  return {
+    date: dateKey(target),
+    open: localNow >= target - 720 * MINUTE,
+    status: localNow > target ? 'late' : 'hit'
   }
-  const trimmed = value.trim()
-  if (!/^\d{2}:\d{2}$/.test(trimmed)) {
-    return fallback
-  }
-  const [h, m] = trimmed.split(':').map((part) => Number(part))
-  if (Number.isNaN(h) || Number.isNaN(m)) {
-    return fallback
-  }
-  const hour = Math.min(Math.max(h, 0), 23)
-  const minute = Math.min(Math.max(m, 0), 59)
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
-function quantizeSlotKey(targetHm) {
-  const normalized = normalizeHm(targetHm)
-  const [hourStr, minuteStr] = normalized.split(':')
-  const hour = Number(hourStr)
-  const minute = Number(minuteStr)
-  const slotMinute = minute < 30 ? '00' : '30'
-  return `${String(hour).padStart(2, '0')}:${slotMinute}`
+function quantizeSlotKey(targetHM) {
+  return targetHM.slice(0, 3) + (Number(targetHM.slice(3)) < 30 ? '00' : '30')
 }
 
-function getTodayFromOffset(tzOffsetMinutes, now = Date.now()) {
-  const tzMinutes = Number.isFinite(tzOffsetMinutes) ? tzOffsetMinutes : 0
-  const localMs = now + tzMinutes * MS_PER_MINUTE
-  return formatDateFromMs(localMs)
-}
-
-function getYesterday(dateStr) {
-  if (typeof dateStr !== 'string' || !/^\d{8}$/.test(dateStr)) {
-    return null
-  }
-  const year = Number(dateStr.slice(0, 4))
-  const month = Number(dateStr.slice(4, 6)) - 1
-  const day = Number(dateStr.slice(6, 8))
-  const date = new Date(Date.UTC(year, month, day))
-  date.setUTCDate(date.getUTCDate() - 1)
-  return toDateString(date)
-}
-
-module.exports = {
-  getTodayFromOffset,
-  getYesterday,
-  quantizeSlotKey,
-  normalizeHm,
-  formatDateFromMs,
-  toDateString
-}
+module.exports = { TARGET_TIME, isDateKey, previousDay, resolveCycle, quantizeSlotKey }

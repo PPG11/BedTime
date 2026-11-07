@@ -1,32 +1,9 @@
 const cloud = require('wx-server-sdk')
 
-let initialized = false
-
-function initCloud() {
-  if (!initialized) {
-    cloud.init({
-      env: cloud.DYNAMIC_CURRENT_ENV
-    })
-    initialized = true
-  }
-  return cloud
-}
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
 function getDb() {
-  return initCloud().database()
+  return cloud.database({ throwOnNotFound: false })
 }
 
-function getOpenId(context) {
-  if (context && typeof context.OPENID === 'string') {
-    return context.OPENID
-  }
-  const runtime = cloud.getWXContext?.()
-  return runtime?.OPENID || null
-}
-
-module.exports = {
-  cloud,
-  initCloud,
-  getDb,
-  getOpenId
-}
+module.exports = { cloud, getDb }

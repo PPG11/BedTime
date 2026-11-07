@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "好友",
+  "enablePullDownRefresh": true,
+  "onReachBottomDistance": 120,
+  "usingComponents": {}
+}

@@ -1,20 +1,12 @@
-function createError(code, message, extra = {}) {
-  const error = new Error(message)
-  error.code = code
-  Object.assign(error, extra)
-  return error
-}
-
-function normalizeError(error) {
-  if (!error) {
-    return { code: 'INTERNAL', message: 'Internal error' }
+class AppError extends Error {
+  constructor(code, message) {
+    super(message)
+    this.code = code
   }
-  const code = typeof error.code === 'string' ? error.code : 'INTERNAL'
-  const message = typeof error.message === 'string' ? error.message : 'Internal error'
-  return { code, message }
 }
 
-module.exports = {
-  createError,
-  normalizeError
+function requireValue(condition, code, message) {
+  if (!condition) throw new AppError(code, message)
 }
+
+module.exports = { AppError, requireValue }

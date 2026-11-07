@@ -1,0 +1,30 @@
+<view class="profile">
+  <view wx:if="{{error}}" class="profile__error">
+    <text>{{error}}</text>
+    <button size="mini" bindtap="retry">重新加载</button>
+  </view>
+  <view class="profile__card">
+    <text class="profile__title">我的账号</text>
+    <text class="profile__uid">{{uid || '正在加载 UID...'}}</text>
+    <text class="profile__uid-hint">将 UID 分享给好友，他们就能关注你的早睡打卡啦。</text>
+    <button class="profile__copy" bindtap="copyUid" disabled="{{!uid}}">复制 UID</button>
+  </view>
+  <view class="profile__card">
+    <text class="profile__title">个人偏好</text>
+    <view class="profile__field">
+      <text class="profile__label">称呼</text>
+      <input class="profile__input" value="{{nameDraft}}" placeholder="输入你的称呼" bindfocus="onNameFocus" bindinput="onNameInput" bindblur="onNameBlur" maxlength="20" disabled="{{!uid}}" />
+    </view>
+    <view class="profile__field">
+      <text class="profile__label">目标入睡时间</text>
+      <picker class="profile__time-picker" mode="time" value="{{targetTimeText}}" bindchange="onTargetTimeChange" disabled="{{!uid}}">
+        <view class="profile__picker">{{targetTimeText}}</view>
+      </picker>
+    </view>
+    <text wx:if="{{syncing}}" class="profile__uid-hint">正在保存...</text>
+  </view>
+  <view class="profile__tips">
+    <text class="profile__tips-title">功能说明</text>
+    <text wx:for="{{tips}}" wx:key="*this" class="profile__tips-item">{{item}}</text>
+  </view>
+</view>

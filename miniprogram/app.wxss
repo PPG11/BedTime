@@ -1,0 +1,19 @@
+page {
+  width: 100%;
+  min-height: 100%;
+  background: #f6f7fb;
+  color: #232442;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+view, scroll-view, input, textarea, button, picker {
+  box-sizing: border-box;
+}
+
+/* Native buttons have automatic margins and v2 size rules; pages own their width. */
+button {
+  margin: 0;
+  font-family: inherit;
+}
+
+button::after { border: none; }

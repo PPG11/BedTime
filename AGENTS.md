@@ -1,30 +1,40 @@
 # BedTime 仓库指南
 
-BedTime 是「早睡助手」微信小程序。用户设置目标就寝时间，记录每晚打卡，也可以送出晚安心语。产品目标包含送出后收到其他人的心语。现有代码的抽取入口在打卡，迭代时以当前需求和代码为准。
+BedTime 是「早睡助手」微信小程序，采用原生 **TypeScript + WXML + WXSS + CloudBase**。首页打卡时领取心语；投稿成功只更新投稿状态。「送出后收到」仍需独立产品实现。
 
 ## 从哪里开始
 
-- [README](README.md) 提供项目入口和常用命令。
-- [本地开发](docs/local-development.md) 说明 Node.js、Yarn、微信开发者工具和联调步骤。
-- [云端部署](docs/cloud-deployment.md) 说明环境、部署预演和线上核对步骤。
-- [云函数与数据库](cloudfunctions/README.md) 和 [打卡与好友数据流](docs/checkin-and-friends-backend.md) 记录后端契约。
-- 做功能迭代或联调时，使用项目内的 [bedtime-development](.agents/skills/bedtime-development/SKILL.md) 工作流程。
+- [README](README.md) 提供命令与目录入口；[架构说明](docs/architecture.md) 定义模块边界。
+- [本地开发](docs/local-development.md) 说明构建与微信开发者工具；[云端部署](docs/cloud-deployment.md) 说明环境、部署预演和线上核对。
+- 涉及业务时读[业务链路](docs/checkin-and-friends-backend.md)与[云函数契约](cloudfunctions/README.md)的相关部分。
+- 功能迭代或联调使用项目内 [bedtime-development](.agents/skills/bedtime-development/SKILL.md) 工作流程。
 
 ## 代码入口
 
 | 范围 | 入口 |
 | --- | --- |
-| 页面和样式 | `src/pages/{home,friends,profile}/`、`src/components/`、`src/app.config.ts` |
-| 跨页状态和接口 | `src/state/appData.tsx`、`src/services/` |
-| 打卡日期和时间 | `src/utils/checkin.ts`、`cloudfunctions/common/time.js` |
-| 心语投稿和领取 | `src/pages/home/useGoodnight.ts`、`src/services/goodnight.ts`、`cloudfunctions/gn*/` |
-| 云端数据和鉴权 | `cloudfunctions/<函数名>/index.js`、`cloudfunctions/common/`、`cloudfunctions/databaseProxy/` |
-| 构建、环境和上传 | `config/`、`project.config.json`、`src/config/cloud.ts`、`cloudfunctions/deploy.js` |
+| 页面、路由与样式 | `miniprogram/pages/{home,friends,profile}/`、`miniprogram/app.json`、`miniprogram/app.wxss` |
+| 跨页状态 | `miniprogram/state/app-data.ts`（绑定依赖）、`create-app-store.ts`（状态实现） |
+| 云调用与返回值 | `miniprogram/services/`；`cloud.ts` 连接微信并统一处理业务调用 |
+| 打卡周期与统计 | `miniprogram/utils/checkin.ts`、`cloudfunctions/common/time.js` |
+| 心语投稿与奖励 | `miniprogram/pages/home/`、`miniprogram/services/goodnight.ts`、`cloudfunctions/bedtimeGoodnight/` |
+| 云端数据和鉴权 | `cloudfunctions/<函数名>/index.js`、`cloudfunctions/common/` |
+| 构建、环境与上传 | `scripts/build.mjs`、`scripts/cloud-env.cjs`、`project.config.json`、`cloudfunctions/deploy.js` |
 
-## 修改和验证
+## 开发约定
 
-- 使用 Node.js 22 和 Yarn Classic。依赖安装用 `yarn install --frozen-lockfile`，源码类型检查用 `yarn typecheck`，小程序构建用 `yarn build:weapp`。微信开发者工具导入仓库根目录，读取 `project.config.json` 中的 `dist/` 和 `cloudfunctions/`。
-- 涉及接口或存储时，从页面追到服务层和云函数。保留已有响应契约及旧打卡文档的兼容路径，除非任务包含对应的迁移。核对正常流程、重复请求和部分失败后的结果。
-- 云函数从微信上下文确认身份。新的云端读写应校验所属用户和允许的字段。涉及打卡日期时，核对同一晚跨午夜前后，以及目标时间在午夜后的情况。
-- `TARO_APP_CLOUD_ENV_ID` 可同时指定前端构建和云函数部署预演的目标。对已配置环境执行真实上传、数据库写入或发布前，按当前请求核对环境、AppID 和变更范围。
-- 报告时区分本地构建、模拟验证、微信端联调和实际部署。保持本地配置、凭据、`node_modules/`、`dist/` 和部署缓存留在版本控制之外。
+- 前端写原生 `App` / `Page` / `Component` 和 TypeScript；WXML 只绑定展示数据与事件，复杂计算放在 TypeScript。页面 `data` 只存可序列化的视图字段，订阅句柄、定时器和业务对象留在逻辑层。
+- 页面负责交互与生命周期，服务层负责业务调用与响应转换，共享状态负责跨页同步，纯工具负责规则。页面卸载时取消订阅，隐藏时停止页面定时器，防止旧异步响应覆盖新用户或新打卡周期。
+- 原生布局需显式处理 `style: "v2"` 的按钮默认宽度 / 外边距，统一控件盒模型；窄屏断点使用 `px`。具体做法见[原生布局检查](docs/local-development.md#原生布局检查)。
+- 修改 `miniprogram/` 源码，`dist/` 由构建生成。前端不依赖 Taro、React 或 H5 入口；新增运行时依赖前先明确小程序打包方式。
+- 云函数仍为 Node.js / CommonJS。涉及接口或存储时，从页面追到服务与云函数，核对业务契约、归属校验和事务边界。打卡只使用每日文档。
+- 云端从微信上下文确认身份。新的读写需校验所属用户和允许字段；客户端传入的 UID、日期与状态不能替代服务端授权。
+
+## 验证与交付
+
+- 使用 Node.js 22、Yarn Classic；依赖安装 `yarn install --frozen-lockfile`。完成改动后执行相关检查，整体交付使用 `yarn verify`（类型检查、测试、构建）。
+- 微信开发者工具导入仓库根目录，读取 `dist/` 与 `cloudfunctions/`。页面改动必须实际打开模拟器检查受影响页面及窄屏布局；仅通过 WXML/WXSS 编译不能视为界面验证通过，模拟器也不能替代真机与云端联调。
+- 接口与持久化检查正常流程、重复请求、超时重试和部分失败。日期规则覆盖 22:30 与 00:30 目标、同一晚跨午夜、窗口开启和关闭；提交、首页恢复、统计和心语需使用一致周期日期。
+- 统计中只有 `hit` 延续连续记录，`late` 仍计入累计；当前连续与累计使用服务端摘要，近期最佳仅覆盖已加载的最近 365 次打卡记录。变更时覆盖断签、周期切换及重复请求，详见[业务链路](docs/checkin-and-friends-backend.md)。
+- 构建与部署共用 `scripts/cloud-env.cjs`，优先读取终端的 `CLOUD_ENV_ID`，再读取 `.env.local`。缺少环境时构建失败；离线预览需显式 `ENABLE_CLOUD=false`。小程序上传前执行拒绝离线配置的 `yarn build:release`；云函数使用部署脚本打包 `common` 和依赖。真实上传、数据库写入或发布前，按当前授权核对环境、AppID 和变更范围。
+- 报告区分本地构建、模拟测试、微信模板编译、模拟器运行、真机联调和实际部署。代码变更同步更新对应文档；流程发生实质变化时更新开发 skill。本地私有配置、凭据、`node_modules/`、`dist/` 和部署缓存不入库；团队共用的项目与构建配置正常维护在版本控制中。

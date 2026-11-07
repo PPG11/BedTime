@@ -11,9 +11,11 @@ node_modules/
 
 # 构建输出
 dist/
+.native-build/
 build/
 deploy_versions/
 .temp/
+.temp-test-*/
 .rn_temp/
 
 # 日志文件

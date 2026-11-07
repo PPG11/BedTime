@@ -1,9 +1,0 @@
-{
-  "triggers": [
-    {
-      "name": "gnReactionsConsumeHourly",
-      "type": "timer",
-      "config": "0 0 3 * * * *"
-    }
-  ]
-}

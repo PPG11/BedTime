@@ -1,0 +1,7 @@
+{
+  "users": { "read": false, "write": false },
+  "checkins": { "read": false, "write": false },
+  "friendships": { "read": false, "write": false },
+  "goodnight_messages": { "read": false, "write": false },
+  "gn_reactions_dedupe": { "read": false, "write": false }
+}

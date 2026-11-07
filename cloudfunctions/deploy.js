@@ -6,6 +6,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execSync, spawnSync } = require('child_process');
 const { stripVTControlCharacters } = require('util');
+const { resolveCloudEnvironment } = require('../scripts/cloud-env.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..');
 const cloudfunctionsDir = __dirname;
@@ -97,7 +98,7 @@ function discoverFunctions() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function collectDependents({ includeNames } = {}) {
+function collectDependents({ includeNames, commonOnly = true } = {}) {
   if (!fs.existsSync(cloudfunctionsDir)) {
     return [];
   }
@@ -121,7 +122,7 @@ function collectDependents({ includeNames } = {}) {
         return null;
       }
       const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
-      if (typeof deps.common !== 'string') {
+      if (commonOnly && typeof deps.common !== 'string') {
         return null;
       }
       return { dirName, packageName: pkg.name, packageJson: pkg };
@@ -200,23 +201,7 @@ function resolveCloudEnvId() {
     return cachedEnvId;
   }
 
-  let envId = process.env.TARO_APP_CLOUD_ENV_ID?.trim() || process.env.CLOUD_ENV_ID?.trim();
-  if (!envId) {
-    const cloudConfigPath = path.join(projectRoot, 'src', 'config', 'cloud.ts');
-    if (fs.existsSync(cloudConfigPath)) {
-      try {
-        const content = fs.readFileSync(cloudConfigPath, 'utf8');
-        const match = content.match(/\bDEFAULT_CLOUD_ENV_ID\s*=\s*['"]([^'"]+)['"]/);
-        if (match && match[1]) {
-          envId = match[1];
-        }
-      } catch (error) {
-        // ignore
-      }
-    }
-  }
-
-  cachedEnvId = envId || null;
+  cachedEnvId = resolveCloudEnvironment(workspaceRoot, { requireCloud: true }).cloudEnvId;
   return cachedEnvId;
 }
 
@@ -379,7 +364,7 @@ function syncCommonDependents({
 
     for (const [name, spec] of Object.entries(combined)) {
       if (visitedSet.has(name)) continue;
-      queue.push({ name, spec, from: sourceDir });
+      queue.push({ name, spec, from: sourceDir, optional: Object.hasOwn(optionalDeps, name) });
     }
   }
 
@@ -399,11 +384,10 @@ function syncCommonDependents({
     enqueueDependencies(queue, packageJson, targetDir, visited);
 
     while (queue.length > 0) {
-      const { name: depName, spec, from } = queue.shift();
+      const { name: depName, spec, from, optional } = queue.shift();
       if (visited.has(depName)) {
         continue;
       }
-      visited.add(depName);
 
       let sourcePath;
       if (typeof spec === 'string' && spec.startsWith('file:')) {
@@ -414,9 +398,14 @@ function syncCommonDependents({
       }
 
       if (!sourcePath || !fs.existsSync(sourcePath)) {
-        console.warn(`Missing dependency source for ${depName} (${spec ?? 'unknown'}); skipped.`);
-        continue;
+        if (optional) {
+          console.warn(`Optional dependency ${depName} is unavailable; skipped.`);
+          continue;
+        }
+        throw new Error(`Missing required dependency ${depName} (${spec ?? 'unknown'}). Run yarn install --frozen-lockfile before deploying.`);
       }
+
+      visited.add(depName);
 
       const destPath = path.join(nodeModulesDir, depName);
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
@@ -537,6 +526,7 @@ function main() {
 
   const includeDevDeps = options.has('--include-dev') || options.has('--with-dev');
   const dryRun = options.has('--dry-run');
+  const prepareOnly = options.has('--prepare-only');
   const skipNpm = options.has('--skip-npm');
   const keepLock = options.has('--keep-lock');
   const skipFocus = options.has('--skip-focus');
@@ -547,6 +537,11 @@ function main() {
     options.has('--all') || options.has('-a') || names.includes('all') || options.has('--force-all');
 
   const explicitNames = names.filter((name) => name !== 'all');
+  if (prepareOnly && skipNpm) {
+    console.error('❌ --prepare-only cannot be combined with --skip-npm.');
+    process.exitCode = 1;
+    return;
+  }
   if (options.has('--require-target') && explicitNames.length === 0 && !forceAll) {
     console.error('❌ Name the cloud functions to deploy, or pass --all.');
     process.exitCode = 1;
@@ -582,10 +577,35 @@ function main() {
     return;
   }
 
-  const envId = resolveCloudEnvId();
-  if (!envId) {
-    console.error('❌ Missing cloud environment ID. Set TARO_APP_CLOUD_ENV_ID or CLOUD_ENV_ID.');
+  let envId;
+  try {
+    envId = resolveCloudEnvId();
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 1;
+    return;
+  }
+  if (!envId) {
+    console.error('❌ Missing cloud environment ID. Set CLOUD_ENV_ID.');
+    process.exitCode = 1;
+    return;
+  }
+
+  // Local preparation never discovers an upload CLI or reads/writes deployment state.
+  if (prepareOnly) {
+    const targetNames = validTargets.map((item) => item.name);
+    console.info(`Local preparation for cloud environment: ${envId}`);
+    const { synced } = syncCommonDependents({
+      dependents: collectDependents({ includeNames: targetNames, commonOnly: false }),
+      targetNames,
+      includeDevDeps,
+      dryRun,
+      skipFocus,
+      skipNpm: false,
+      keepLock
+    });
+    logSection(dryRun ? 'Would prepare:' : 'Prepared local dependencies:', synced);
+    console.info('Preparation only: no cloud functions uploaded and no deployment cache updated.');
     return;
   }
 
@@ -692,4 +712,9 @@ function main() {
   saveCache(cache, cacheFile);
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  console.error(`Deployment stopped: ${error.message}`);
+  process.exitCode = 1;
+}

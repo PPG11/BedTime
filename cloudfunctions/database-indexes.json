@@ -1,0 +1,92 @@
+{
+  "collections": [
+    {
+      "action": "updateCollection",
+      "collectionName": "users",
+      "updateOptions": {
+        "CreateIndexes": [
+          {
+            "IndexName": "uid_unique",
+            "MgoKeySchema": {
+              "MgoIsUnique": true,
+              "MgoIndexKeys": [
+                { "Name": "uid", "Direction": "1" }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "action": "updateCollection",
+      "collectionName": "friendships",
+      "updateOptions": {
+        "CreateIndexes": [
+          {
+            "IndexName": "aUid_status_id",
+            "MgoKeySchema": {
+              "MgoIsUnique": false,
+              "MgoIndexKeys": [
+                { "Name": "aUid", "Direction": "1" },
+                { "Name": "status", "Direction": "1" },
+                { "Name": "_id", "Direction": "1" }
+              ]
+            }
+          },
+          {
+            "IndexName": "bUid_status_id",
+            "MgoKeySchema": {
+              "MgoIsUnique": false,
+              "MgoIndexKeys": [
+                { "Name": "bUid", "Direction": "1" },
+                { "Name": "status", "Direction": "1" },
+                { "Name": "_id", "Direction": "1" }
+              ]
+            }
+          },
+          {
+            "IndexName": "toUid_status_createdAt_desc",
+            "MgoKeySchema": {
+              "MgoIsUnique": false,
+              "MgoIndexKeys": [
+                { "Name": "toUid", "Direction": "1" },
+                { "Name": "status", "Direction": "1" },
+                { "Name": "createdAt", "Direction": "-1" }
+              ]
+            }
+          },
+          {
+            "IndexName": "fromUid_status_createdAt_desc",
+            "MgoKeySchema": {
+              "MgoIsUnique": false,
+              "MgoIndexKeys": [
+                { "Name": "fromUid", "Direction": "1" },
+                { "Name": "status", "Direction": "1" },
+                { "Name": "createdAt", "Direction": "-1" }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "action": "updateCollection",
+      "collectionName": "goodnight_messages",
+      "updateOptions": {
+        "CreateIndexes": [
+          {
+            "IndexName": "status_slotKey_rand",
+            "MgoKeySchema": {
+              "MgoIsUnique": false,
+              "MgoIndexKeys": [
+                { "Name": "status", "Direction": "1" },
+                { "Name": "slotKey", "Direction": "1" },
+                { "Name": "rand", "Direction": "1" }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
