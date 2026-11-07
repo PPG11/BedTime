@@ -56,6 +56,7 @@ CLOUD_ENV_ID=your-test-env-id yarn dev:weapp
 | `cloudfunctions/` | 云函数、共享包 `common` 和部署脚本 |
 
 - [架构说明](docs/architecture.md)：模块边界、原生生命周期和状态管理。
+- [今晚关灯 v1.1 产品与施工架构](docs/product-plan-tonight-lights-out-v1.1.md)：后续重建的完整规格与验收标准，尚未实现；现有业务仍以当前架构和接口文档为准。
 - [AGENTS.md](AGENTS.md)：后续开发的定位和验证约定。
 - [打卡、心语与好友链路](docs/checkin-and-friends-backend.md)：当前业务行为和已知边界。
 - [云函数与数据库](cloudfunctions/README.md)：函数入参、响应和集合。
