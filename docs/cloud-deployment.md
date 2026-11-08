@@ -1,42 +1,48 @@
 # 云环境与部署
 
-构建和部署共用 [`scripts/cloud-env.cjs`](../scripts/cloud-env.cjs)。`CLOUD_ENV_ID` 的读取优先级为终端环境变量、仓库根目录 `.env.local`；没有默认环境，也不读取旧的 `TARO_APP_CLOUD_ENV_ID`。首次配置可复制 `.env.example`，已有 `.env.local` 不要覆盖；本地配置不入库。
+当前业务是今晚关灯 M1。作者已授权本地 / 云端部署及必要联调，后续同范围 MCP 操作无需逐项再问；正式公开发布仍由作者执行。
 
-普通构建缺少环境会失败并保留旧产物。只有显式 `ENABLE_CLOUD=false` 才能离线预览；`yarn build:release`、云函数依赖准备、部署预演和真实部署均要求启用云开发并配置环境。配置语法检查不能证明环境存在或账号有权限。
+## 当前部署
 
-BedTime 的 AppID 为 `wxd489f0523662b0ea`。本机 `.env.local` 已配置用户提供的新环境 `cloudbase-d0gcfmrvdb974536e`；测试和发布前仍须核对微信开发者工具中的 AppID 关联。
+- AppID：`wxd489f0523662b0ea`；云环境：`cloudbase-d0gcfmrvdb974536e`。
+- `bedtimeNight` 已部署，六个动作；实际回读为 Active、Nodejs16.13、15 秒超时。客户端 8 秒进入未知态，不会取消云端事务。
+- 四集合 n_users / n_nights / n_phrases / n_events 已创建。用户在控制台设置仅管理端可读写后，真实小程序身份对四集合分别直读、直写均被拒绝（8 项，-502003）；探针没有写入成功。
+- 三个自定义索引已创建并回读：n_nights.uid ASC + nightId DESC、n_nights.nightId ASC、n_events.receivedDateKey ASC。
+- 四个旧领域函数已部署无依赖停用包。旧集合保留，未迁移或删除。临时 bedtimeNightAcceptance 的隔离数据已清空，函数已替换为停用包。
+- SDK 会附加 userInfo 和 tcbContext；请求校验接受这些传输字段，但身份仍只取 SDK 微信上下文。严格拒绝客户端 uid 等额外业务字段，解决了先前首页反复确认的问题。
+- 实际数据库冲突可能被包装为 -501001 / ResourceUnavailable.TransactionConflict。已增加明确冲突的有限退避重试，并通过真实双提交、偏好合并、归档与事件并发复测。
 
-## 验证与上传
+实际云测试使用单独测试身份与 1980 年受控日期，夜句加测试前缀，未修改正式函数时钟。34 条测试夜签、4 条测试事件、1 个测试用户和 34 份测试夜句已删除并回读为空。这证明云事务与查询行为，不能替代两个真实微信账号或夜间真机主流程。详见 [交付记录](refactor-m1-delivery.md)。
+
+## 日常构建与部署
 
 ```sh
+yarn install --frozen-lockfile
 yarn verify
 yarn build:release
-yarn cloud:preview bedtimeUser bedtimeCheckin bedtimeGoodnight bedtimeFriends
-# 当前授权覆盖上传时执行
-yarn upload:cloudfunctions bedtimeUser bedtimeCheckin bedtimeGoodnight bedtimeFriends
+yarn cloud:preview bedtimeNight
+yarn cloud:prepare bedtimeNight
+# 按已授权范围上传；普通构建不会上传
+yarn upload:cloudfunctions bedtimeNight
 ```
 
-部署预演只核对本地目标和上传范围。通过脚本上传需要已登录的微信开发者工具、开启服务端口及目标环境权限。终端可用 `CLOUD_ENV_ID=your-test-env-id` 临时覆盖本地配置；切换后重新构建前端。[微信开发者工具命令行](https://developers.weixin.qq.com/miniprogram/dev/devtools/cli.html)
+构建与部署共用 scripts/cloud-env.cjs：终端 CLOUD_ENV_ID 优先于 .env.local；没有默认环境，显式离线构建不能上传。准备依赖会复制 common 与生产依赖，不读取或更新部署缓存、不上传。使用开发工具独立上传前必须先准备当前依赖；不要上传遗留包。共享模块变化后核对打包源码，函数更新成功后再发前端。
 
-使用官方微信开发者工具能力 `wechatide.cloud_fn_deploy` 上传时，先准备本地依赖：
+规则和索引文件只是目标配置，普通函数部署不会应用。新环境先创建集合、应用 [规则](../cloudfunctions/night-database-rules.json)与 [索引](../cloudfunctions/night-database-indexes.json)，然后部署并实际验证权限。不得恢复旧通用数据库代理。
 
-```sh
-yarn cloud:prepare bedtimeUser bedtimeCheckin bedtimeGoodnight bedtimeFriends
-```
+## 发布与回退
 
-`cloud:prepare` 按指定函数打包当前依赖及 `common`，不上传、不读取或更新部署缓存，也不要求安装或启动微信 CLI。准备成功后再调用官方工具上传这些函数；工具请求已发起或等待确认不代表部署成功，需检查结果与云端实际版本。
+首发图片使用无码模板，正式发布后再取固定 scene=0 的通用 release 码并按规格补入后续版本；不生成个人码。公开发布前在微信公众平台完成对应隐私保护指引（保存用户主动选择的图片到相册、记录 / 偏好 / 最少事件用途）及用户隐私接口声明，并在 iOS / Android 真机验证同意、拒绝、取消和再次保存。
 
-四个业务函数均依赖 `cloudfunctions/common/`。脚本上传会自动完成同样的依赖准备；缺少必需依赖时停止该函数上传，先通过 `yarn install --frozen-lockfile` 修复依赖。不要直接上传函数目录中遗留的 `node_modules/`，应先执行 `cloud:prepare` 或使用部署脚本。修改 `common/` 后核对所有受影响函数的上传范围。
+代码、云函数部署、预览 / 体验版上传、公开发布分别记录。正式发布由作者操作；不能把开发工具中的成功当作已公开可访问。发布与真机待验项见 [交付记录](refactor-m1-delivery.md)。
 
-查询索引单独维护在 [`cloudfunctions/database-indexes.json`](../cloudfunctions/database-indexes.json)。该文件供审阅和官方 CloudBase 数据库工具应用，普通构建、部署预演和云函数上传均不会变更索引。按[查询索引说明](../cloudfunctions/README.md#查询索引)核对并应用后，读取云端实际索引确认结果；提交配置文件不能视为索引已创建。
+回退以代码版本和对应函数包为单位，不回写已冻结的私人历史。停用旧入口后不重新开启旧代理；旧数据和资源的永久删除另列明确清单，不作为本轮重构的隐含操作。维护操作见 [数据维护](night-operations.md)。
 
-集合访问规则维护在 [`cloudfunctions/database-rules.json`](../cloudfunctions/database-rules.json)：五个业务集合禁止客户端直接读写，业务数据只通过云函数访问。按[访问规则说明](../cloudfunctions/README.md#访问规则)在云控制台逐集合设置并回读核验；普通部署不会自动应用这些规则。
+## 历史资源证据的边界
 
-## 环境验收
+2026-11-08 初次清点有 21 个旧函数、8 个旧集合；当时函数详情工具没有返回触发器清单。2026-11-07 曾实际看到 slotRollup / gnReactionsConsume 的触发器为空，本轮不把历史结果写成新回读。关键旧入口的当前停用调用结果以交付记录为准。
 
-1. 核对 AppID、环境 ID、四个函数的部署状态、运行时与超时。确保旧业务入口停止执行，特别是 `databaseProxy` 与旧定时任务 `gnReactionsConsume`、`slotRollup`。
-2. 核对 [集合、查询索引、读写权限与心语审核权限](../cloudfunctions/README.md)。
-3. 在获准写入的测试环境使用两个微信测试账号，验证建档、资料保存、跨午夜打卡、请求重试、空池、心语审核与投票、好友接受和解除。区分模拟器验证、真机联调、云函数部署和小程序版本发布。
+以下保留旧产品当日记录，不代表当前接口或待办。
 
 ## 2026-11-07 核验记录
 

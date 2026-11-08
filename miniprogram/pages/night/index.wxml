@@ -1,0 +1,58 @@
+<page-meta page-style="height: 100%; overflow: hidden;"></page-meta>
+<view class="night-page {{hasReceipt ? 'with-receipt' : ''}} {{isUnknown ? 'with-unknown' : ''}} {{notice ? 'has-notice' : ''}}" style="padding-top: {{top}}px;" aria-hidden="{{immersive}}">
+  <view class="masthead"><text class="brand">今晚关灯</text><text class="tagline">今天先到这里</text></view>
+  <view class="demo-pill">{{demo ? '演示 · 不会留下记录' : '20:00—次日 06:00 · 北京时间'}}</view>
+  <view class="scene-space" wx:if="{{!hasReceipt && !isUnknown}}">
+    <window-scene progress="{{progress}}" extinguished="{{extinguished}}" reduce-motion="{{reduceMotion}}" pressing="{{interaction === 'pressing'}}" layout-key="{{top}}:{{stateText}}:{{notice}}:{{demo}}">
+      <hold-button slot="control" surface="window" variant="window" label="按住你的窗关灯"
+        enabled="{{canPress && (!activeSurface || activeSurface === 'window')}}"
+        bind:holdprogress="onHoldProgress" bind:holdcommit="onHoldCommit" bind:holdcancel="onHoldCancel" />
+    </window-scene>
+  </view>
+  <view class="receipt-region" wx:if="{{hasReceipt}}">
+    <text class="receipt-date">{{receiptNight}}</text>
+    <text class="receipt-phrase">{{receiptPhrase}}</text>
+    <text class="receipt-time">{{receiptTime}}</text>
+    <text class="receipt-feedback" wx:if="{{notice}}" aria-role="alert">{{notice}}</text>
+    <text class="receipt-stale" wx:elif="{{staleReceipt}}">已确认的回执 · 当前状态尚未刷新</text>
+  </view>
+  <view class="night-copy">
+    <text class="state-text">{{stateText}}</text>
+    <text wx:if="{{notice && !hasReceipt}}" class="subtext notice" aria-role="alert">{{notice}}</text>
+    <text wx:elif="{{subtext && !hasReceipt && !isUnknown}}" class="subtext preparation">{{subtext}}</text>
+  </view>
+  <view class="bottom-controls">
+  <view class="actions">
+    <block wx:if="{{isUnknown}}">
+      <button class="primary-button" bindtap="onCheckResult" disabled="{{checking}}">{{checking ? '正在查看' : '查看结果'}}</button>
+      <button wx:if="{{canRetry}}" class="text-button retry-close" bindtap="onRetry">重试关灯</button>
+    </block>
+    <block wx:elif="{{demo || canClose || interaction === 'submitting'}}">
+      <view class="hold-main">
+        <hold-button surface="main" enabled="{{canPress && (!activeSurface || activeSurface === 'main')}}" label="{{buttonText}}"
+          bind:holdprogress="onHoldProgress" bind:holdcommit="onHoldCommit" bind:holdcancel="onHoldCancel" />
+      </view>
+      <button class="text-button tap-close" bindtap="onTapClose" disabled="{{!canPress}}">轻点关灯</button>
+    </block>
+    <button wx:elif="{{!ready}}" class="primary-button" bindtap="onRefresh" disabled="{{loading}}">{{loading ? '正在确认' : '重新确认今晚状态'}}</button>
+    <button wx:elif="{{currentReceipt}}" class="primary-button" bindtap="onExit">放下手机</button>
+    <button wx:elif="{{pendingCurrent}}" class="primary-button" bindtap="onCheckResult">查看上次结果</button>
+    <button wx:elif="{{demoPrimary}}" class="primary-button" bindtap="onStartDemo">看一次关灯</button>
+  </view>
+  <view class="night-footer">
+    <button wx:if="{{demo || isUnknown}}" class="text-button footer-button" bindtap="onReturnNight">{{demo ? '结束演示' : '返回今晚'}}</button>
+    <block wx:else>
+      <view wx:if="{{hasReceipt}}" class="receipt-links">
+        <button class="text-button footer-button" bindtap="onOpenReceipt">夜签图片</button>
+        <button class="text-button footer-button" bindtap="onAddToMine">添加到我的小程序</button>
+      </view>
+      <text wx:if="{{demoPrimary}}" class="footer-note">演示，不会留下记录</text>
+      <button wx:elif="{{showDemo}}" class="text-button footer-button" bindtap="onStartDemo">看一次关灯 · 演示</button>
+      <button wx:if="{{hasPending && !pendingCurrent}}" class="text-button footer-button" bindtap="onCheckResult">查看上次结果</button>
+    </block>
+  </view>
+  </view>
+</view>
+<night-mask wx:if="{{immersive}}" opacity="{{maskOpacity}}" phrase-opacity="{{phraseOpacity}}" phrase="{{phrase}}"
+  done="{{done}}" top="{{top}}" demo="{{demo}}" notice="{{notice}}"
+  bind:finish="onExit" bind:returnnight="onReturnNight" />

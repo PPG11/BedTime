@@ -2,7 +2,7 @@
   "name": "bedtime",
   "version": "2.0.0",
   "private": true,
-  "description": "早睡助手：微信原生小程序 + TypeScript + CloudBase",
+  "description": "今晚关灯：微信原生小程序 + TypeScript + CloudBase",
   "packageManager": "yarn@1.22.22",
   "engines": {
     "node": "22.x"
@@ -19,7 +19,10 @@
     "cloud:preview": "node cloudfunctions/deploy.js --dry-run",
     "cloud:prepare": "node cloudfunctions/deploy.js --prepare-only --skip-focus --keep-lock --require-target",
     "upload:cloudfunctions": "node cloudfunctions/deploy.js --skip-focus --keep-lock --require-target",
-    "verify": "yarn typecheck && yarn test && yarn build:weapp"
+    "verify": "yarn typecheck && yarn test && yarn build:weapp",
+    "night:export": "node scripts/night-export.mjs",
+    "night:report": "node scripts/night-report.mjs",
+    "night:maintenance": "node scripts/night-maintenance.mjs"
   },
   "devDependencies": {
     "miniprogram-api-typings": "3.12.3",

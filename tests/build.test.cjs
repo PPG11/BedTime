@@ -21,6 +21,20 @@ test('构建环境、失败保护与监听新增/修改/删除', { timeout: 3000
     assert.match(runtime, /bedtime-build-test/)
     assert.match(runtime, /"cloudEnabled":false/)
     assert.doesNotMatch(runtime, /ignored-legacy/)
+    // A manual verification build can overlap an already running dev watcher.
+    // Both must finish with one complete package, without deleting each other's
+    // staging files. Exercise real child processes, not a mocked file lock.
+    const concurrentBuild = () => new Promise((resolve, reject) => {
+      let messages = ''
+      const child = spawn(process.execPath, ['scripts/build.mjs'], { cwd: temporary, env: environment })
+      child.stdout.on('data', chunk => { messages += chunk })
+      child.stderr.on('data', chunk => { messages += chunk })
+      child.on('error', reject)
+      child.on('exit', status => status === 0 ? resolve() : reject(new Error(messages)))
+    })
+    await Promise.all([concurrentBuild(), concurrentBuild()])
+    assert.ok(fs.existsSync(path.join(temporary, 'dist/app.js')))
+    assert.equal(fs.existsSync(path.join(temporary, '.native-build.lock')), false)
     const missing = spawnSync(process.execPath, ['scripts/build.mjs'], { cwd: temporary, env: { ...environment, CLOUD_ENV_ID: '', ENABLE_CLOUD: 'true' }, encoding: 'utf8' })
     assert.equal(missing.status, 1)
     assert.match(missing.stderr, /缺少 CLOUD_ENV_ID/)

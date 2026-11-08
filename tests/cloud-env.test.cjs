@@ -108,6 +108,7 @@ test('仅准备刷新共享源码和生产依赖，保留锁及部署缓存且�
   assert.equal(fs.readFileSync(path.join(root, 'cloudfunctions', cacheName), 'utf8'), cache)
 
   write('cloudfunctions/common/index.js', 'module.exports = "updated again"')
+  assert.equal(fs.readFileSync(path.join(packaged, 'common/index.js'), 'utf8'), 'module.exports = "latest source"', '准备后的依赖必须是独立副本')
   const noCli = run(['example'], {...env, WECHAT_CLI_PATH:path.join(root, 'does-not-exist')})
   assert.equal(noCli.status, 0, noCli.stderr)
   assert.equal(fs.readFileSync(path.join(packaged, 'common/index.js'), 'utf8'), 'module.exports = "updated again"')

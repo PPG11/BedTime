@@ -1,0 +1,4 @@
+.paragraph { display: block; font-size: 16px; line-height: 2; margin-top: 28px; color: #cfc5d2; }
+.version { display: block; margin-top: 48px; font-size: 12px; color: #a99dad; line-height: 1.8; }
+.section-label { display: block; font-size: 19px; margin-top: 40px; }
+.contact { display: block; margin-top: 20px; color: #f0cd96; font-size: 16px; line-height: 1.8; overflow-wrap: anywhere; }

@@ -409,7 +409,12 @@ function syncCommonDependents({
 
       const destPath = path.join(nodeModulesDir, depName);
       fs.mkdirSync(path.dirname(destPath), { recursive: true });
-      fs.cpSync(sourcePath, destPath, { recursive: true });
+      // Node 22's native directory traversal skips the copy mode. A pass-through
+      // filter keeps JS traversal so each file can use copy-on-write, with a
+      // regular-copy fallback. This is an independent copy, never a hard link.
+      fs.cpSync(sourcePath, destPath, {
+        recursive: true, filter: () => true, mode: fs.constants.COPYFILE_FICLONE
+      });
       copiedCount += 1;
 
       const depPkgJsonPath = path.join(sourcePath, 'package.json');

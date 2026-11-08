@@ -1,0 +1,16 @@
+<view class="scene {{reduceMotion ? 'reduce-motion' : ''}} {{pressing ? 'pressing' : ''}}" style="--cancel-duration: {{cancelMs}}ms;" aria-label="夜晚的楼。背景是插画。">
+  <view class="artwork" style="width: {{sceneWidth}}px; height: {{sceneHeight}}px;">
+  <image class="layer" src="/assets/night/sky.png" mode="aspectFit" aria-hidden="true" />
+  <image class="layer" src="/assets/night/distant.png" mode="aspectFit" aria-hidden="true" />
+  <image class="layer facade" src="/assets/night/facade.png" mode="aspectFit" aria-hidden="true" />
+  <view class="own-window {{extinguished ? 'is-off' : ''}}" style="opacity: {{extinguished ? 0 : 1}};">
+    <view class="glow" style="opacity: {{reduceMotion ? 0.6 : 0.6 + progress * 0.4}}; transform: scale({{reduceMotion ? 1 : 1 - progress * 0.55}});"></view>
+    <view class="pane cool" style="transform: scale({{reduceMotion ? 1 : 1 - progress * 0.8}}); opacity: {{reduceMotion ? (pressing ? 0 : 1) : 1 - progress}};"></view>
+    <view class="pane warm" style="transform: scale({{reduceMotion ? 1 : 1 - progress * 0.8}}); opacity: {{reduceMotion ? (pressing ? 1 : 0) : progress}};"></view>
+    <view class="mullion vertical"></view><view class="mullion horizontal"></view>
+  </view>
+  <view class="window-target"><slot name="control"></slot></view>
+  <view class="window-label" wx:if="{{!extinguished && progress === 0}}" aria-hidden="true"><view class="anchor-line"></view><text>你的窗</text></view>
+  <view class="fade-bottom"></view>
+  </view>
+</view>

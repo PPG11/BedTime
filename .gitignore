@@ -11,7 +11,10 @@ node_modules/
 
 # 构建输出
 dist/
+# 根目录中带编号的本地构建副本
+/dist [0-9]*/
 .native-build/
+.native-build.lock
 build/
 deploy_versions/
 .temp/

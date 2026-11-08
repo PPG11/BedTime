@@ -1,66 +1,48 @@
-# BedTime · 早睡助手
+# BedTime · 今晚关灯
 
-微信原生小程序，使用 **TypeScript + WXML + WXSS**，后端沿用微信云开发 **CloudBase**。用户可以设置就寝目标、记录每晚打卡、查看好友状态和送出晚安心语。
+微信原生 **TypeScript + WXML + WXSS + CloudBase** 小程序。给舍不得结束今天的人，一个轻轻关灯的动作。
 
-当前心语投稿与打卡奖励分开：投稿后显示已分享，打卡时尝试抽取其他用户的心语。「送出一条后收到一条」是待实现的产品需求，不能从现有投稿流程推断已经支持。
+M1 已实现真实单夜记录、重试恢复、私人夜签归档、详情与本地图片导出、声音 / 震动 / 动效设置、隐私与数据删除联系入口。业务云函数 `bedtimeNight` 已部署，四个新集合禁止客户端直读直写。当前交付证据与真机、发布边界见 [M1 交付记录](docs/refactor-m1-delivery.md)。
+
+每晚 **20:00—次日 06:00（北京时间）** 开放，一晚一条记录。长按 800ms，标准留白 800ms；常规字号、系统无衬线、正常动效，声音默认关闭。演示始终标注、不留记录、不上报事件、不震动。首页一屏显示，以主流 iPhone / Android 竖屏为重点。
+
+旧打卡、目标时间、好友、心语及其前端代码已移除；四个旧云入口仅返回停用提示。没有兼容层、数据迁移或新旧双写。旧云集合保留，不作为新产品的数据源。正式公开发布由作者操作。
 
 ## 开始开发
 
-使用 Node.js 22 和 Yarn Classic 1.22.22，在仓库根目录运行：
+使用 Node.js 22、Yarn Classic 1.22.22：
 
 ```sh
 yarn install --frozen-lockfile
-# 首次创建本地配置；已有文件不要覆盖
+# 仅首次创建；不要覆盖已有配置
 cp -n .env.example .env.local
-```
-
-在 `.env.local` 填入与小程序关联的 `CLOUD_ENV_ID`，然后运行：
-
-```sh
+# 填入已关联的 CLOUD_ENV_ID 后
 yarn verify
 yarn dev:weapp
 ```
 
-用微信开发者工具导入**仓库根目录**。`project.config.json` 指向小程序产物 `dist/` 和云函数 `cloudfunctions/`。日常修改 `miniprogram/`，构建脚本编译 TypeScript 并复制原生模板、样式和资源，不要直接编辑 `dist/`。前端没有运行时 npm 依赖，无需在开发者工具中额外构建 npm。
-
-构建和云函数部署共用 `.env.local`，终端环境变量优先，可临时切换测试环境：
-
-```sh
-CLOUD_ENV_ID=your-test-env-id yarn dev:weapp
-```
-
-缺少云环境会使构建失败；离线预览需显式设置 `ENABLE_CLOUD=false`。`.env.local` 不入库。云端联调需要已关联的 AppID、已部署函数和相应集合。本地构建不会上传小程序、部署函数或修改云数据库。[本地开发指南](docs/local-development.md) · [云环境与部署](docs/cloud-deployment.md)
+微信开发者工具导入仓库根目录，读取生成的 `dist/` 与 `cloudfunctions/`。修改 `miniprogram/` 源码，不直接修改产物。前端没有运行时 npm 依赖。终端的 `CLOUD_ENV_ID` 优先于 `.env.local`；离线预览须显式 `ENABLE_CLOUD=false`，发布构建禁止离线。在线 `getState` 会幂等创建用户档案。
 
 ## 常用命令
 
 | 命令 | 用途 |
 | --- | --- |
-| `yarn typecheck` | 检查前端 TypeScript |
-| `yarn test` | 运行本地自动化验证 |
-| `yarn build:weapp` | 构建原生小程序到 `dist/` |
-| `yarn build:release` | 构建发布产物，要求启用云开发并配置环境 |
-| `yarn dev:weapp` | 监听源码并重新构建 |
-| `yarn verify` | 依次执行类型检查、测试和构建 |
-| `yarn cloud:preview <函数名>` | 只在本地预演云函数上传范围 |
-| `yarn cloud:prepare <函数名>` | 准备当前云函数依赖，供开发者工具上传；不上传、不改部署缓存 |
+| `yarn verify` | 类型检查、自动化测试、原生构建 |
+| `yarn build:release` | 构建启用云开发的上传产物，不会自行上传 |
+| `yarn dev:weapp` | 监听源码和本地环境配置 |
+| `yarn cloud:preview bedtimeNight` | 只预演上传范围 |
+| `yarn cloud:prepare bedtimeNight` | 准备云函数依赖，不上传 |
+| `yarn upload:cloudfunctions bedtimeNight` | 向明确配置的环境部署 |
+| `yarn night:export / night:report / night:maintenance` | 私有导出、只读汇总、预演后维护；参数见维护指南 |
 
-## 代码与维护入口
+## 代码与文档
 
-| 路径 | 职责 |
-| --- | --- |
-| `miniprogram/app.*`、`miniprogram/pages/` | 原生应用入口、三个 Tab 页面及页面交互 |
-| `miniprogram/state/` | 用户、作息和打卡记录的共享状态与订阅 |
-| `miniprogram/services/` | CloudBase 业务调用与响应转换 |
-| `miniprogram/utils/`、`miniprogram/types/` | 日期与统计规则、存储、分享和业务类型 |
-| `miniprogram/config/`、`scripts/` | 云环境、构建与本地验证工具 |
-| `cloudfunctions/` | 云函数、共享包 `common` 和部署脚本 |
-
-- [架构说明](docs/architecture.md)：模块边界、原生生命周期和状态管理。
-- [今晚关灯 v1.1 产品与施工架构](docs/product-plan-tonight-lights-out-v1.1.md)：后续重建的完整规格与验收标准，尚未实现；现有业务仍以当前架构和接口文档为准。
-- [AGENTS.md](AGENTS.md)：后续开发的定位和验证约定。
-- [打卡、心语与好友链路](docs/checkin-and-friends-backend.md)：当前业务行为和已知边界。
-- [云函数与数据库](cloudfunctions/README.md)：函数入参、响应和集合。
-- [原生迁移说明](docs/migration-native.md)：迁移范围、功能对应和微信端核验清单。
+- 页面：`miniprogram/pages/{night,me,archive,receipt,about}/`。
+- 交互与状态：`pages/night/night-controller.ts`、`state/create-night-store.ts`、`state/night-events.ts`。
+- 云契约：`services/night.ts` → `bedtimeNight` → `common/nights.js`；时间、句子、事件和冲突重试各有独立模块。
+- [产品规格](docs/product-plan-tonight-lights-out-v1.1.md) · [架构](docs/architecture.md) · [开发](docs/local-development.md) · [云部署](docs/cloud-deployment.md) · [接口](cloudfunctions/README.md)
+- [交付与验收](docs/refactor-m1-delivery.md) · [数据维护](docs/night-operations.md) · [句子与素材审阅](docs/night-content-review.md) · [仓库指南](AGENTS.md)
+- [M0 体验记录](docs/refactor-m0-review.md)与 [M1 第一段记录](docs/refactor-m1-core.md)保留历史证据。
 
 ## 许可
 

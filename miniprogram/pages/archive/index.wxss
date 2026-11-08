@@ -1,0 +1,7 @@
+.archive-list { margin-top: 32px; }
+button.archive-row:not([size='mini']) { display: block; position: relative; width: 100%; padding: 24px 26px 24px 0; border-radius: 0; border-bottom: 1px solid #342d3d; background: transparent; text-align: left; color: #e8e2d6; font-weight: normal; }
+.archive-date { display: block; font-size: 13px; color: #b4a8b6; line-height: 1.8; }
+.archive-phrase { display: block; margin-top: 10px; font-size: 17px; line-height: 1.8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.arrow { position: absolute; right: 0; top: 42px; color: #b4a8b6; }
+.list-status { display: block; margin: 24px 0; text-align: center; font-size: 14px; line-height: 1.8; color: #b4a8b6; }
+.empty-state { margin: 60px 0; font-size: 18px; line-height: 1.8; text-align: center; }

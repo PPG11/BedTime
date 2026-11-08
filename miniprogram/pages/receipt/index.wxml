@@ -1,0 +1,22 @@
+<view class="standard-page detail-page">
+  <text wx:if="{{loading}}" class="page-intro">正在读取这个夜晚…</text>
+  <block wx:elif="{{phrase}}">
+    <text class="eyebrow">{{date}}</text><text class="detail-phrase" selectable>{{phrase}}</text><text class="detail-time">{{confirmed}} · 北京时间</text>
+    <text class="page-intro">这是当时留下的句子，只有你能查看这份回执。</text>
+    <view class="export-region">
+      <button wx:if="{{!imagePath}}" class="primary-button" bindtap="onRender" disabled="{{rendering}}">{{rendering ? '正在生成夜签' : '生成夜签图片'}}</button>
+      <block wx:else><image class="card-preview" src="{{imagePath}}" mode="widthFix" aria-label="夜签图片预览" /><button class="primary-button" bindtap="onSave" disabled="{{saving || saveDenied}}">{{saving ? '正在保存' : '保存到相册'}}</button></block>
+      <text class="export-note">图片只包含夜景、句子、夜晚日期和「今晚关灯」名称。</text>
+      <view wx:if="{{privacyNeeded}}" class="privacy-card">
+        <text class="export-note">保存夜签前，请阅读并同意隐私保护指引。相册权限只用于保存你主动选择的夜签图片。</text>
+        <button class="text-button" bindtap="onPrivacyGuide">查看隐私保护指引</button>
+        <button class="primary-button" id="agree-save" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="onPrivacyAgree">同意并继续保存</button>
+        <button class="text-button" bindtap="onPrivacyCancel">暂不保存</button>
+      </view>
+      <text class="export-notice" wx:if="{{notice}}" aria-role="alert">{{notice}}</text>
+      <button wx:if="{{saveDenied}}" class="text-button" bindtap="onSettings">打开权限设置</button>
+    </view>
+  </block>
+  <block wx:if="{{error}}"><text class="page-intro" aria-role="alert">{{error}}</text><button class="text-button" bindtap="onRetry">重新读取</button></block>
+  <canvas type="2d" id="night-card" class="export-canvas" aria-hidden="true"></canvas>
+</view>

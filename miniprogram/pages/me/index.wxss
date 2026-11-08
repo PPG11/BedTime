@@ -1,0 +1,13 @@
+.settings-card { margin-top: 28px; border-top: 1px solid #342d3d; border-bottom: 1px solid #342d3d; }
+.setting-row { display: flex; align-items: center; gap: 16px; padding: 22px 0; }
+.setting-row + .setting-row { border-top: 1px solid #342d3d; }
+.setting-copy { flex: 1; min-width: 0; }
+.row-title, .row-description { display: block; }
+.row-title { font-size: 17px; line-height: 1.6; }
+.row-description { margin-top: 6px; font-size: 13px; color: #b4a8b6; line-height: 1.8; }
+switch { flex-shrink: 0; }
+.footnote { display: block; color: #a99dad; font-size: 12px; line-height: 1.9; margin-top: 18px; }
+button.row-button:not([size='mini']) { display: flex; align-items: center; justify-content: space-between; width: 100%; margin: 0; padding: 20px 0; background: transparent; color: #e8e2d6; text-align: left; font-size: 16px; font-weight: normal; line-height: 1.7; }
+.row-button + .row-button { border-top: 1px solid #342d3d; }
+.chevron { color: #b4a8b6; }
+.quiet-signoff { display: block; margin-top: 60px; text-align: center; color: #a99dad; font-size: 12px; line-height: 1.8; }

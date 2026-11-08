@@ -77,22 +77,58 @@ export function verifyPackage(directory) {
   }
 }
 
+function acquireBuildLock() {
+  const lock = path.join(root, '.native-build.lock')
+  const deadline = Date.now() + 30_000
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  for (;;) {
+    let descriptor
+    try { descriptor = fs.openSync(lock, 'wx') } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      // Do not race two stale-lock reclaimers against a newly acquired lock.
+      // A crashed owner requires explicit cleanup after checking that no build
+      // is running; ordinary watch shutdown releases the lock normally.
+      let owner = 0
+      try { owner = Number(fs.readFileSync(lock, 'utf8')) } catch { /* Owner may be releasing. */ }
+      if (Number.isSafeInteger(owner) && owner > 0) {
+        let gone = false
+        try { process.kill(owner, 0) } catch (probe) { gone = probe.code === 'ESRCH' }
+        if (gone) throw new Error('发现异常中断的构建锁；确认没有构建进程后移除 .native-build.lock 再重试。')
+      }
+      if (Date.now() >= deadline) throw new Error('另一个构建仍在进行，请稍后重试；不要同时启动多份开发监听。')
+      Atomics.wait(pause, 0, 0, 50)
+      continue
+    }
+    try { fs.writeFileSync(descriptor, String(process.pid)) } catch (error) {
+      fs.closeSync(descriptor); fs.rmSync(lock, { force: true }); throw error
+    }
+    fs.closeSync(descriptor)
+    return () => fs.rmSync(lock, { force: true })
+  }
+}
+
 export function build({ release = false } = {}) {
   // Resolve first so a missing environment cannot replace a working package.
   const runtime = resolveCloudEnvironment(root, { requireCloud: release })
+  const releaseLock = acquireBuildLock()
   const staging = path.join(root, '.native-build')
-  fs.rmSync(staging, { recursive: true, force: true })
-  fs.mkdirSync(staging, { recursive: true })
-  compileSources(staging)
-  copyAssets(source, staging)
-  const runtimePath = path.join(staging, 'config', 'runtime.js')
-  fs.writeFileSync(runtimePath, `'use strict';\nexports.runtime = ${JSON.stringify(runtime)};\n`)
-  fs.rmSync(`${runtimePath}.map`, { force: true })
-  verifyPackage(staging)
-  // Replace only generated output, after the complete package passes validation.
-  fs.rmSync(output, { recursive: true, force: true })
-  fs.renameSync(staging, output)
-  console.info(`原生小程序已构建到 dist/（云环境：${runtime.cloudEnabled ? runtime.cloudEnvId : '未启用'}）`)
+  try {
+    fs.rmSync(staging, { recursive: true, force: true })
+    fs.mkdirSync(staging, { recursive: true })
+    compileSources(staging)
+    copyAssets(source, staging)
+    const runtimePath = path.join(staging, 'config', 'runtime.js')
+    fs.writeFileSync(runtimePath, `'use strict';\nexports.runtime = ${JSON.stringify(runtime)};\n`)
+    fs.rmSync(`${runtimePath}.map`, { force: true })
+    verifyPackage(staging)
+    // Replace only generated output, after the complete package passes validation.
+    fs.rmSync(output, { recursive: true, force: true })
+    fs.renameSync(staging, output)
+    console.info(`原生小程序已构建到 dist/（云环境：${runtime.cloudEnabled ? runtime.cloudEnvId : '未启用'}）`)
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true })
+    releaseLock()
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

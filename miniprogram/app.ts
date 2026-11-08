@@ -1,11 +1,6 @@
-import { refreshAppData } from './state/app-data'
-
 App({
-  onLaunch() {
-    void refreshAppData()
-  },
-  onShow() {
-    // Refresh after returning from the background, including a midnight rollover.
-    void refreshAppData()
-  }
+  // Pages refresh the authenticated night store on show. Never initialize the
+  // legacy store here, or turn an app lifecycle event into a closeLight request.
+  onLaunch() {},
+  onShow() {}
 })

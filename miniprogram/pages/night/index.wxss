@@ -1,0 +1,59 @@
+/* The fixed containing block is the native page viewport, above the TabBar.
+   The native TabBar already owns the bottom safe area: do not add it twice. */
+.night-page { position: fixed; inset: 0; width: 100%; max-width: 560px; margin: 0 auto; padding: 76px 24px 12px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+.masthead { flex-shrink: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.brand { font-size: 20px; line-height: 1.4; letter-spacing: 3px; font-weight: 500; }
+.tagline { font-size: 12px; color: #b4a8b6; letter-spacing: 1px; }
+.demo-pill { flex-shrink: 0; font-size: 11px; color: #b4a8b6; margin-top: 8px; line-height: 1.6; letter-spacing: 1px; }
+.scene-space { flex: 1 1 0; min-height: 80px; max-height: 460px; margin: auto 0; }
+.night-copy { flex-shrink: 0; text-align: center; margin: 0 0 12px; position: relative; }
+.state-text { display: block; font-size: 23px; line-height: 1.5; letter-spacing: 2px; }
+.subtext { display: block; color: #b4a8b6; font-size: 13px; margin-top: 6px; line-height: 1.7; }
+.subtext.notice { color: #e6cba8; font-size: 14px; }
+.bottom-controls { flex-shrink: 0; width: 100%; }
+.actions { flex-shrink: 0; width: 100%; max-width: 344px; margin: 0 auto; }
+.actions button.text-button:not([size='mini']) { min-height: 44px; padding: 8px 18px; line-height: 1.6; }
+.night-footer { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 6px; }
+.night-footer button.footer-button:not([size='mini']) { min-width: 0; width: 100%; font-size: 12px; padding: 8px 0; min-height: 44px; }
+.footer-note { display: block; font-size: 12px; line-height: 1.7; padding: 6px 0; color: #b4a8b6; text-align: center; }
+.receipt-region { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 16px 0; }
+.receipt-date, .receipt-time, .receipt-stale { display: block; font-size: 12px; line-height: 1.7; color: #b4a8b6; text-align: center; }
+.receipt-phrase { display: block; font-size: 22px; line-height: 1.7; white-space: pre-wrap; }
+.receipt-stale, .receipt-feedback { color: #e6cba8; }
+.receipt-feedback { display: block; font-size: 13px; line-height: 1.6; text-align: center; }
+.with-unknown .night-copy { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+@media (max-width: 350px) { .night-page { padding-left: 20px; padding-right: 20px; } .tagline { letter-spacing: 0; } }
+/* Reserve the controls and readable feedback first; the illustration and
+   optional guidance yield space on short screens and large-text fixtures. */
+@media (max-height: 650px) {
+  .night-page { padding-bottom: 8px; }
+  .demo-pill { margin-top: 4px; }
+  .night-copy { margin-bottom: 8px; }
+  .subtext { margin-top: 4px; }
+  .night-footer { margin-top: 0; }
+  .receipt-region { gap: 8px; padding: 12px 0; }
+  .with-receipt .state-text { font-size: 18px; }
+}
+@media (max-height: 560px) { .preparation { display: none; } }
+/* Compact foldable outer displays retain the same main and tap actions.
+   Settings remain available from the native My tab. */
+@media (max-height: 450px) {
+  .night-page { justify-content: space-between; }
+  .masthead, .scene-space { display: none; }
+  .demo-pill { margin-top: 0; }
+  .night-copy { margin: 4px 0; }
+  .subtext.notice { margin-top: 0; }
+  .has-notice .state-text { display: none; }
+  .with-receipt .night-copy, .with-receipt .demo-pill, .receipt-date { display: none; }
+  .with-receipt .bottom-controls { display: flex; align-items: stretch; gap: 8px; }
+  .with-receipt .actions { flex: 1.4; min-width: 0; }
+  .with-receipt .night-footer { flex: 1; min-width: 0; }
+  .with-receipt .actions button.primary-button:not([size='mini']) { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
+  .receipt-region { gap: 4px; padding: 4px 0; }
+  .receipt-phrase { font-size: 19px; line-height: 1.5; }
+  .actions { display: flex; align-items: stretch; gap: 8px; }
+  .hold-main { flex: 1; min-width: 0; }
+  .actions button.primary-button:not([size='mini']), .actions button.text-button:not([size='mini']) { flex: 1; width: auto; min-width: 0; padding-left: 8px; padding-right: 8px; display: flex; align-items: center; justify-content: center; }
+}
+.receipt-links { display: flex; width: 100%; }
+.receipt-links button.text-button:not([size='mini']) { flex: 1 1 50%; width: 50%; font-size: 13px; padding-left: 0; padding-right: 0; }

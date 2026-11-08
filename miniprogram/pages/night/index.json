@@ -1,0 +1,9 @@
+{
+  "navigationStyle": "custom",
+  "disableScroll": true,
+  "usingComponents": {
+    "window-scene": "/components/window-scene/index",
+    "hold-button": "/components/hold-button/index",
+    "night-mask": "/components/night-mask/index"
+  }
+}

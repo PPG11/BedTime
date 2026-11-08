@@ -1,0 +1,6 @@
+:host { display: block; }
+.hold-target { box-sizing: border-box; min-height: 48px; min-width: 48px; }
+.hold-target--button { display: flex; align-items: center; justify-content: center; padding: 14px 24px; border: 1px solid #8c704a; border-radius: 16px; color: #f0cd96; font-size: 17px; line-height: 1.6; letter-spacing: 2px; background: #211c24; transition: background 200ms; }
+.hold-target--button.is-held { background: #3a2d25; }
+.hold-target--window { width: 64px; height: 76px; display: flex; align-items: center; justify-content: center; }
+.is-disabled { opacity: 0.5; }

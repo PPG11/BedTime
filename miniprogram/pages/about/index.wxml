@@ -1,0 +1,17 @@
+<view class="standard-page about-page">
+  <text class="eyebrow">今晚关灯</text><text class="page-title">今天先到这里。</text>
+  <text class="paragraph">给舍不得结束今天的人，一个轻轻关灯的动作。</text>
+  <text class="paragraph">真实关灯开放时间为每晚 20:00—次日 06:00（北京时间）。一晚最多留下一条记录，跨过午夜仍属于同一晚。</text>
+  <text class="paragraph">关灯记录保存动作时间与当夜句子，只供本人查看。声音默认关闭，由你主动开启。演示不会留下关灯记录，也不会震动。</text>
+  <text class="paragraph">记录表达的是结束今天的决定，不代表已经入睡。画面中的楼是插画，窗光不代表其他用户。</text>
+  <text class="paragraph">暗屏只改变小程序可以控制的页面区域，不调整系统亮度、不锁屏。你可以用微信右上角随时离开。</text>
+  <text class="section-label">记录与隐私</text>
+  <text class="paragraph">我们使用微信提供的身份标识区分你的记录，不读取昵称、头像、通讯录或位置。偏好、关灯时间和当夜原句默认长期保存在微信云开发中，仅供本人查看。</text>
+  <text class="paragraph">为排查使用问题，收集少量页面和图片生成、保存结果；这些记录不含原句或个人秒级动作时间。原始事件仅分析最近 30 天，每周清理，最长保留 37 天。</text>
+  <text class="paragraph">夜签图片在本地生成。只有主动点击保存时才申请相册权限；拒绝授权不会影响关灯或查看记录。图片不包含身份标识和个人关灯时间。</text>
+  <text class="section-label">反馈与删除数据</text>
+  <text class="paragraph">如需反馈或删除个人数据，请发邮件联系。我们会先核对申请人身份，并请你暂时停止使用，待在途操作结束后删除用户资料、私人夜签和使用事件，再次检查处理结果。公共夜句不受影响。之后重新使用会重新建档，已删除历史不会恢复。</text>
+  <text class="contact" selectable>{{contact}}</text>
+  <button class="text-button" bindtap="onCopyContact">{{copied ? '邮箱已复制' : '复制联系邮箱'}}</button>
+  <text class="version">今晚关灯 · 1.1</text>
+</view>

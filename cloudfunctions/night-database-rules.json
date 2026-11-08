@@ -1,0 +1,6 @@
+{
+  "n_users": { "read": false, "write": false },
+  "n_nights": { "read": false, "write": false },
+  "n_phrases": { "read": false, "write": false },
+  "n_events": { "read": false, "write": false }
+}

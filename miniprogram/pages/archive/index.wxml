@@ -1,0 +1,14 @@
+<view class="standard-page archive-page">
+  <text class="eyebrow">我的夜签</text><text class="page-title">那些已经收好的夜晚。</text>
+  <text class="page-intro">这里的记录，只有你能看到。</text>
+  <view class="archive-list" wx:if="{{rows.length}}">
+    <button class="archive-row" wx:for="{{rows}}" wx:key="nightId" data-night="{{item.nightId}}" bindtap="onOpen">
+      <text class="archive-date">{{item.label}}</text><text class="archive-phrase">{{item.phraseText}}</text><text class="arrow">›</text>
+    </button>
+  </view>
+  <view class="empty-state" wx:elif="{{!loading && !error}}"><text>这里会留下你关过灯的夜晚。</text><text class="page-intro">准备结束今天时，来关一次灯。</text><button class="text-button" bindtap="onTonight">回到今晚</button></view>
+  <text class="list-status" wx:if="{{loading}}">正在读取…</text>
+  <text class="list-status" wx:if="{{error}}" aria-role="alert">{{error}}</text>
+  <button wx:if="{{error && !loading}}" class="text-button" bindtap="onRetry">重新读取</button>
+  <button wx:elif="{{hasMore && !loading}}" class="text-button" bindtap="onMore">更早的夜晚</button>
+</view>

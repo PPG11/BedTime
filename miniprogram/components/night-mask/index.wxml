@@ -1,0 +1,11 @@
+<view class="immersive" style="padding-top: {{top}}px;">
+  <view class="black" style="opacity: {{opacity}};"></view>
+  <text class="demo-label" wx:if="{{demo}}">演示 · 不会留下记录</text>
+  <view class="phrase-region"><text class="phrase" style="opacity: {{phraseOpacity}};" aria-hidden="{{phraseOpacity === 0}}">{{phrase}}</text></view>
+  <view class="exits" wx:if="{{done}}">
+    <text wx:if="{{notice}}" class="exit-notice" aria-role="alert">{{notice}}</text>
+    <button class="end-button" bindtap="onEnd">{{demo ? '结束演示' : '放下手机'}}</button>
+    <button class="return-button" bindtap="onReturn">返回今晚</button>
+  </view>
+  <view class="early-exit" wx:else><button class="return-button" bindtap="onReturn">{{demo ? '结束演示' : '返回今晚'}}</button></view>
+</view>

@@ -1,0 +1,8 @@
+.detail-page { padding-top: 42px; }
+.detail-phrase { display: block; margin-top: 48px; font-size: 25px; line-height: 1.9; }
+.detail-time { display: block; margin-top: 24px; font-size: 13px; color: #b4a8b6; line-height: 1.9; }
+.export-region { margin-top: 48px; }
+.card-preview { display: block; width: 100%; margin-bottom: 24px; border: 1px solid #342d3d; border-radius: 8px; }
+.export-note, .export-notice { display: block; margin-top: 16px; color: #b4a8b6; font-size: 13px; line-height: 1.9; }
+.export-canvas { position: fixed; left: -2000px; top: 0; width: 360px; height: 480px; pointer-events: none; }
+.privacy-card { margin-top: 20px; padding: 16px; border: 1px solid #51445d; border-radius: 12px; }

@@ -1,0 +1,21 @@
+<view class="standard-page">
+  <text class="eyebrow">今天先到这里</text><text class="page-title">留一点安静给自己。</text>
+  <text class="page-intro">关灯的声音、轻震和动效，可以按自己的习惯调整。</text>
+  <view class="settings-card">
+    <view class="setting-row"><view class="setting-copy"><text class="row-title">关灯声</text><text class="row-description">默认关闭，开启后遵循系统静音。</text></view><switch color="#b8945f" checked="{{sound}}" disabled="{{!canEdit}}" bindchange="onSoundChange" aria-label="关灯声" /></view>
+    <view class="setting-row"><view class="setting-copy"><text class="row-title">轻震反馈</text><text class="row-description">真实关灯成功时轻震一次，演示不震动。</text></view><switch color="#b8945f" checked="{{haptics}}" disabled="{{!canEdit}}" bindchange="onHapticsChange" aria-label="轻震反馈" /></view>
+    <view class="setting-row"><view class="setting-copy"><text class="row-title">减少动效</text><text class="row-description">直接进入黑色，停留 800ms 后出句。</text></view><switch color="#b8945f" checked="{{reduceMotion}}" disabled="{{!canEdit}}" bindchange="onMotionChange" aria-label="减少动效" /></view>
+  </view>
+  <text class="footnote" wx:if="{{delayed}}" aria-role="alert">设置尚未确认，你可以先离开。收到结果后会继续保存最后一次选择。</text>
+  <text class="footnote" wx:elif="{{saving}}">正在保存设置…</text>
+  <text class="footnote" wx:elif="{{loading}}">正在读取设置…</text>
+  <text class="footnote" wx:if="{{notice}}" aria-role="alert">{{notice}}</text>
+  <button wx:if="{{notice && !loading}}" class="text-button" bindtap="onRetry">重新读取设置</button>
+  <view class="settings-card link-list">
+    <button class="row-button" bindtap="onArchive"><text>我的夜签</text><text class="chevron">›</text></button>
+    <button class="row-button" bindtap="onAddToMine"><text>添加到我的小程序</text><text class="chevron">›</text></button>
+    <button class="row-button" bindtap="onOpenNight"><text>回到今晚</text><text class="chevron">›</text></button>
+    <button class="row-button" bindtap="onOpenAbout"><text>关于今晚关灯</text><text class="chevron">›</text></button>
+  </view>
+  <text class="quiet-signoff">一扇窗。一个结束今天的动作。</text>
+</view>

@@ -1,39 +1,36 @@
 {
   "pages": [
-    "pages/home/index",
-    "pages/friends/index",
-    "pages/profile/index"
+    "pages/night/index",
+    "pages/me/index",
+    "pages/about/index",
+    "pages/archive/index",
+    "pages/receipt/index"
   ],
   "lazyCodeLoading": "requiredComponents",
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#fff",
-    "navigationBarTitleText": "早睡助手",
-    "navigationBarTextStyle": "black"
+    "navigationBarBackgroundColor": "#140F1E",
+    "navigationBarTitleText": "今晚关灯",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#140F1E"
   },
   "tabBar": {
-    "color": "#8a8caf",
-    "selectedColor": "#6f63ff",
-    "backgroundColor": "#ffffff",
-    "borderStyle": "white",
+    "color": "#B4A8B6",
+    "selectedColor": "#F0CD96",
+    "backgroundColor": "#140F1E",
+    "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/home/index",
-        "text": "打卡",
-        "iconPath": "assets/images/home.png",
-        "selectedIconPath": "assets/images/home-active.png"
+        "pagePath": "pages/night/index",
+        "text": "今晚",
+        "iconPath": "assets/night/tab-night.png",
+        "selectedIconPath": "assets/night/tab-night-active.png"
       },
       {
-        "pagePath": "pages/friends/index",
-        "text": "好友",
-        "iconPath": "assets/images/friends.png",
-        "selectedIconPath": "assets/images/friends-active.png"
-      },
-      {
-        "pagePath": "pages/profile/index",
+        "pagePath": "pages/me/index",
         "text": "我的",
-        "iconPath": "assets/images/profile.png",
-        "selectedIconPath": "assets/images/profile-active.png"
+        "iconPath": "assets/night/tab-me.png",
+        "selectedIconPath": "assets/night/tab-me-active.png"
       }
     ]
   },

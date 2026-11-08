@@ -1,53 +1,55 @@
-# 原生小程序架构
+# 今晚关灯架构
 
-前端采用微信原生 `App`、`Page`、WXML、WXSS，逻辑使用 TypeScript。CloudBase 云函数继续运行 Node.js / CommonJS。两端共享业务契约，通过微信云函数调用衔接，不引入新的后端框架。
-
-## 目录与依赖方向
+当前是原生微信 M1：今晚 / 我的两个 Tab，归档、回执详情和关于三个普通页面。唯一业务云函数为 `bedtimeNight`。实现和实际验收的区别见 [交付记录](refactor-m1-delivery.md)。
 
 ```text
-miniprogram/
-  app.ts / app.json / app.wxss     应用生命周期、路由、全局样式
-  pages/home/                     打卡、统计和晚安心语
-  pages/friends/                  好友、申请、备注和邀请
-  pages/profile/                  昵称、目标时间和 UID
-  state/app-data.ts               绑定真实服务，导出共享状态实例
-  state/create-app-store.ts       用户、作息、打卡状态与订阅实现
-  services/cloud.ts              微信云初始化与统一调用
-  services/                      各业务请求与响应转换
-  utils/                         日期、统计、缓存、存储和分享
-  types/                         业务类型
-  config/                        云环境配置
-  assets/                        图标等静态资源
-cloudfunctions/
-  <函数名>/index.js               可独立部署的云函数入口
-  common/                        服务端共享规则与数据工具
-scripts/                         构建及验证脚本
+hold-button → HoldGesture → NightController → Ceremony / Navigation / Sound
+                                   ↓
+                              NightStore → nightApi → bedtimeNight
+                                   ↓                       ↓
+                     身份隔离的恢复标记          n_users / n_nights / n_phrases
+
+NightEvents → 内存有界队列 → track → n_events
+Receipt → Canvas 2D → 本地预览 → 主动授权保存相册
+管理员 → 私有导出 → 只读报告 / 维护预演 → 明确范围执行 → 回读验证
 ```
 
-调用方向为 **页面 → 共享状态 / 服务 → 云连接 → 云函数 → 数据库**。纯工具模块不调用页面；云函数不依赖前端产物。页面内专用的交互或视图计算放在对应页面目录，需要跨页复用时再提取模块，避免先建一套通用框架。
+## 模块边界
 
-## 页面、状态与生命周期
+| 模块 | 职责 |
+| --- | --- |
+| `pages/night/night-controller.ts` | 手势后的交互、未知结果核对、前后台恢复、播放许可；演示独立分支 |
+| `pages/night/night-view-model.ts` | 业务快照映射为 WXML 展示字段 |
+| `pages/night/ceremony.ts` | 本机播放时钟；不拿服务端写入时间推算动画进度 |
+| `state/create-night-store.ts` | 鉴权快照、单次显示并发合并、内存记录、原夜恢复、串行偏好 |
+| `state/night-store.ts` | 真实服务与存储绑定；持久化键为 v11 + userId |
+| `state/night-events.ts` | 内存最多 20 条；每批 10 条；一次前台重试；隐藏尽力发送一次 |
+| `services/night.ts` | 六个业务动作的请求与严格响应校验；读 / 提交 8 秒未知阈值 |
+| `utils/night-card.ts` | 1080×1440 本地 Canvas 导出；只使用已确认原句与夜晚日期 |
+| `common/nights.js` | OPENID 内部归属、用户 / 夜签 / 偏好 / 分页事务 |
+| `common/night-transaction.js` | 明确事务冲突最多 4 次外层尝试，指数退避；普通错误与未知提交不盲重发 |
+| `common/night-events.js` | 白名单、去重、每人每夜 100 条预算，全部在事务内判定 |
 
-`Page` 的 `data` 供 WXML 使用，保存字符串、数字、布尔值、普通数组和对象。`Date`、订阅回调、定时器句柄、请求标识等不直接放入视图数据。统计、日期格式化和按钮文案在 TypeScript 中计算后通过 `setData` 更新。
+## 时间与成功条件
 
-[`state/app-data.ts`](../miniprogram/state/app-data.ts) 绑定真实服务并导出共享实例，替代原来的 React Context；[`state/create-app-store.ts`](../miniprogram/state/create-app-store.ts) 实现快照、订阅、刷新与跨页更新，可注入服务做独立测试。页面通过订阅获得用户与打卡变动；云端完成的资料更新再同步到共享状态，其他 Tab 无需各自维护一份用户副本。初始化与并发刷新合并，避免页面同时出现时重复读取。
+北京时间 20:00—次日 06:00，左闭右开；正午切换 nightId。关灯的非事务读只有“读到记录”能短路；读空必须在事务中再次检查原记录，只有确需新建才判断夜晚与窗口。每次重试重新取服务端时间。发布句、私人记录和首末夜摘要一起提交。
 
-页面显示时恢复需要的状态与时钟，隐藏时停止页面定时器，卸载时释放订阅。异步返回需确认仍属于当前页面、用户与打卡周期。WXML 事件通过 `bindtap`、`bindinput`、`bindchange` 等调用页面方法，事件参数从 `detail` 或 `currentTarget.dataset` 取值。
+SDK 会注入 `userInfo` 和 `tcbContext`，只把它们作为保留的传输字段接受，不用于身份。身份只来自 `getWXContext().OPENID`。四个集合的客户端权限均为 false / false。云端并发冲突可能被 SDK 包装成 -501001；只匹配明确的冲突标识重试，不能把所有资源错误当成冲突。
 
-## 云服务边界
+只有本次新建且仍属于前台原交互，才播放成功声音 / 震动和仪式。已有记录、超时核对、后台返回不补播。提交超过 8 秒不能认定失败；查询原 nightId，查到原记录才解除未知。已有原夜记录在关窗或跨夜后仍返回原时间、方式和句子。
 
-[`services/cloud.ts`](../miniprogram/services/cloud.ts) 初始化微信云并统一处理调用错误。业务请求通过用户、打卡、心语和好友四个领域函数处理。服务端基于微信身份鉴权，校验输入和所属关系，再调用数据库。页面及服务层仅接触业务响应。
+## 生命周期与隐私
 
-## 日期与持久化
+Page data 仅包含可序列化视图。隐藏时停止手势、定时器和声音，恢复原生 Tab；卸载取消订阅。身份、可见上下文、请求与写入代际阻止旧响应覆盖新状态。冷启动在线鉴权前不展示私人缓存；不持久保存完整历史。
 
-打卡采用周期日期，而非直接取设备当前日历日期。服务端从 [周期规则](../cloudfunctions/common/time.js) 决定实际周期和状态，前端从 [`utils/checkin.ts`](../miniprogram/utils/checkin.ts) 的 `resolveCheckInCycle` 取得周期、目标时间与窗口。默认开放时间为目标前 12 小时、关闭时间为目标后 6 小时，使用包含开始、不含结束的区间。
+归档只列实际记录，默认每页 30 条，以最后一条 nightId 作游标。详情重新鉴权后读取本人记录。预览图片只在同一用户、同一夜晚的页面内存中保留；保存前检查微信隐私授权，再由用户主动授权相册。拒绝或取消不影响记录与预览。
 
-例如目标 22:30 时，次日 01:00 和 04:29 仍属于前一晚，04:30 起窗口关闭并切换下一周期。目标 00:30 时，前一晚 23:30 属于次日的目标周期。首页按钮、状态恢复、统计和心语关联应使用同一周期；请求及返回值见[云函数契约](../cloudfunctions/README.md)。
+演示不提交、不上报、不震动。观测只含固定枚举 / 布尔属性和接收日，不带原句、昵称、分享对象或客户端精确动作时间。真实记录才是人数与回访的统计来源。
 
-用户资料与打卡由云端持久化，本地好友备注使用微信存储。保留既有存储键，避免框架迁移丢失本地备注。客户端缓存不能替代云端幂等与权限检查。
+## 构建与停用
 
-## 构建与发布边界
+`scripts/build.mjs` 编译 TypeScript 并复制资源到 `dist/`；构建锁避免监听和手动构建互相删除产物。构建和云部署共用 `scripts/cloud-env.cjs`。本地测试、模板编译、模拟器、实际云端与真机验收分别记录。
 
-[`scripts/build.mjs`](../scripts/build.mjs) 编译 TypeScript 并复制原生资源到 `dist/`。微信开发者工具读取 `dist/`，源码目录保持为 `miniprogram/`。前端零运行时 npm 依赖，微信官方类型声明只用于开发期校验。
+旧前端、旧领域服务和旧业务规则已移除。`bedtimeUser / bedtimeCheckin / bedtimeFriends / bedtimeGoodnight` 保留最小停用入口，不引入 SDK 或数据库访问。旧数据库不迁移，不在本轮删除。
 
-云环境在构建时解析，前端和部署使用同一 `CLOUD_ENV_ID` 约定。配置与部署细节见[云环境与部署](cloud-deployment.md)。微信自带的 `wcc` / `wcsc` 可以独立检查 WXML / WXSS 编译，但不执行页面生命周期、微信 API 或云调用。测试、构建、模板编译、模拟器运行、真机联调和发布需分别记录结果。
+2026-11-08 评审修复：关窗后成功查空按服务端时间解除恢复标记，迟到记录仍从正常回执 / 归档恢复。偏好超过 8 秒只改变等待提示，不释放写队列；保存失败后立即触发的回读保留说明，后续成功刷新（含重新进入页面）清除说明，不自动重试失败的修改。移除只写不读的本地偏好副本。保存取消不算权限拒绝，也不记录保存失败事件。

@@ -1,0 +1,13 @@
+{
+  "n_nights": {
+    "CreateIndexes": [
+      { "IndexName": "uid_night_desc", "MgoKeySchema": { "MgoIsUnique": false, "MgoIndexKeys": [{ "Name": "uid", "Direction": "1" }, { "Name": "nightId", "Direction": "-1" }] } },
+      { "IndexName": "night_asc", "MgoKeySchema": { "MgoIsUnique": false, "MgoIndexKeys": [{ "Name": "nightId", "Direction": "1" }] } }
+    ]
+  },
+  "n_events": {
+    "CreateIndexes": [
+      { "IndexName": "received_date_asc", "MgoKeySchema": { "MgoIsUnique": false, "MgoIndexKeys": [{ "Name": "receivedDateKey", "Direction": "1" }] } }
+    ]
+  }
+}
