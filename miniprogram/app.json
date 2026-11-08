@@ -4,7 +4,8 @@
     "pages/me/index",
     "pages/about/index",
     "pages/archive/index",
-    "pages/receipt/index"
+    "pages/receipt/index",
+    "pages/reminder/index"
   ],
   "lazyCodeLoading": "requiredComponents",
   "window": {

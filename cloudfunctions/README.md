@@ -2,7 +2,9 @@
 
 业务函数只有 `bedtimeNight`。请求为 `{ action, ...fields }`，成功 `{ code: 'OK', data }`，失败 `{ code, message, data? }`；成功 data 均含 `serverNow`。运行配置与已部署证据见 [云部署](../docs/cloud-deployment.md)。
 
-## 六个动作
+## M1 核心动作与提醒增量
+
+以下六个为 M1 核心动作。后续一次性提醒新增 getReminder / scheduleReminder / cancelReminder，详见[提醒契约](../docs/reminder-development.md#接口与存储)。getState 另返回 reminderAvailable；原有动作的语义保持不变。
 
 | action | 参数 | 返回字段（另含 serverNow） |
 | --- | --- | --- |
@@ -21,7 +23,7 @@
 
 | 集合 | 文档 ID | 用途 |
 | --- | --- | --- |
-| n_users | OPENID | 偏好、首末夜、当夜事件预算 |
+| n_users | OPENID | 偏好、首末夜、当夜事件预算、最近一次提醒与最近尝试发送夜晚 |
 | n_nights | uid_nightId | 不可变的个人单夜记录与句子快照 |
 | n_phrases | nightId | 首次提交冻结的公共当夜稿 |
 | n_events | uid_eventId | 接收夜 / 北京日历日和固定枚举属性 |
@@ -33,6 +35,8 @@
 客户端对四个集合均不可直读 / 直写，见 [规则文件](night-database-rules.json)；规则须在云控制台应用，函数部署不会自动设置。索引见 [索引文件](night-database-indexes.json)：n_nights 的 uid ASC + nightId DESC、nightId ASC，以及 n_events 的 receivedDateKey ASC。
 
 ## 事件与维护
+
+提醒增加 n_users 的 reminder.status ASC + reminder.dueAt ASC 索引，不开放集合权限。独立函数 bedtimeReminderDispatch 只接受可信平台定时来源且无小程序身份的调用，兼容 SCF timer 与持有平台定时票据的微信 wx_trigger；权限只有 subscribeMessage.send。配置、每分钟触发器及回退见[增量部署流程](../docs/reminder-development.md#启用与回退)。不能将客户端 event.Type 或 tcbContext 当成可信触发来源。
 
 仅接收 night_view、ceremony_start、ceremony_done_view、exit_tap、receipt_view、card_export_result，具体属性白名单见 common/night-events.js。按 uid + eventId 去重，单人每夜最多 100 条新事件；超过额度整批拒绝，重复事件不消耗新额度。业务记录不依赖事件成功。
 

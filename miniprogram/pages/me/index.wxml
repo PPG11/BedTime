@@ -13,6 +13,7 @@
   <button wx:if="{{notice && !loading}}" class="text-button" bindtap="onRetry">重新读取设置</button>
   <view class="settings-card link-list">
     <button class="row-button" bindtap="onArchive"><text>我的夜签</text><text class="chevron">›</text></button>
+    <button wx:if="{{reminderAvailable}}" class="row-button" bindtap="onReminder"><text>关灯提醒</text><text class="chevron">›</text></button>
     <button class="row-button" bindtap="onAddToMine"><text>添加到我的小程序</text><text class="chevron">›</text></button>
     <button class="row-button" bindtap="onOpenNight"><text>回到今晚</text><text class="chevron">›</text></button>
     <button class="row-button" bindtap="onOpenAbout"><text>关于今晚关灯</text><text class="chevron">›</text></button>

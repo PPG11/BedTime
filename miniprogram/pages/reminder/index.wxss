@@ -1,0 +1,12 @@
+.reminder-card { margin-top: 28px; padding: 22px 20px; border: 1px solid #39303f; border-radius: 20px; background: #1c1623; }
+.label, .hint, .status, .target, .notice, .footnote { display: block; font-size: 14px; line-height: 1.9; color: #b4a8b6; }
+.label { font-size: 12px; }
+.scheduled-at { display: block; margin-top: 12px; font-size: 24px; line-height: 1.6; color: #f0cd96; }
+.status, .hint { margin-top: 16px; }
+.time-picker { display: flex; align-items: center; justify-content: space-between; min-height: 64px; margin-top: 8px; font-size: 32px; color: #f0cd96; }
+.picker-action { font-size: 14px; color: #b4a8b6; }
+.target { margin: 22px 0 16px; color: #e8e2d6; }
+.notice { margin-top: 24px; color: #e8e2d6; }
+button.cancel-button:not([size='mini']), button.reload-button:not([size='mini']), button.retry-button:not([size='mini']) { margin-top: 16px; }
+.footnote { margin-top: 30px; font-size: 12px; }
+@media (max-width: 350px) { .reminder-card { padding: 18px 16px; } .scheduled-at { font-size: 22px; } }

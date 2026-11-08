@@ -23,7 +23,7 @@ try {
   } else {
     const session = JSON.parse(fs.readFileSync(privatePath(args.session), 'utf8'))
     assert(Date.now() < session.expiresAt, '验收已过期，禁止重复使用')
-    const allowed = ['concurrency', 'seed', 'verify', 'events', 'cleanup']
+    const allowed = ['concurrency', 'seed', 'verify', 'events', 'remindersSchedule', 'remindersDispatch', 'cleanup']
     assert(allowed.includes(args.action), '验收动作无效')
     const param = { action: args.action, ...(args.batch === undefined ? {} : { batch: Number(args.batch) }), token: session.token }
     const source = `async function(name,data){const r=await wx.cloud.callFunction({name,data});return r.result;}`

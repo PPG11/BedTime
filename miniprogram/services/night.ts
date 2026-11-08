@@ -47,7 +47,8 @@ export const nightApi: NightApi = {
     const last = record(data.lastRecord)
     check(!current || current.nightId === rules.nightId)
     check((last?.nightId || null) === data.lastNightId)
-    return { ...rules, serverNow, userId: data.userId, prefs: prefs(data.prefs), record: current, lastRecord: last, firstNightId: data.firstNightId as string | null, lastNightId: data.lastNightId as string | null }
+    check(data.reminderAvailable === undefined || typeof data.reminderAvailable === 'boolean')
+    return { ...rules, serverNow, userId: data.userId, prefs: prefs(data.prefs), record: current, lastRecord: last, firstNightId: data.firstNightId as string | null, lastNightId: data.lastNightId as string | null, reminderAvailable: data.reminderAvailable === true }
   },
   async closeLight(clientNightId, method): Promise<NightCloseReply> {
     const data = object(await request('closeLight', { clientNightId, method }))
@@ -82,3 +83,4 @@ export const nightApi: NightApi = {
     return { serverNow: time(data.serverNow), acceptedIds: data.acceptedIds as string[], duplicateIds: data.duplicateIds as string[] }
   }
 }
+export { request as requestNight }

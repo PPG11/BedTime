@@ -2,6 +2,8 @@
 
 当前产品是「今晚关灯」M1，采用原生 **TypeScript + WXML + WXSS + CloudBase**。真实关灯、恢复、私有归档、夜签图片、偏好和最少观测已实现；实际验收和仍需真机确认的项目以 [M1 交付记录](docs/refactor-m1-delivery.md)为准。旧打卡、好友、心语前端与业务规则已移除，不建设兼容或迁移层。
 
+后续增量为[一次性订阅提醒](docs/reminder-development.md)：独立 reminder 页面、bedtimeNight 的三个提醒动作、bedtimeReminderDispatch 定时发送。预约留在 n_users，无新集合。仅用户主动订阅后安排一次，未知发送不重试；实际启用与验证状态见增量记录。
+
 ## 从哪里开始
 
 - [README](README.md)、[架构](docs/architecture.md)、[产品规格](docs/product-plan-tonight-lights-out-v1.1.md)。

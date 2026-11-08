@@ -3,6 +3,8 @@
 const cloud = require('wx-server-sdk')
 const crypto = require('node:crypto')
 const { createNightActions } = require('common/nights')
+const { dispatchReminders } = require('common/night-reminders')
+const reminderConfig = { ...require('common/night-reminder-config'), enabled: true }
 const config = require('./qa-config.json')
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const db = cloud.database({ throwOnNotFound: false })
@@ -22,7 +24,39 @@ exports.main = async input => {
   if (!wxUser || Date.now() > config.expiresAt || typeof input.token !== 'string' || crypto.createHash('sha256').update(input.token).digest('hex') !== config.tokenHash) return { code: 'UNAUTHORIZED' }
   try {
     let now = base
-    const actions = createNightActions({ now: () => now }), scoped = wrap(db), a = uid('a'), b = uid('b')
+    const actions = createNightActions({ now: () => now, reminderConfig }), scoped = wrap(db), a = uid('a'), b = uid('b')
+    if (input.action === 'remindersSchedule') {
+      const inputFor = (id, revision = 0) => ({ requestId: `qa_reminder_${id}_00000001`, revision, nightId: date(0), time: '22:02', templateId: reminderConfig.templateId })
+      const outcomes = await Promise.all([actions.scheduleReminder(scoped, a, inputFor('a')), actions.scheduleReminder(scoped, a, inputFor('a'))])
+      check(outcomes.every(x => x.reminder.revision === 1 && x.reminder.status === 'pending'), 'schedule idempotency')
+      check((await actions.getReminder(scoped, b)).reminder === null, 'reminder isolation')
+      await actions.setPrefs(scoped, a, { prefs: { sound: true } })
+      check((await actions.getReminder(scoped, a)).reminder.status === 'pending', 'preferences preserve reminder')
+      const scheduled = await actions.scheduleReminder(scoped, b, inputFor('b'))
+      const cancel = { requestId: scheduled.reminder.requestId, revision: scheduled.reminder.revision }
+      await actions.cancelReminder(scoped, b, cancel)
+      check((await actions.scheduleReminder(scoped, b, inputFor('b'))).reminder.status === 'cancelled', 'retry cannot resurrect')
+      return { code: 'OK', checks: ['concurrent-reservation', 'identity-isolation', 'prefs-preserve-reminder', 'cancel-retry-stays-cancelled'] }
+    }
+    if (input.action === 'remindersDispatch') {
+      now = base + 2 * 60000 + 1000
+      // Even a broken due-time filter cannot read or claim real users in this harness.
+      const isolated = { ...scoped, collection(name) {
+        const collection = scoped.collection(name)
+        return name === 'n_users' ? { doc: id => { check([a, b].includes(id), 'test identity'); return collection.doc(id) },
+          where: query => collection.where({ ...query, uid: db.command.in([a, b]) }) } : collection
+      } }
+      const messages = []
+      const send = async message => { messages.push(message); return { errCode: 0 } }
+      await Promise.all([dispatchReminders(isolated, { now: () => now, config: reminderConfig, send }), dispatchReminders(isolated, { now: () => now, config: reminderConfig, send })])
+      check(messages.length === 1 && messages[0].touser === a, 'one claimed send')
+      check(messages[0].data.time10.value === '1980-01-01 22:02' && typeof messages[0].data.thing3.value === 'string' && messages[0].page === 'pages/night/index', 'template payload')
+      check((await actions.getReminder(scoped, a)).reminder.status === 'sent', 'send status persisted')
+      check((await actions.getReminder(scoped, b)).reminder.status === 'cancelled', 'cancel skipped')
+      await dispatchReminders(isolated, { now: () => now, config: reminderConfig, send })
+      check(messages.length === 1, 'no resend')
+      return { code: 'OK', checks: ['due-query', 'concurrent-claim-once', 'template-fields', 'send-status', 'cancel-skipped', 'no-resend'], actualWechatMessages: 0 }
+    }
     if (input.action === 'concurrency') {
       await actions.getState(scoped, a)
       const outcomes = await Promise.all([actions.closeLight(scoped, a, { clientNightId: date(0), method: 'hold' }), actions.closeLight(scoped, a, { clientNightId: date(0), method: 'tap' })])

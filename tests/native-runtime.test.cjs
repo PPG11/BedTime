@@ -82,6 +82,6 @@ for (const enabled of [false, true]) test(`原生模块图与生命周期可运�
   assert.ok(enabled ? cloudCalls.length >= 3 : cloudCalls.length === 0)
   for (const call of cloudCalls) {
     assert.equal(call.name, 'bedtimeNight')
-    assert.ok(['getState', 'getArchive', 'track'].includes(call.data.action), '页面生命周期不提交关灯或接入旧业务')
+    assert.ok(['getState', 'getArchive', 'getReminder', 'track'].includes(call.data.action), '页面生命周期不提交关灯或订阅提醒')
   }
 })

@@ -1,6 +1,8 @@
 # 今晚关灯架构
 
-当前是原生微信 M1：今晚 / 我的两个 Tab，归档、回执详情和关于三个普通页面。唯一业务云函数为 `bedtimeNight`。实现和实际验收的区别见 [交付记录](refactor-m1-delivery.md)。
+M1 基线是原生微信小程序：今晚 / 我的两个 Tab，归档、回执详情和关于三个普通页面，业务动作由 `bedtimeNight` 承担。实现和实际验收的区别见 [交付记录](refactor-m1-delivery.md)。
+
+后续新增独立的「关灯提醒」普通页面及 `bedtimeNight` 的三个提醒动作；`bedtimeReminderDispatch` 仅负责定时发送。具体契约、启用状态与验收见[提醒增量](reminder-development.md)。
 
 ```text
 hold-button → HoldGesture → NightController → Ceremony / Navigation / Sound
@@ -29,6 +31,9 @@ Receipt → Canvas 2D → 本地预览 → 主动授权保存相册
 | `common/nights.js` | OPENID 内部归属、用户 / 夜签 / 偏好 / 分页事务 |
 | `common/night-transaction.js` | 明确事务冲突最多 4 次外层尝试，指数退避；普通错误与未知提交不盲重发 |
 | `common/night-events.js` | 白名单、去重、每人每夜 100 条预算，全部在事务内判定 |
+| `pages/reminder/`、`services/reminder.ts` | 主动订阅、本人预约和取消；保存未知结果回读 / 同操作重试，身份与生命周期隔离 |
+| `common/night-reminders.js` | n_users 内单条预约、版本比较、一次领取与不重发规则 |
+| `bedtimeReminderDispatch` | 平台定时来源校验，领取后调用微信，六秒未知态；消息调用不进入事务 |
 
 ## 时间与成功条件
 

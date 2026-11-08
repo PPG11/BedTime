@@ -2,12 +2,15 @@
 
 当前业务是今晚关灯 M1。作者已授权本地 / 云端部署及必要联调，后续同范围 MCP 操作无需逐项再问；正式公开发布仍由作者执行。
 
+2026-11-08 后续增加一次性订阅提醒。新增索引、发送函数、模板字段和定时触发器的配置与实际结果见[提醒开发与交付](reminder-development.md)。M1 原本不需要定时任务；本次独立增量只发送用户主动预约的提醒，不承担统计。上传代码不能替代上传并核验触发器。
+
 ## 当前部署
 
 - AppID：`wxd489f0523662b0ea`；云环境：`cloudbase-d0gcfmrvdb974536e`。
-- `bedtimeNight` 已部署，六个动作；实际回读为 Active、Nodejs16.13、15 秒超时。客户端 8 秒进入未知态，不会取消云端事务。
+- `bedtimeNight` 已部署，九个动作（M1 六项及提醒三项）；Nodejs16.13、15 秒超时。客户端 8 秒进入未知态，不会取消云端事务。
+- `bedtimeReminderDispatch` 已部署，15 秒超时，nightReminderMinute 每分钟触发已实际验证；订阅提醒启用，临时测试许可已撤销，普通消息入口为 formal。作者确认开发版真机收信、进入小程序及退出成功；正式版消息入口待发布后验证。
 - 四集合 n_users / n_nights / n_phrases / n_events 已创建。用户在控制台设置仅管理端可读写后，真实小程序身份对四集合分别直读、直写均被拒绝（8 项，-502003）；探针没有写入成功。
-- 三个自定义索引已创建并回读：n_nights.uid ASC + nightId DESC、n_nights.nightId ASC、n_events.receivedDateKey ASC。
+- 四个自定义索引已创建并回读：n_nights.uid ASC + nightId DESC、n_nights.nightId ASC、n_events.receivedDateKey ASC，以及 n_users.reminder.status ASC + reminder.dueAt ASC。
 - 四个旧领域函数已部署无依赖停用包。旧集合保留，未迁移或删除。临时 bedtimeNightAcceptance 的隔离数据已清空，函数已替换为停用包。
 - SDK 会附加 userInfo 和 tcbContext；请求校验接受这些传输字段，但身份仍只取 SDK 微信上下文。严格拒绝客户端 uid 等额外业务字段，解决了先前首页反复确认的问题。
 - 实际数据库冲突可能被包装为 -501001 / ResourceUnavailable.TransactionConflict。已增加明确冲突的有限退避重试，并通过真实双提交、偏好合并、归档与事件并发复测。

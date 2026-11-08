@@ -12,6 +12,7 @@ export type NightRules = {
 export type NightStateReply = NightRules & {
   serverNow: number; userId: string; record: NightRecord | null; lastRecord: NightRecord | null
   prefs: NightPrefs; firstNightId: string | null; lastNightId: string | null
+  reminderAvailable?: boolean
 }
 export type NightCloseReply = { serverNow: number; record: NightRecord; created: boolean; isFirstEver: boolean }
 export type NightLookupReply = { serverNow: number; record: NightRecord | null }

@@ -4,6 +4,7 @@ function createNightDatabase() {
   let data = new Map(), revision = 0
   const controls = { failWrite: 0, loseAck: false, conflictOnce: false, beforeTransaction: null, onConflict: null }
   const key = (name, id) => `${name}/${id}`
+  const fieldValue = (row, field) => field.split('.').reduce((value, key) => value?.[key], row)
   function connect(state, transactional) {
     let writes = 0
     return {
@@ -17,8 +18,8 @@ function createNightDatabase() {
           field(value) { fields = value; return this },
           async get() {
             let rows = [...state()].filter(([k]) => k.startsWith(`${name}/`)).map(([k, value]) => ({ ...structuredClone(value), _id: k.slice(name.length + 1) }))
-            rows = rows.filter(row => Object.entries(where).every(([key, value]) => typeof value === 'object' && value?.lt !== undefined ? row[key] < value.lt : row[key] === value))
-            if (sort) rows.sort((a, b) => (a[sort[0]] < b[sort[0]] ? -1 : a[sort[0]] > b[sort[0]] ? 1 : 0) * (sort[1] === 'desc' ? -1 : 1))
+            rows = rows.filter(row => Object.entries(where).every(([key, value]) => typeof value === 'object' && value?.lt !== undefined ? fieldValue(row, key) < value.lt : fieldValue(row, key) === value))
+            if (sort) rows.sort((a, b) => (fieldValue(a, sort[0]) < fieldValue(b, sort[0]) ? -1 : fieldValue(a, sort[0]) > fieldValue(b, sort[0]) ? 1 : 0) * (sort[1] === 'desc' ? -1 : 1))
             rows = rows.slice(0, limit)
             if (fields) rows = rows.map(row => Object.fromEntries(Object.keys(fields).filter(key => fields[key]).map(key => [key, row[key]])))
             return { data: rows }

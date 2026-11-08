@@ -1,4 +1,9 @@
 {
+  "n_users": {
+    "CreateIndexes": [
+      { "IndexName": "reminder_pending_due", "MgoKeySchema": { "MgoIsUnique": false, "MgoIndexKeys": [{ "Name": "reminder.status", "Direction": "1" }, { "Name": "reminder.dueAt", "Direction": "1" }] } }
+    ]
+  },
   "n_nights": {
     "CreateIndexes": [
       { "IndexName": "uid_night_desc", "MgoKeySchema": { "MgoIsUnique": false, "MgoIndexKeys": [{ "Name": "uid", "Direction": "1" }, { "Name": "nightId", "Direction": "-1" }] } },

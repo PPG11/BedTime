@@ -3,11 +3,14 @@ const { isNightId, resolveNight } = require('./night-time')
 const { phraseForNight } = require('./night-phrases')
 const { validateEvents, receiveEvents } = require('./night-events')
 const { transact } = require('./night-transaction')
+const { createReminderActions, validateReminderRequest, validateConfig } = require('./night-reminders')
+const defaultReminderConfig = require('./night-reminder-config')
 
 const DEFAULT_PREFS = { sound: false, haptics: true, reduceMotion: false }
 const FIELDS = {
   getState: [], closeLight: ['clientNightId', 'method'], getNight: ['nightId'], setPrefs: ['prefs'],
-  getArchive: ['cursor', 'limit'], track: ['events']
+  getArchive: ['cursor', 'limit'], track: ['events'], getReminder: [],
+  scheduleReminder: ['requestId', 'revision', 'nightId', 'time', 'templateId'], cancelReminder: ['requestId', 'revision']
 }
 const idFor = (uid, nightId) => `${uid}_${nightId}`
 
@@ -31,6 +34,8 @@ function validateNightRequest(event) {
     requireValue(event.limit === undefined || (Number.isInteger(event.limit) && event.limit >= 1 && event.limit <= 30), 'INVALID_ARG', '分页数量无效')
   } else if (event.action === 'track') {
     validateEvents(event.events)
+  } else if (['getReminder', 'scheduleReminder', 'cancelReminder'].includes(event.action)) {
+    validateReminderRequest(event)
   }
 }
 
@@ -56,13 +61,14 @@ function newUser(uid, now) {
   return { uid, prefs: { ...DEFAULT_PREFS }, firstNightId: null, lastNightId: null, eventBudget: { nightId: null, accepted: 0 }, createdAt: now, updatedAt: now }
 }
 
-function createNightActions({ now = () => Date.now() } = {}) {
+function createNightActions({ now = () => Date.now(), reminderConfig = defaultReminderConfig } = {}) {
   function existingResult(record, user) {
     requireValue(user && user.firstNightId, 'INTERNAL', '记录摘要暂不可用')
     return { serverNow: now(), record: project(record), created: false, isFirstEver: user.firstNightId === record.nightId }
   }
 
   return {
+    ...createReminderActions({ now, config: reminderConfig, readUser, newUser }),
     async getState(db, uid) {
       // A transaction prevents a bootstrap from resetting a concurrent close or
       // preferences update, and reads the record and summary consistently.
@@ -74,7 +80,10 @@ function createNightActions({ now = () => Date.now() } = {}) {
         const record = await readRecord(tx, uid, rules.nightId)
         const lastRecord = current.lastNightId === rules.nightId ? record : current.lastNightId ? await readRecord(tx, uid, current.lastNightId) : null
         if (!user) await tx.collection('n_users').doc(uid).set({ data: current })
-        return { serverNow, userId: uid, ...rules, record: project(record), lastRecord: project(lastRecord), prefs: current.prefs, firstNightId: current.firstNightId, lastNightId: current.lastNightId }
+        // A configuration problem in an optional reminder cannot block closing a light.
+        let reminderAvailable = false
+        try { reminderAvailable = validateConfig(reminderConfig) } catch { /* Keep the entry hidden. */ }
+        return { serverNow, userId: uid, ...rules, record: project(record), lastRecord: project(lastRecord), prefs: current.prefs, firstNightId: current.firstNightId, lastNightId: current.lastNightId, reminderAvailable }
       })
     },
 
