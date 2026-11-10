@@ -11,3 +11,5 @@ button.row-button:not([size='mini']) { display: flex; align-items: center; justi
 .row-button + .row-button { border-top: 1px solid #342d3d; }
 .chevron { color: #b4a8b6; }
 .quiet-signoff { display: block; margin-top: 60px; text-align: center; color: #a99dad; font-size: 12px; line-height: 1.8; }
+.quiet-signoff text { display: block; }
+.quiet-signoff text + text { margin-top: 6px; }

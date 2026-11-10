@@ -3,9 +3,10 @@ import { showAddToMine } from '../../utils/night-entry'
 import { contentTop, localClock, NightNavigation, NightSound } from '../../utils/night-platform'
 import { createNightView } from './night-view-model'
 import { initialNightInteraction, NightController } from './night-controller'
+import { BRAND } from '../../config/brand'
 
 const initialData = {
-  ...createNightView(nightStore.get(), initialNightInteraction()), top: 76, activeSurface: ''
+  ...createNightView(nightStore.get(), initialNightInteraction()), top: 76, activeSurface: '', brand: BRAND
 }
 type Methods = {
   controller: NightController | null

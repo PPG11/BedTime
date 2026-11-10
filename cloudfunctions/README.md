@@ -4,11 +4,11 @@
 
 ## M1 核心动作与提醒增量
 
-以下六个为 M1 核心动作。后续一次性提醒新增 getReminder / scheduleReminder / cancelReminder，详见[提醒契约](../docs/reminder-development.md#接口与存储)。getState 另返回 reminderAvailable；原有动作的语义保持不变。
+以下六个为 M1 核心动作。后续一次性提醒新增 getReminder / scheduleReminder / cancelReminder，详见[提醒契约](../docs/reminder-development.md#接口与存储)。getState 另返回 reminderAvailable：配置开放或本人已有有效预约时保留管理入口，不代表允许新建；停用 / 配置不可用时已有预约仍可查询、待发预约仍可取消，提醒响应 enabled=false。无预约且未开放时隐藏入口。原有动作的语义保持不变。
 
 | action | 参数 | 返回字段（另含 serverNow） |
 | --- | --- | --- |
-| getState | 无 | userId、nightId、phase、窗口起止 / 下次开启、本夜 / 最近记录、prefs、首末 nightId |
+| getState | 无 | userId、nightId、phase、窗口起止 / 下次开启、本夜 / 最近记录、prefs、首末 nightId、reminderAvailable |
 | closeLight | clientNightId、method: hold / tap | record、created、isFirstEver |
 | getNight | nightId | record 或 null；未来日期拒绝 |
 | getArchive | cursor?、limit?（1—30，默认 30） | items、nextCursor；按本人 nightId 倒序，多取一条判断续页 |

@@ -34,7 +34,7 @@
 | scheduleReminder | requestId、revision、nightId、time、templateId | 使用已展示的夜晚与时间，服务器重新检查配置、时间、原记录与版本 |
 | cancelReminder | requestId、revision | 只取消匹配的本人待发预约；重复取消幂等 |
 
-`getState` 增加 `reminderAvailable`；客户端仅在服务端配置可用且身份已确认时显示入口。没有模板或开关关闭时仍可查询、取消已有预约，不能创建新预约。提醒配置错误不阻断核心关灯。
+`getState` 增加 `reminderAvailable`，表示本人可以进入提醒管理页，而不是允许创建预约：配置可用或本人已有结构有效的最近预约时返回 true；身份确认后客户端据此显示入口。开关关闭、模板缺失或配置错误时，已有预约仍可查询；待发预约仍可取消，也可回看取消 / 发送等结果，响应为 enabled=false、templateId=null，不能创建新预约。无预约且配置不可用时隐藏入口。提醒配置错误不阻断核心关灯。
 
 预约放在 `n_users/{OPENID}.reminder`，每个用户只保留最近一次，字段为 requestId、revision、nightId、time、dueAt、status、templateId、createdAt、可选 attemptedAt / finishedAt。`reminderLastAttemptNightId` 在同一用户档案中单独保存，防止用新 requestId 在同夜再次发送。它不属于每日关灯统计。
 

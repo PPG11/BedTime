@@ -16,7 +16,7 @@
     <button wx:if="{{reminderAvailable}}" class="row-button" bindtap="onReminder"><text>关灯提醒</text><text class="chevron">›</text></button>
     <button class="row-button" bindtap="onAddToMine"><text>添加到我的小程序</text><text class="chevron">›</text></button>
     <button class="row-button" bindtap="onOpenNight"><text>回到今晚</text><text class="chevron">›</text></button>
-    <button class="row-button" bindtap="onOpenAbout"><text>关于今晚关灯</text><text class="chevron">›</text></button>
+    <button class="row-button" bindtap="onOpenAbout"><text>关于早睡计划</text><text class="chevron">›</text></button>
   </view>
-  <text class="quiet-signoff">一扇窗。一个结束今天的动作。</text>
+  <view class="quiet-signoff"><text>{{brand.name}}</text><text>一扇窗。一个结束今天的动作。</text></view>
 </view>

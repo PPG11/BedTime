@@ -21,7 +21,7 @@
       <text wx:if="{{target}}" class="target">这次安排：{{target}}</text>
       <button class="primary-button" disabled="{{busy || !target}}" bindtap="onSubscribe">{{busy ? '正在确认…' : '订阅这一次提醒'}}</button>
     </view>
-    <text wx:if="{{!enabled && !notice}}" class="hint">关灯提醒暂未开放。你可以照常使用今晚关灯。</text>
+    <text wx:if="{{!enabled && !notice}}" class="hint">关灯提醒暂未开放。你仍然可以照常关灯。</text>
     <text wx:if="{{notice}}" class="notice" aria-role="alert">{{notice}}</text>
     <button wx:if="{{canRetry}}" class="primary-button retry-button" disabled="{{busy}}" bindtap="onRetrySchedule">重试同一次安排</button>
     <button class="text-button reload-button" disabled="{{busy}}" bindtap="onReload">{{unknown ? '查看安排结果' : '重新读取安排'}}</button>

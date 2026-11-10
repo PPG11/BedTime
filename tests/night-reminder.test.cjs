@@ -32,6 +32,27 @@ test('提醒只在有效配置下开放，拒绝伪造身份、模板、任意�
   const broken = createNightActions({ now: f.now, reminderConfig: invalid })
   assert.equal((await broken.getState(f.db, 'bob')).reminderAvailable, false, '可选配置出错不影响核心关灯')
 })
+test('提醒停用或配置错误时本人仍能查询和取消已有预约，不开放新建或他人入口', async () => {
+  for (const unavailable of [{ enabled: false }, { ...config, templateId: '' }]) {
+    const f = fixture()
+    const saved = (await f.call('scheduleReminder', input())).reminder
+    const closed = createNightActions({ now: f.now, reminderConfig: unavailable })
+    assert.equal((await closed.getState(f.db, 'alice')).reminderAvailable, true)
+    assert.equal((await closed.getState(f.db, 'bob')).reminderAvailable, false)
+    const read = await closed.getReminder(f.db, 'alice')
+    assert.equal(read.enabled, false); assert.equal(read.templateId, null)
+    assert.deepEqual(read.reminder, saved)
+    assert.equal((await closed.getReminder(f.db, 'bob')).reminder, null)
+    await assert.rejects(closed.cancelReminder(f.db, 'bob', { requestId: saved.requestId, revision: saved.revision }), error => error.code === 'REMINDER_CHANGED')
+    const cancelled = await closed.cancelReminder(f.db, 'alice', { requestId: saved.requestId, revision: saved.revision })
+    assert.equal(cancelled.enabled, false); assert.equal(cancelled.reminder.status, 'cancelled')
+    assert.equal((await closed.getState(f.db, 'alice')).reminderAvailable, true, '停用后仍可回看取消结果')
+    await assert.rejects(closed.scheduleReminder(f.db, 'alice', input({ requestId: 'request_alice_000002', revision: cancelled.reminder.revision })))
+    assert.equal(f.db.inspect('n_users', 'alice').reminder.status, 'cancelled')
+    await f.db.collection('n_users').doc('bob').update({ data: { reminder: {} } })
+    assert.equal((await closed.getState(f.db, 'bob')).reminderAvailable, false, '无有效预约结构时不显示停用入口')
+  }
+})
 test('临时测试只对指定账号开放半小时，保留真实关灯记录，发送一次标记明确的开发版提醒', async () => {
   const testConfig = { ...config, quickTest: { userHash: createHash('sha256').update('alice').digest('hex'), until: at('2026-11-08T21:30:00') } }
   const f = fixture('2026-11-08T21:00:00', testConfig)

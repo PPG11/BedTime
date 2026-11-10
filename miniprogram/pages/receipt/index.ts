@@ -3,11 +3,12 @@ import { formatConfirmedAt, formatNight, isNightId } from '../../utils/night-tim
 import { renderNightCard } from '../../utils/night-card'
 import { restoreTabBar } from '../../utils/night-platform'
 import type { NightRecord } from '../../types/night'
+import { BRAND } from '../../config/brand'
 
 Page({
   visible: false, generation: 0, nightId: '', record: null as NightRecord | null,
   preview: null as { userId: string; nightId: string; path: string } | null,
-  data: { loading: true, error: '', phrase: '', date: '', confirmed: '', imagePath: '', rendering: false, saving: false, saveDenied: false, notice: '', privacyNeeded: false },
+  data: { loading: true, error: '', phrase: '', date: '', confirmed: '', imagePath: '', rendering: false, saving: false, saveDenied: false, notice: '', privacyNeeded: false, brand: BRAND },
   onLoad(options: Record<string, string | undefined> = {}) { this.nightId = isNightId(options.nightId) ? options.nightId : '' },
   onShow() { this.visible = true; restoreTabBar(); void this.reload() },
   onHide() { this.deactivate() },

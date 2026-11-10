@@ -3,7 +3,7 @@ const { isNightId, resolveNight } = require('./night-time')
 const { phraseForNight } = require('./night-phrases')
 const { validateEvents, receiveEvents } = require('./night-events')
 const { transact } = require('./night-transaction')
-const { createReminderActions, validateReminderRequest, validateConfig } = require('./night-reminders')
+const { createReminderActions, validateReminderRequest, validateConfig, hasStoredReminder } = require('./night-reminders')
 const defaultReminderConfig = require('./night-reminder-config')
 
 const DEFAULT_PREFS = { sound: false, haptics: true, reduceMotion: false }
@@ -80,9 +80,10 @@ function createNightActions({ now = () => Date.now(), reminderConfig = defaultRe
         const record = await readRecord(tx, uid, rules.nightId)
         const lastRecord = current.lastNightId === rules.nightId ? record : current.lastNightId ? await readRecord(tx, uid, current.lastNightId) : null
         if (!user) await tx.collection('n_users').doc(uid).set({ data: current })
+        // Keep existing reservations reachable even while new bookings are off.
         // A configuration problem in an optional reminder cannot block closing a light.
-        let reminderAvailable = false
-        try { reminderAvailable = validateConfig(reminderConfig) } catch { /* Keep the entry hidden. */ }
+        let reminderAvailable = hasStoredReminder(current.reminder)
+        try { reminderAvailable = validateConfig(reminderConfig) || reminderAvailable } catch { /* Preserve only the owner's existing reminder entry. */ }
         return { serverNow, userId: uid, ...rules, record: project(record), lastRecord: project(lastRecord), prefs: current.prefs, firstNightId: current.firstNightId, lastNightId: current.lastNightId, reminderAvailable }
       })
     },

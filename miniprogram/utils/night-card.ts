@@ -1,4 +1,5 @@
 import type { NightRecord } from '../types/night'
+import { BRAND } from '../config/brand'
 export const CARD_SIZE = { width: 1080, height: 1440 }
 const NO_START = '，。！？、；：）》】」』…—'
 const NO_END = '（《【「『'
@@ -40,6 +41,14 @@ export async function renderNightCard(canvas: WechatMiniprogram.Canvas, record: 
   lines.forEach((line, index) => ctx.fillText(line, 130, top + index * 88))
   ctx.font = '26px sans-serif'; ctx.fillStyle = '#b4a8b6'
   ctx.fillText(`${record.nightId.slice(0, 4)} 年 ${Number(record.nightId.slice(4, 6))} 月 ${Number(record.nightId.slice(6, 8))} 日的夜晚`, 130, 1240)
-  ctx.fillStyle = '#e8e2d6'; ctx.fillText('今晚关灯', 130, 1330)
+  // Branding is decorative: an unavailable mark must not block a private export.
+  let brandLeft = 130
+  try {
+    const mark = canvas.createImage()
+    await new Promise<void>((resolve, reject) => { mark.onload = () => resolve(); mark.onerror = reject; mark.src = BRAND.icon })
+    ctx.drawImage(mark, 130, 1307, 64, 64)
+    brandLeft = 212
+  } catch { /* Keep the complete wordmark when the optional image cannot load. */ }
+  ctx.fillStyle = '#e8e2d6'; ctx.fillText(BRAND.name, brandLeft, 1328)
   return new Promise<string>((resolve, reject) => wx.canvasToTempFilePath({ canvas, x: 0, y: 0, width: 1080, height: 1440, destWidth: 1080, destHeight: 1440, fileType: 'png', success: result => resolve(result.tempFilePath), fail: reject }))
 }

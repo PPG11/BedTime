@@ -1,5 +1,9 @@
 <view class="standard-page about-page">
-  <text class="eyebrow">今晚关灯</text><text class="page-title">今天先到这里。</text>
+  <view class="about-brand">
+    <image class="brand-icon" src="{{brand.icon}}" mode="aspectFit" aria-hidden="true" />
+    <view><text class="brand-owner">{{brand.owner}}</text><text class="brand-title">{{brand.title}}</text></view>
+  </view>
+  <text class="page-title">今天先到这里。</text>
   <text class="paragraph">给舍不得结束今天的人，一个轻轻关灯的动作。</text>
   <text class="paragraph">真实关灯开放时间为每晚 20:00—次日 06:00（北京时间）。一晚最多留下一条记录，跨过午夜仍属于同一晚。</text>
   <text class="paragraph">关灯记录保存动作时间与当夜句子，只供本人查看。声音默认关闭，由你主动开启。演示不会留下关灯记录，也不会震动。</text>
@@ -14,5 +18,5 @@
   <text class="paragraph">如需反馈或删除个人数据，请发邮件联系。我们会先核对申请人身份，并请你暂时停止使用，待在途操作结束后删除用户资料、私人夜签和使用事件，再次检查处理结果。公共夜句不受影响。之后重新使用会重新建档，已删除历史不会恢复。</text>
   <text class="contact" selectable>{{contact}}</text>
   <button class="text-button" bindtap="onCopyContact">{{copied ? '邮箱已复制' : '复制联系邮箱'}}</button>
-  <text class="version">今晚关灯 · 1.1</text>
+  <text class="version">{{brand.shortName}} · 1.1</text>
 </view>

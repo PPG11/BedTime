@@ -8,6 +8,7 @@ const MAX_DELAY = 5 * MINUTE
 const PAGE = 'pages/night/index'
 const REQUEST_ID = /^[A-Za-z0-9_-]{16,80}$/
 const ACTIVE = ['pending', 'sending']
+const STATUSES = [...ACTIVE, 'sent', 'cancelled', 'skipped', 'expired', 'failed', 'unknown']
 const configured = require('./night-reminder-config')
 
 // A deployment-only, account-bound permit. Never accept this from client input.
@@ -26,6 +27,11 @@ function dueAtFor(nightId, time) {
 }
 function nextNight(nightId) {
   return new Date(nightDay(nightId) + DAY).toISOString().slice(0, 10).replaceAll('-', '')
+}
+function hasStoredReminder(reminder) {
+  return Boolean(reminder && typeof reminder === 'object' && !Array.isArray(reminder) &&
+    typeof reminder.requestId === 'string' && REQUEST_ID.test(reminder.requestId) && Number.isSafeInteger(reminder.revision) && reminder.revision >= 1 &&
+    isNightId(reminder.nightId) && validTime(reminder.time) && reminder.dueAt === dueAtFor(reminder.nightId, reminder.time) && STATUSES.includes(reminder.status))
 }
 function validateConfig(config) {
   if (!config.enabled) return false
@@ -59,7 +65,10 @@ function projectReminder(reminder, now) {
 function createReminderActions({ now = () => Date.now(), config = configured, readUser, newUser }) {
   const reply = (uid, user) => {
     const serverNow = now()
-    const enabled = validateConfig(config)
+    // Configuration can stop new bookings without locking an existing owner
+    // out of reading or cancelling their reservation.
+    let enabled = false
+    try { enabled = validateConfig(config) } catch { /* Existing reservations remain manageable. */ }
     return { serverNow, userId: uid, enabled, templateId: enabled ? config.templateId : null, testUntil: enabled ? quickTestUntil(uid, serverNow, config) : null,
       reminder: projectReminder(user?.reminder, serverNow), lastAttemptNightId: user?.reminderLastAttemptNightId || null }
   }
@@ -176,4 +185,4 @@ async function dispatchReminders(db, { now = () => Date.now(), config = configur
   return counts
 }
 
-module.exports = { createReminderActions, validateReminderRequest, validateConfig, dispatchReminders, validTime, dueAtFor, nextNight, projectReminder, MAX_DELAY }
+module.exports = { createReminderActions, validateReminderRequest, validateConfig, hasStoredReminder, dispatchReminders, validTime, dueAtFor, nextNight, projectReminder, MAX_DELAY }

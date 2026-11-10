@@ -6,7 +6,7 @@
     <view class="export-region">
       <button wx:if="{{!imagePath}}" class="primary-button" bindtap="onRender" disabled="{{rendering}}">{{rendering ? '正在生成夜签' : '生成夜签图片'}}</button>
       <block wx:else><image class="card-preview" src="{{imagePath}}" mode="widthFix" aria-label="夜签图片预览" /><button class="primary-button" bindtap="onSave" disabled="{{saving || saveDenied}}">{{saving ? '正在保存' : '保存到相册'}}</button></block>
-      <text class="export-note">图片只包含夜景、句子、夜晚日期和「今晚关灯」名称。</text>
+      <text class="export-note">图片只包含夜景、句子、夜晚日期，以及「{{brand.name}}」的名称与图标。</text>
       <view wx:if="{{privacyNeeded}}" class="privacy-card">
         <text class="export-note">保存夜签前，请阅读并同意隐私保护指引。相册权限只用于保存你主动选择的夜签图片。</text>
         <button class="text-button" bindtap="onPrivacyGuide">查看隐私保护指引</button>

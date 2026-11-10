@@ -2,11 +2,12 @@ import { nightStore } from '../../state/night-store'
 import { DEFAULT_NIGHT_PREFS } from '../../types/night'
 import { restoreTabBar } from '../../utils/night-platform'
 import { showAddToMine } from '../../utils/night-entry'
+import { BRAND } from '../../config/brand'
 
 Page({
   visible: false,
   unsubscribe: null as (() => void) | null,
-  data: { ...DEFAULT_NIGHT_PREFS, canEdit: false, saving: false, delayed: false, loading: true, notice: '', reminderAvailable: false },
+  data: { ...DEFAULT_NIGHT_PREFS, canEdit: false, saving: false, delayed: false, loading: true, notice: '', reminderAvailable: false, brand: BRAND },
   onShow() {
     this.visible = true; restoreTabBar()
     this.unsubscribe?.()

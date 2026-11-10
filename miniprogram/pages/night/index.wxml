@@ -1,6 +1,10 @@
 <page-meta page-style="height: 100%; overflow: hidden;"></page-meta>
 <view class="night-page {{hasReceipt ? 'with-receipt' : ''}} {{isUnknown ? 'with-unknown' : ''}} {{notice ? 'has-notice' : ''}}" style="padding-top: {{top}}px;" aria-hidden="{{immersive}}">
-  <view class="masthead"><text class="brand">今晚关灯</text><text class="tagline">今天先到这里</text></view>
+  <view class="masthead">
+    <image class="brand-icon" src="{{brand.icon}}" mode="aspectFit" aria-hidden="true" />
+    <view class="brand-copy"><text class="brand-owner">{{brand.owner}}</text><text class="brand-title">{{brand.title}}</text></view>
+    <text class="tagline">今天先到这里</text>
+  </view>
   <view class="demo-pill">{{demo ? '演示 · 不会留下记录' : '20:00—次日 06:00 · 北京时间'}}</view>
   <view class="scene-space" wx:if="{{!hasReceipt && !isUnknown}}">
     <window-scene progress="{{progress}}" extinguished="{{extinguished}}" reduce-motion="{{reduceMotion}}" pressing="{{interaction === 'pressing'}}" layout-key="{{top}}:{{stateText}}:{{notice}}:{{demo}}">

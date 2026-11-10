@@ -1,3 +1,7 @@
+.about-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+.brand-icon { flex-shrink: 0; display: block; width: 64px; height: 64px; border-radius: 18px; }
+.brand-owner { display: block; color: #b4a8b6; font-size: 13px; line-height: 1.8; }
+.brand-title { display: block; font-size: 23px; line-height: 1.6; letter-spacing: 3px; }
 .paragraph { display: block; font-size: 16px; line-height: 2; margin-top: 28px; color: #cfc5d2; }
 .version { display: block; margin-top: 48px; font-size: 12px; color: #a99dad; line-height: 1.8; }
 .section-label { display: block; font-size: 19px; margin-top: 40px; }

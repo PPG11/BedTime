@@ -1,6 +1,8 @@
-# 今晚关灯素材
+# 早睡计划的窗景与声音素材
 
-PNG 与 WAV 均由本项目 `scripts/generate-night-assets.swift` 生成：几何建筑、窗形与人形 Tab 图标、短正弦合成音。没有下载照片、外部音效或字体包，素材沿用仓库许可。
+本目录的窗景 PNG、Tab 图标与 WAV 由本项目 `scripts/generate-night-assets.swift` 生成：几何建筑、窗形与人形 Tab 图标、短正弦合成音。没有下载照片、外部音效或字体包，素材沿用仓库许可。
+
+「Dr. July 的早睡计划」的困困月亮与圆眼镜品牌图由内置图像工具生成，原图及平台图标位于仓库根目录 `assets/brand/`，小程序内使用 `miniprogram/assets/brand/july-moon.png`。品牌名称和资源路径统一由 `miniprogram/config/brand.ts` 管理；品牌图不由上述 Swift 脚本生成。使用位置与交付情况见 [July 品牌交付记录](../../../docs/july-brand-delivery.md)。
 
 | 文件 | 尺寸 / 内容 | 用途 |
 | --- | --- | --- |

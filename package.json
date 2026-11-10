@@ -2,7 +2,7 @@
   "name": "bedtime",
   "version": "2.0.0",
   "private": true,
-  "description": "今晚关灯：微信原生小程序 + TypeScript + CloudBase",
+  "description": "Dr. July 的早睡计划：微信原生小程序 + TypeScript + CloudBase",
   "packageManager": "yarn@1.22.22",
   "engines": {
     "node": "22.x"

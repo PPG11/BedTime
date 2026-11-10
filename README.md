@@ -1,6 +1,8 @@
-# BedTime · 今晚关灯
+# BedTime · Dr. July 的早睡计划
 
 微信原生 **TypeScript + WXML + WXSS + CloudBase** 小程序。给舍不得结束今天的人，一个轻轻关灯的动作。
+
+当前品牌为「Dr. July 的早睡计划」，技术项目名仍为 BedTime。困困月亮与圆眼镜用于首页、关于页和夜签落款；品牌配置位于 `miniprogram/config/brand.ts`，本轮改动、验证与后续事项见 [July 品牌交付记录](docs/july-brand-delivery.md)。历史规格中的「今晚关灯」保留为当时名称，核心关灯规则不变。
 
 M1 已实现真实单夜记录、重试恢复、私人夜签归档、详情与本地图片导出、声音 / 震动 / 动效设置、隐私与数据删除联系入口。业务云函数 `bedtimeNight` 已部署，四个新集合禁止客户端直读直写。当前交付证据与真机、发布边界见 [M1 交付记录](docs/refactor-m1-delivery.md)。
 
@@ -40,6 +42,7 @@ yarn dev:weapp
 ## 代码与文档
 
 - 页面：`miniprogram/pages/{night,me,archive,receipt,about,reminder}/`。
+- 品牌：`miniprogram/config/brand.ts`、`assets/brand/` 与 `miniprogram/assets/brand/`。
 - 交互与状态：`pages/night/night-controller.ts`、`state/create-night-store.ts`、`state/night-events.ts`。
 - 云契约：`services/night.ts` → `bedtimeNight` → `common/nights.js`；时间、句子、事件和冲突重试各有独立模块。
 - [产品规格](docs/product-plan-tonight-lights-out-v1.1.md) · [架构](docs/architecture.md) · [开发](docs/local-development.md) · [云部署](docs/cloud-deployment.md) · [接口](cloudfunctions/README.md)

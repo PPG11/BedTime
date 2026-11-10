@@ -1,8 +1,8 @@
 # BedTime 仓库指南
 
-当前产品是「今晚关灯」M1，采用原生 **TypeScript + WXML + WXSS + CloudBase**。真实关灯、恢复、私有归档、夜签图片、偏好和最少观测已实现；实际验收和仍需真机确认的项目以 [M1 交付记录](docs/refactor-m1-delivery.md)为准。旧打卡、好友、心语前端与业务规则已移除，不建设兼容或迁移层。
+当前产品是「Dr. July 的早睡计划」，技术项目名仍为 BedTime，沿用「今晚关灯」M1 的关灯规则，采用原生 **TypeScript + WXML + WXSS + CloudBase**。真实关灯、恢复、私有归档、夜签图片、偏好和最少观测已实现；实际验收和仍需真机确认的项目以 [M1 交付记录](docs/refactor-m1-delivery.md)为准，品牌改造见 [July 品牌交付记录](docs/july-brand-delivery.md)。旧打卡、好友、心语前端与业务规则已移除，不建设兼容或迁移层。
 
-后续增量为[一次性订阅提醒](docs/reminder-development.md)：独立 reminder 页面、bedtimeNight 的三个提醒动作、bedtimeReminderDispatch 定时发送。预约留在 n_users，无新集合。仅用户主动订阅后安排一次，未知发送不重试；实际启用与验证状态见增量记录。
+已完成的后续增量为[一次性订阅提醒](docs/reminder-development.md)：独立 reminder 页面、bedtimeNight 的三个提醒动作、bedtimeReminderDispatch 定时发送。预约留在 n_users，无新集合。仅用户主动订阅后安排一次，未知发送不重试；实际启用与验证状态见增量记录。
 
 ## 从哪里开始
 
@@ -14,7 +14,8 @@
 
 | 范围 | 入口 |
 | --- | --- |
-| 页面和路由 | `miniprogram/pages/{night,me,archive,receipt,about}/`、`app.json` |
+| 页面和路由 | `miniprogram/pages/{night,me,archive,receipt,about,reminder}/`、`app.json` |
+| 品牌名称和图标 | `config/brand.ts`、`assets/brand/`、`miniprogram/assets/brand/` |
 | 唯一体验参数 | `config/night-experience.ts` |
 | 手势、仪式、平台恢复 | `components/`、`utils/hold-gesture.ts`、`pages/night/{night-controller,ceremony}.ts`、`utils/night-platform.ts` |
 | 共享状态和事件队列 | `state/{create-night-store,night-store,night-events}.ts` |
@@ -29,6 +30,7 @@
 - 作者在 iPhone 体验和 Android 简测后已放行 M1，不重复请求 M0 放行。长按 800ms、暗屏 400ms、留白 800ms、出句 400ms；减少动效黑色 800ms、零过渡。常规字号、系统无衬线、正常动效，声音默认关闭、震动默认开启。原型 250ms 不是线上延迟。
 - 演示始终标注、无记录 / 事件 / 震动，结束只返回普通页；真实「放下手机」才尝试退出。恢复不续按压、不补播。
 - 首页一屏不滚动，重点覆盖主流 iPhone / Android 竖屏；保留窄屏基本可用性，不深入优化极短屏。
+- 品牌采用困困月亮与圆眼镜，完整名称分层排版；品牌元素用于首页、关于页与夜签落款，不加入沉浸留白。窗景、Tab 与声音由 Swift 脚本生成，品牌图由内置图像工具生成，原图在 `assets/brand/`，包内使用 `miniprogram/assets/brand/july-moon.png`。
 - 2026-11-08 作者明确授权本地与云端全部开发、部署、权限 / 索引设置和必要联调，后续 MCP 操作不用逐项再问。此前 read 是 ready 的误解。已确认 AppID `wxd489f0523662b0ea`、环境 `cloudbase-d0gcfmrvdb974536e`。正式公开发布由作者决定。
 
 ## 实现约定
