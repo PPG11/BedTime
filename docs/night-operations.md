@@ -38,9 +38,9 @@ yarn night:maintenance --execute --env cloudbase-d0gcfmrvdb974536e --appid wxd48
 
 1. 邮箱仅接收申请，不能凭邮件地址、昵称或自称 OPENID 判断本人。先通过已核对的微信身份 / 受信联系渠道确认申请人与目标账号一致；无法核验则不删除。
 2. 请本人先取消待发提醒，再暂停使用、关闭小程序；等待在途业务和提醒发送调用结束，确认要删除的唯一 OPENID 和环境。已进入微信的消息无法撤回。
-3. 以 `--all --uid <已核对的OPENID>` 导出该用户的 n_users、n_nights、n_events，再用 `--action delete-user --uid <同一OPENID>` 生成计划。
-4. 审阅后执行时加 `--owner-paused`。只删除本人三集合记录，公共 n_phrases 不动。
-5. 回读三集合均为空后通知申请人；重新使用会重新建档，已删除历史不恢复。本地恢复标记不含句子，不能据此补造云记录。若仍有在途写入，继续保持停用并重新核对。
+3. 以 `--all --growth --uid <已核对的OPENID>` 导出该用户的 n_users、n_nights、n_events、n_cards、n_card_keys、n_attributions，再用 `--action delete-user --uid <同一OPENID>` 生成 version 2 六集合计划。缺少任一集合时拒绝生成。
+4. 审阅后执行时加 `--owner-paused`。先删除本人公开卡及归因，再删除原三集合，公共 n_phrases 和 n_channels 不动。旧 version 1 清单仍只允许原三集合，不可手改版本扩大授权；须重新导出和预演。
+5. 回读六集合均为空后通知申请人；重新使用会重新建档，已删除历史不恢复。本地恢复标记不含句子，不能据此补造云记录。若仍有在途写入，继续保持停用并重新核对。公开卡还会核对原夜签及确认时间，删除原记录后立即拒绝访问，不因同夜再次建档复活。
 
 ## 本轮演练记录
 

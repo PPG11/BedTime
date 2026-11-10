@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { parseArgs, assert, asOf, privatePath, loadExport, writePrivate, addDays, beijingDay, isNightId } from './lib/night-admin.mjs'
 
-export function planMaintenance({ manifest, collections }, { env, action, uid, cutoff }) {
+export function planMaintenance({ manifest, collections }, { env, action, uid, cutoff, growth = false }) {
   assert(env && env === manifest.env, '环境必须与导出清单一致')
   assert(['expire-events', 'delete-user'].includes(action), '--action 必须为 expire-events 或 delete-user')
   const dateBefore = addDays(beijingDay(cutoff), -29), entries = []
-  const names = action === 'expire-events' ? ['n_events'] : ['n_nights', 'n_events', 'n_users']
+  const names = action === 'expire-events' ? ['n_events'] : ['n_cards', 'n_card_keys', 'n_attributions'].filter(() => growth).concat(['n_nights', 'n_events', 'n_users'])
   if (action === 'delete-user') assert(typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid), '必须提供经核对的单个 OPENID')
   for (const collection of names) {
     const meta = manifest.collections[collection]
@@ -23,7 +23,7 @@ export function planMaintenance({ manifest, collections }, { env, action, uid, c
       entries.push({ collection, id: row._id })
     }
   }
-  return { version: 1, env, action, ...(action === 'delete-user' ? { uid } : { dateBefore }),
+  return { version: growth && action === 'delete-user' ? 2 : 1, env, action, ...(action === 'delete-user' ? { uid } : { dateBefore }),
     asOf: new Date(cutoff).toISOString(), sourceExportedAt: manifest.exportedAt, entries, batches: [], status: 'planned' }
 }
 function unpack(result) {
@@ -49,9 +49,9 @@ export function officialTool(name, parameters) {
 }
 
 export async function executePlan(plan, { appid, tool = officialTool, save = () => {} }) {
-  assert(plan.version === 1 && typeof plan.env === 'string' && plan.env && Array.isArray(plan.entries) && Array.isArray(plan.batches), '维护清单无效')
+  assert([1, 2].includes(plan.version) && typeof plan.env === 'string' && plan.env && Array.isArray(plan.entries) && Array.isArray(plan.batches), '维护清单无效')
   assert(/^wx[a-f0-9]{16}$/.test(appid), '必须提供明确 AppID')
-  const allowed = plan.action === 'expire-events' ? ['n_events'] : plan.action === 'delete-user' ? ['n_nights', 'n_events', 'n_users'] : []
+  const allowed = plan.action === 'expire-events' ? ['n_events'] : plan.action === 'delete-user' ? (plan.version === 2 ? ['n_cards', 'n_card_keys', 'n_attributions'] : []).concat(['n_nights', 'n_events', 'n_users']) : []
   assert(allowed.length && (plan.action !== 'delete-user' || /^[A-Za-z0-9_-]{1,128}$/.test(plan.uid)) && (plan.action !== 'expire-events' || isNightId(plan.dateBefore)), '维护范围无效')
   assert(plan.entries.every(row => allowed.includes(row.collection) && typeof row.id === 'string' && row.id.length), '清单包含越界集合或文档')
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bedtime-maintenance-'))
@@ -108,8 +108,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       console.log(`维护状态：${result.status}；清单：${file}`)
       if (result.status !== 'verified-empty') process.exitCode = 2
     } else {
-      const names = args.action === 'expire-events' ? ['n_events'] : ['n_users', 'n_nights', 'n_events']
-      const plan = planMaintenance(loadExport(args.input, names), { env: args.env, action: args.action, uid: args.uid, cutoff: asOf(args['as-of']) })
+      const growth = args.action === 'delete-user'
+      const names = args.action === 'expire-events' ? ['n_events'] : ['n_users', 'n_nights', 'n_events', 'n_cards', 'n_card_keys', 'n_attributions']
+      const plan = planMaintenance(loadExport(args.input, names), { env: args.env, action: args.action, uid: args.uid, cutoff: asOf(args['as-of']), growth })
       const file = privatePath(args.out); writePrivate(file, JSON.stringify(plan, null, 2) + '\n')
       console.log(`仅预演：${plan.entries.length} 条，未删除。清单：${file}`)
     }

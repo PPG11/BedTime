@@ -5,10 +5,23 @@ function createNightDatabase() {
   const controls = { failWrite: 0, loseAck: false, conflictOnce: false, beforeTransaction: null, onConflict: null }
   const key = (name, id) => `${name}/${id}`
   const fieldValue = (row, field) => field.split('.').reduce((value, key) => value?.[key], row)
+  const comparison = (op, value) => ({ [op]: value, and(other) { return { and: [this, other] } } })
+  function matches(actual, expected) {
+    if (!expected || typeof expected !== 'object') return actual === expected
+    if (Array.isArray(expected.and)) return expected.and.every(value => matches(actual, value))
+    if (Array.isArray(expected.or)) return expected.or.some(value => matches(actual, value))
+    return Object.entries(expected).every(([op, value]) => typeof value === 'function' ||
+      (op === 'lt' ? actual < value : op === 'lte' ? actual <= value : op === 'gt' ? actual > value :
+        op === 'gte' ? actual >= value : op === 'eq' ? actual === value : op === 'in' ? value.includes(actual) : false))
+  }
+  function matchesWhere(row, query) {
+    return Object.entries(query).every(([key, value]) => key === 'and' ? value.every(part => matchesWhere(row, part)) :
+      key === 'or' ? value.some(part => matchesWhere(row, part)) : matches(fieldValue(row, key), value))
+  }
   function connect(state, transactional) {
     let writes = 0
     return {
-      command: { lt: value => ({ lt: value }) },
+      command: { ...Object.fromEntries(['lt', 'lte', 'gt', 'gte', 'eq', 'in'].map(op => [op, value => comparison(op, value)])), and: (...values) => ({ and: values.flat() }) },
       collection(name) {
         let where = {}, sort = null, limit = Infinity, fields = null
         const collection = {
@@ -16,9 +29,10 @@ function createNightDatabase() {
           orderBy(field, direction) { sort = [field, direction]; return this },
           limit(value) { limit = value; return this },
           field(value) { fields = value; return this },
+          async count() { const previous = limit; limit = Infinity; const result = await this.get(); limit = previous; return { total: result.data.length } },
           async get() {
             let rows = [...state()].filter(([k]) => k.startsWith(`${name}/`)).map(([k, value]) => ({ ...structuredClone(value), _id: k.slice(name.length + 1) }))
-            rows = rows.filter(row => Object.entries(where).every(([key, value]) => typeof value === 'object' && value?.lt !== undefined ? fieldValue(row, key) < value.lt : fieldValue(row, key) === value))
+            rows = rows.filter(row => matchesWhere(row, where))
             if (sort) rows.sort((a, b) => (fieldValue(a, sort[0]) < fieldValue(b, sort[0]) ? -1 : fieldValue(a, sort[0]) > fieldValue(b, sort[0]) ? 1 : 0) * (sort[1] === 'desc' ? -1 : 1))
             rows = rows.slice(0, limit)
             if (fields) rows = rows.map(row => Object.fromEntries(Object.keys(fields).filter(key => fields[key]).map(key => [key, row[key]])))
@@ -28,6 +42,7 @@ function createNightDatabase() {
           const k = key(name, id)
           return {
             async get() { const row = state().get(k); return { data: row ? { ...structuredClone(row), _id: id } : null } },
+            async remove() { state().delete(k); if (!transactional) revision++; return { stats: { removed: 1 } } },
             async set({ data: row }) {
               if (++writes === controls.failWrite) throw new Error('write interrupted')
               state().set(k, structuredClone(row)); if (!transactional) revision++

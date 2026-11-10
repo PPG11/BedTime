@@ -1,0 +1,12 @@
+<view class="standard-page growth-page">
+  <text class="eyebrow">管理者可见</text><text class="page-title">每一个入口，心里有数。</text>
+  <text class="page-intro">只记录首次有效来源。渠道用于比较到达和首次关灯，不包含个人身份。</text>
+  <text wx:if="{{loading}}" class="message">正在读取渠道…</text><text wx:elif="{{denied}}" class="message">这个页面仅对项目管理者开放。</text>
+  <view wx:elif="{{error}}"><text class="message" aria-role="alert">{{error}}</text><button class="primary-button" bindtap="onRetry">重新读取</button></view>
+  <block wx:else>
+    <view class="panel"><text class="section-title">新建入口</text><text class="field-label">渠道名称</text><input class="field" placeholder="例如：小红书十一月文章" value="{{label}}" maxlength="24" bindinput="onLabel" disabled="{{busy || writeUnknown}}" /><text class="field-label">固定标识</text><input class="field" placeholder="例如：rednote_nov" value="{{code}}" maxlength="32" bindinput="onCode" disabled="{{busy || writeUnknown}}" /><text class="note">小写字母、数字、短横线或下划线，2—32 位；建立后保持不变。</text><button class="primary-button" bindtap="onCreate" disabled="{{busy || writeUnknown}}">{{busy ? '正在确认' : '创建并启用'}}</button></view>
+    <text wx:if="{{notice}}" class="message" aria-role="alert">{{notice}}</text>
+    <view class="panel" wx:for="{{channels}}" wx:key="code"><text class="section-title">{{item.label}}</text><text class="note">{{item.code}} · {{item.enabled ? '已启用' : '已停用'}}</text><view class="channel-actions"><button class="text-button" data-code="{{item.code}}" bindtap="onCopy" disabled="{{!item.enabled || busy || writeUnknown}}">复制路径</button><button class="text-button" open-type="share" data-code="{{item.code}}" disabled="{{!item.enabled || busy || writeUnknown}}">分享入口</button></view><button class="text-button" data-code="{{item.code}}" bindtap="onToggle" disabled="{{busy || writeUnknown}}">{{item.enabled ? '停用此渠道' : '启用此渠道'}}</button></view>
+    <text wx:if="{{!channels.length}}" class="message">还没有渠道。可以先建立一个实际会使用的入口。</text><button wx:if="{{writeUnknown}}" class="primary-button" bindtap="onRetrySave" disabled="{{busy}}">重试同一次保存</button><button class="text-button" bindtap="onRetry">重新读取列表</button>
+  </block><button class="text-button" bindtap="onMine">回到我的</button>
+</view>

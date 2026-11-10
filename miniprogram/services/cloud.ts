@@ -1,6 +1,6 @@
 import { CLOUD_ENV_ID, CLOUD_SHOULD_ENABLE } from '../config/cloud'
 
-type CloudDomain = 'bedtimeNight'
+type CloudDomain = 'bedtimeNight' | 'bedtimeGrowth'
 type CloudResponse<T> = { code: string; message?: string; data?: T }
 let initialized = false
 

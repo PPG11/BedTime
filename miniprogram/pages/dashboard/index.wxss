@@ -1,0 +1,31 @@
+
+.growth-page { padding-top: 24px; }
+.panel, .quote-card { margin: 24px 0; padding: 22px 20px; background: #211b29; border: 1px solid #3a3042; border-radius: 20px; }
+.section-title { display: block; font-size: 17px; line-height: 1.8; }
+.message { display: block; font-size: 15px; line-height: 1.9; margin: 20px 0; color: #e8e2d6; }
+.note { display: block; font-size: 12px; line-height: 1.9; margin: 10px 0; color: #b4a8b6; }
+.big-number { display: block; font-size: 30px; line-height: 1.5; color: #f0cd96; margin-top: 18px; }
+.unit { font-size: 14px; color: #b4a8b6; }
+.picker-line { display: flex; justify-content: space-between; gap: 12px; padding: 18px 0; margin-top: 20px; border-bottom: 1px solid #3a3042; font-size: 14px; line-height: 1.8; }
+.picker-line text { color: #f0cd96; }
+.bar-row { margin-top: 20px; }
+.bar-label { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 1.8; color: #d6cbd7; }
+.bar-track { height: 8px; background: #302638; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.bar-fill { height: 8px; background: #b8945f; border-radius: 4px; }
+.quote-card { padding-top: 42px; padding-bottom: 32px; }
+.quote { display: block; font-size: 23px; line-height: 1.9; margin-bottom: 30px; word-break: break-all; }
+.signature { display: block; margin-top: 24px; color: #b4a8b6; font-size: 12px; }
+.consent { display: flex; align-items: center; gap: 12px; min-height: 48px; margin: 20px 0; font-size: 14px; line-height: 1.8; }
+.range-buttons, .channel-actions { display: flex; gap: 12px; margin-top: 20px; }
+.range-buttons button.text-button, .channel-actions button.text-button { flex: 1; width: 0; padding: 12px 6px; }
+.range-buttons .selected { border: 1px solid #8c704a; border-radius: 16px; color: #f0cd96; background: #211b29; }
+.metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+.metric-grid .panel { margin: 0; padding: 16px; }
+.metric-grid .big-number { font-size: 22px; margin-top: 0; overflow-wrap: break-word; }
+.table-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 18px 0; border-bottom: 1px solid #3a3042; font-size: 14px; line-height: 1.8; }
+.table-row .note { width: 100%; margin: 0; }
+.field-label { display: block; font-size: 13px; margin: 20px 0 8px; color: #b4a8b6; }
+.field { min-height: 48px; height: 48px; width: 100%; padding: 10px 12px; background: #140f1e; border: 1px solid #4a3c51; border-radius: 10px; font-size: 15px; color: #e8e2d6; }
+@media (max-width: 350px) { .panel, .quote-card { padding-left: 16px; padding-right: 16px; } .bar-label { font-size: 11px; } .metric-grid { gap: 8px; } }
+
+.method-row { display: flex; justify-content: space-between; gap: 16px; margin-top: 16px; font-size: 15px; line-height: 1.8; }

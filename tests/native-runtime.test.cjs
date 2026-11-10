@@ -81,7 +81,8 @@ for (const enabled of [false, true]) test(`原生模块图与生命周期可运�
   assert.equal(initializations, enabled ? 1 : 0)
   assert.ok(enabled ? cloudCalls.length >= 3 : cloudCalls.length === 0)
   for (const call of cloudCalls) {
-    assert.equal(call.name, 'bedtimeNight')
-    assert.ok(['getState', 'getArchive', 'getReminder', 'track'].includes(call.data.action), '页面生命周期不提交关灯或订阅提醒')
+    assert.ok(['bedtimeNight', 'bedtimeGrowth'].includes(call.name))
+    const safeActions = call.name === 'bedtimeNight' ? ['getState', 'getArchive', 'getReminder', 'track'] : ['captureEntry', 'getGrowthAccess', 'getLights', 'getOwnedCard', 'getPublicCard', 'getChannels', 'getDashboard']
+    assert.ok(safeActions.includes(call.data.action), '页面生命周期不提交关灯、订阅、创建公开卡或修改渠道')
   }
 })

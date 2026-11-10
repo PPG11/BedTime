@@ -1,0 +1,17 @@
+<view class="standard-page growth-page">
+  <text class="eyebrow">管理者可见</text><text class="page-title">看一看真实使用。</text>
+  <view class="range-buttons"><button class="text-button {{days === 7 ? 'selected' : ''}}" data-days="7" bindtap="onRange">近 7 夜</button><button class="text-button {{days === 30 ? 'selected' : ''}}" data-days="30" bindtap="onRange">近 30 夜</button></view>
+  <text wx:if="{{loading}}" class="message">正在汇总…</text>
+  <text wx:elif="{{denied}}" class="message">这个页面仅对项目管理者开放。</text>
+  <view wx:elif="{{error}}"><text class="message" aria-role="alert">{{error}}</text><button class="primary-button" bindtap="onRetry">重新读取</button></view>
+  <block wx:elif="{{report}}">
+    <text class="note">{{from}}—{{to}} · 按北京时间夜晚汇总。已排除 {{report.excludedAccounts}} 个测试或作者账号。</text>
+    <view class="metric-grid"><view class="panel"><text class="big-number">{{report.totals.users}}</text><text class="note">实际关灯用户</text></view><view class="panel"><text class="big-number">{{report.totals.records}}</text><text class="note">关灯记录</text></view><view class="panel"><text class="big-number">{{report.totals.activations}}</text><text class="note">首次真实关灯</text></view><view class="panel"><text class="big-number">{{retentionText}}</text><text class="note">成熟用户 3/7</text></view></view>
+    <view class="panel"><text class="section-title">关灯方式</text><view class="method-row"><text>按住关灯</text><text>{{report.totals.hold}} 次</text></view><view class="method-row"><text>轻点关灯</text><text>{{report.totals.tap}} 次</text></view><text class="note">同一次关灯只计入一种方式；次数来自真实记录。</text></view>
+    <view class="panel"><text class="section-title">每夜人数与新激活</text><text wx:if="{{!report.totals.records}}" class="message">这段时间还没有真实关灯样本。</text><view class="bar-row" wx:for="{{daily}}" wx:key="label"><view class="bar-label"><text>{{item.label}}</text><text>{{item.users}} 人 · 新增 {{item.activations}}</text></view><view class="bar-track"><view class="bar-fill" style="width: {{item.width}}%;"></view></view></view></view>
+    <view class="panel"><text class="section-title">首次关灯后的七夜</text><text class="message">成熟 {{report.retention.mature}} 人，尚在观察 {{report.retention.immature}} 人；成熟用户中 {{report.retention.reachedThree}} 人至少用了三夜。</text><text class="note">按首次关灯当周分组；未满七夜不进入比例分母。</text><view class="table-row" wx:for="{{cohorts}}" wx:key="label"><text>{{item.label}}</text><text>{{item.rate}}</text><text class="note">{{item.reachedThree}} / {{item.mature}} 成熟 · {{item.immature}} 待观察</text></view></view>
+    <view class="panel"><text class="section-title">渠道首次到达 → 关灯</text><text class="note">固定首次来源；转化率只计算已满 24 小时的到达，且首次关灯发生在到达后 24 小时内。历史未采集用户不伪造到达。</text><view class="table-row" wx:for="{{channels}}" wx:key="code"><text>{{item.label}}</text><text>{{item.rate}}</text><text class="note">到达 {{item.arrivals}} · 已成熟 {{item.matureArrivals}} · 已激活 {{item.activations}}</text></view><text wx:if="{{!channels.length}}" class="message">还没有渠道到达样本。</text></view>
+    <button class="primary-button" bindtap="onChannels">管理渠道入口</button>
+  </block>
+  <button class="text-button" bindtap="onMine">回到我的</button>
+</view>

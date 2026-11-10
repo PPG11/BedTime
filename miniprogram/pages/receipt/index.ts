@@ -32,6 +32,9 @@ Page({
     } catch { if (this.visible && generation === this.generation) this.setData({ loading: false, error: '暂时无法读取这个夜晚，请重试。' }) }
   },
   onRetry() { void this.reload() },
+  onPublicCard() {
+    if (this.visible && this.record) wx.navigateTo({ url: `/pages/public-card/index?nightId=${this.record.nightId}` })
+  },
   async onRender() {
     if (!this.visible || !this.record || this.data.rendering) return
     const generation = this.generation, userId = nightStore.get().snapshot?.userId, record = this.record

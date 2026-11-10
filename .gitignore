@@ -70,6 +70,8 @@ cloudfunctions/.deploy-cache*.json
 
 # 微信小程序相关
 project.private.config.json
+# 部署用管理员哈希副本；原件留在仓库外，此文件必须保持权限 600。
+cloudfunctions/bedtimeGrowth/private-config.json
 
 # 系统文件
 Thumbs.db

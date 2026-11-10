@@ -79,3 +79,22 @@ test('导出生成可校验清单，条数与文件摘要不符时停止；文�
   assert.throws(() => loadExport(dir, ['n_nights']), /摘要不匹配/)
   assert.throws(() => privatePath(process.cwd() + '/export'), /仓库之外/)
 })
+
+test('M2个人删除需要完整六集合清单，旧清单不能扩大到公开卡或归因', async () => {
+  const { planMaintenance, executePlan } = await maintenanceModule
+  const data = sample()
+  for (const name of ['n_events', 'n_cards', 'n_card_keys', 'n_attributions']) {
+    data.manifest.collections[name] = { complete: true, scope: 'all' }
+    data.collections[name] = name === 'n_events' ? [] : [{ _id: `${name}-alice`, uid: 'alice' }, { _id: `${name}-bob`, uid: 'bob' }]
+  }
+  const options = { env: 'test', action: 'delete-user', uid: 'alice', cutoff: at('2026-11-08T00:00:00'), growth: true }
+  const plan = planMaintenance(data, options)
+  assert.equal(plan.version, 2)
+  assert.deepEqual(new Set(plan.entries.map(row => row.collection)), new Set(['n_users', 'n_nights', 'n_cards', 'n_card_keys', 'n_attributions']))
+  assert.ok(plan.entries.every(row => !row.id.includes('bob')))
+  let calls = 0
+  await assert.rejects(executePlan({ ...plan, version: 1 }, { appid: 'wx0123456789abcdef', tool: async () => { calls++ } }), /越界/)
+  assert.equal(calls, 0)
+  delete data.manifest.collections.n_attributions
+  assert.throws(() => planMaintenance(data, options), /不完整/)
+})

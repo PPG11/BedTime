@@ -4,6 +4,8 @@ M1 基线是原生微信小程序：今晚 / 我的两个 Tab，归档、回执�
 
 后续新增独立的「关灯提醒」普通页面及 `bedtimeNight` 的三个提醒动作；`bedtimeReminderDispatch` 仅负责定时发送。具体契约、启用状态与验收见[提醒增量](reminder-development.md)。
 
+M2 使用独立 `bedtimeGrowth`：`night-public` 负责匿名灯迹和公开卡，`night-growth-analytics` 负责首访渠道与管理员聚合，`night-growth-query` 负责有上界的完整扫描。新增 `n_cards / n_card_keys / n_attributions / n_channels` 四个私有集合。管理员白名单仅存在服务端；公开卡只返回安全投影，原私人记录仍不可公开读取。范围与数据规则见 [M2 补充规格](m2-development.md)。
+
 ```text
 hold-button → HoldGesture → NightController → Ceremony / Navigation / Sound
                                    ↓
@@ -39,7 +41,7 @@ Receipt → Canvas 2D → 本地预览 → 主动授权保存相册
 
 北京时间 20:00—次日 06:00，左闭右开；正午切换 nightId。关灯的非事务读只有“读到记录”能短路；读空必须在事务中再次检查原记录，只有确需新建才判断夜晚与窗口。每次重试重新取服务端时间。发布句、私人记录和首末夜摘要一起提交。
 
-SDK 会注入 `userInfo` 和 `tcbContext`，只把它们作为保留的传输字段接受，不用于身份。身份只来自 `getWXContext().OPENID`。四个集合的客户端权限均为 false / false。云端并发冲突可能被 SDK 包装成 -501001；只匹配明确的冲突标识重试，不能把所有资源错误当成冲突。
+SDK 会注入 `userInfo` 和 `tcbContext`，只把它们作为保留的传输字段接受，不用于身份。身份只来自 `getWXContext().OPENID`。M1 原四集合与 M2 新四集合的客户端权限均为 false / false。云端并发冲突可能被 SDK 包装成 -501001；只匹配明确的冲突标识重试，不能把所有资源错误当成冲突。
 
 只有本次新建且仍属于前台原交互，才播放成功声音 / 震动和仪式。已有记录、超时核对、后台返回不补播。提交超过 8 秒不能认定失败；查询原 nightId，查到原记录才解除未知。已有原夜记录在关窗或跨夜后仍返回原时间、方式和句子。
 

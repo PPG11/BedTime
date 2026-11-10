@@ -8,12 +8,15 @@ import { assert, parseArgs, privatePath, writePrivate, isNightId } from './lib/n
 const FIELDS = {
   n_users: ['_id', 'uid', 'firstNightId', 'lastNightId'],
   n_nights: ['_id', 'uid', 'nightId', 'confirmedAt', 'method'],
-  n_events: ['_id', 'uid', 'eventId', 'name', 'props', 'receivedNightId', 'receivedDateKey']
+  n_events: ['_id', 'uid', 'eventId', 'name', 'props', 'receivedNightId', 'receivedDateKey'],
+  n_cards: ['_id', 'uid', 'nightId'],
+  n_card_keys: ['_id', 'uid', 'nightId'],
+  n_attributions: ['_id', 'uid', 'sourceCode', 'arrivedAt', 'attributionUntil', 'firstNightIdAtEntry', 'version']
 }
 // The official CLI truncates large result payloads. Keep each page well below
 // its response limit, even for the largest allowed event properties.
 const PAGE_SIZE = 25
-export async function exportNightData({ env, appid, out, uid, from, to, events = false, all = false }, tool = officialTool) {
+export async function exportNightData({ env, appid, out, uid, from, to, events = false, all = false, growth = false }, tool = officialTool) {
   assert(typeof env === 'string' && env && /^wx[a-f0-9]{16}$/.test(appid), '请明确提供环境和 AppID')
   assert(all || (isNightId(from) && isNightId(to) && from <= to), '请提供完整日期范围，或显式 --all 用于维护')
   if (uid) assert(/^[A-Za-z0-9_-]{1,128}$/.test(uid) && all, '按用户导出仅用于 --all 维护')
@@ -22,7 +25,7 @@ export async function exportNightData({ env, appid, out, uid, from, to, events =
   const manifest = { version: 1, env, appid, exportedAt: new Date().toISOString(), collections: {} }
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'bedtime-export-'))
   try {
-    for (const name of ['n_users', 'n_nights', ...(events || all ? ['n_events'] : [])]) {
+    for (const name of ['n_users', 'n_nights', ...(events || all ? ['n_events'] : []), ...(growth ? ['n_cards', 'n_card_keys', 'n_attributions'] : [])]) {
       let after = null; const rows = [], ids = new Set()
       for (;;) {
         const query = { ...(uid ? { uid } : {}), ...(name === 'n_nights' && !all ? { nightId: { $gte: from, $lte: to } } : {}), ...(after ? { _id: { $gt: after } } : {}) }
@@ -49,7 +52,7 @@ export async function exportNightData({ env, appid, out, uid, from, to, events =
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const args = parseArgs(process.argv.slice(2))
-    const manifest = await exportNightData({ ...args, events: args.events === true, all: args.all === true })
+    const manifest = await exportNightData({ ...args, events: args.events === true, all: args.all === true, growth: args.growth === true })
     console.log(`私有导出已完成：${Object.entries(manifest.collections).map(([name, meta]) => `${name} ${meta.count}`).join('；')}。不要提交这些文件。`)
   } catch (error) { console.error(error.message); process.exitCode = 1 }
 }

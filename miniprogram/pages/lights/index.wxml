@@ -1,0 +1,19 @@
+<view class="standard-page growth-page">
+  <text class="eyebrow">公共灯迹</text><text class="page-title">那些轻轻结束的夜晚。</text>
+  <text class="page-intro">这里是已经结束的夜晚。它记录关灯动作，不代表入睡，也不显示谁在什么时候关灯。</text>
+  <button class="primary-button choose-night" bindtap="onChooseNight" disabled="{{loading || !hasDates}}">选择夜晚{{night ? ' · ' : ''}}{{night}}</button>
+  <view wx:if="{{choosing}}" class="night-choices"><button wx:for="{{dates}}" wx:key="id" class="text-button" data-night="{{item.id}}" bindtap="onNightSelected" disabled="{{loading}}">{{item.displayLabel}}</button></view>
+  <text wx:if="{{loading}}" class="message">正在读取灯迹…</text>
+  <view wx:elif="{{error}}"><text class="message" aria-role="alert">{{error}}</text><button class="primary-button" bindtap="onRetry">重新读取</button></view>
+  <block wx:else>
+    <view class="panel"><text class="section-title">{{night}}</text>
+      <text wx:if="{{suppressed}}" class="message">这一晚的样本还少，暂不展示人数和时间分布。</text>
+      <block wx:else><text class="big-number">{{total}}<text class="unit"> 人留下关灯动作</text></text><text class="note">相邻时段已合并，每组至少三人。</text>
+        <view class="bar-row" wx:for="{{bars}}" wx:key="label"><view class="bar-label"><text>{{item.label}}</text><text>{{item.count}} 人</text></view><view class="bar-track"><view class="bar-fill" style="width: {{item.width}}%;"></view></view></view>
+      </block>
+    </view>
+    <view class="panel"><text class="section-title">只告诉你自己</text><text class="message">{{ownText}}</text><text class="note">本人的状态与公共统计分开显示，不代表公共灯迹已更新。</text></view>
+  </block>
+  <text class="note">每天 06:05 后查看上一晚，保留最近七个已结束夜晚。人数少时隐藏，时间分组合并。</text>
+  <button class="text-button" bindtap="onTonight">回到今晚</button>
+</view>

@@ -8,6 +8,8 @@ M1 已实现真实单夜记录、重试恢复、私人夜签归档、详情与�
 
 M1 后续增量为[一次性关灯提醒](docs/reminder-development.md)：主动选时并订阅、查询与取消，定时发送独立于关灯业务。预约保存在本人用户资料中；已启用，作者确认开发版真机收信、点击进入小程序和「放下手机」退出通过，完整验收边界见增量交付记录。
 
+[M2 功能](docs/m2-development.md)新增公共灯迹、可撤销的公开句子卡、首次来源归因与管理员运营看板。独立云函数 `bedtimeGrowth` 承担这些动作；四个新增集合继续禁止客户端直读直写。个人使用入口在「我的」和夜签详情，沉浸完成态不增加浏览入口。管理员由服务端私有白名单指定，实际验收与部署状态见 M2 记录。
+
 每晚 **20:00—次日 06:00（北京时间）** 开放，一晚一条记录。长按 800ms，标准留白 800ms；常规字号、系统无衬线、正常动效，声音默认关闭。演示始终标注、不留记录、不上报事件、不震动。首页一屏显示，以主流 iPhone / Android 竖屏为重点。
 
 旧打卡、目标时间、好友、心语及其前端代码已移除；四个旧云入口仅返回停用提示。没有兼容层、数据迁移或新旧双写。旧云集合保留，不作为新产品的数据源。正式公开发布由作者操作。
@@ -41,7 +43,7 @@ yarn dev:weapp
 
 ## 代码与文档
 
-- 页面：`miniprogram/pages/{night,me,archive,receipt,about,reminder}/`。
+- 页面：`miniprogram/pages/{night,me,archive,receipt,about,reminder,lights,public-card,dashboard,channels}/`。
 - 品牌：`miniprogram/config/brand.ts`、`assets/brand/` 与 `miniprogram/assets/brand/`。
 - 交互与状态：`pages/night/night-controller.ts`、`state/create-night-store.ts`、`state/night-events.ts`。
 - 云契约：`services/night.ts` → `bedtimeNight` → `common/nights.js`；时间、句子、事件和冲突重试各有独立模块。

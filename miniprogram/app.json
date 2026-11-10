@@ -5,7 +5,11 @@
     "pages/about/index",
     "pages/archive/index",
     "pages/receipt/index",
-    "pages/reminder/index"
+    "pages/reminder/index",
+    "pages/lights/index",
+    "pages/public-card/index",
+    "pages/dashboard/index",
+    "pages/channels/index"
   ],
   "lazyCodeLoading": "requiredComponents",
   "window": {

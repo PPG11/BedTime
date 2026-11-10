@@ -1,0 +1,17 @@
+<view class="standard-page growth-page">
+  <text class="eyebrow">{{owner ? '公开夜签' : brand.name}}</text><text class="page-title">把这一句，轻轻递出去。</text>
+  <text wx:if="{{loading}}" class="message">正在读取夜签…</text>
+  <view wx:elif="{{error}}"><text class="message" aria-role="alert">{{error}}</text><button wx:if="{{valid}}" class="primary-button" bindtap="onRetry">重新读取</button></view>
+  <block wx:else>
+    <view class="quote-card" wx:if="{{phrase && (owner || status === 'active')}}"><text class="quote">{{phrase}}</text><text class="note">{{night}}</text><text class="signature">{{brand.name}}</text></view>
+    <text wx:if="{{notice}}" class="message" aria-role="alert">{{notice}}</text>
+    <block wx:if="{{owner && status === 'none'}}">
+      <text class="message">创建后，任何拿到链接的人都能查看这句原文与夜晚日期。不会公开你的身份或个人关灯时间。链接有效 30 天，可随时撤销；撤销或到期后，这一晚不再生成新链接。</text>
+      <checkbox-group bindchange="onConfirm"><label class="consent"><checkbox value="agree" checked="{{confirmed}}" color="#b8945f"/><text>我了解公开范围和有效期</text></label></checkbox-group>
+      <button class="primary-button" bindtap="onCreate" disabled="{{!confirmed || busy}}">{{busy ? '正在确认' : '创建公开夜签'}}</button>
+    </block>
+    <block wx:if="{{status === 'active'}}"><text class="message">{{expiry}}。仅展示夜晚日期和原句。</text><button wx:if="{{!revokeUnknown}}" class="primary-button" open-type="share" disabled="{{busy}}">分享这张夜签</button><button wx:if="{{owner && !revokeUnknown}}" class="text-button" bindtap="onRevoke" disabled="{{busy}}">撤销公开链接</button></block>
+    <button wx:if="{{owner}}" class="text-button" bindtap="onRetry" disabled="{{busy}}">查看结果</button>
+  </block>
+  <button class="text-button" bindtap="onTonight">回到今晚</button>
+</view>

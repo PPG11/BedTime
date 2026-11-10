@@ -1,6 +1,6 @@
 # 今晚关灯云函数契约
 
-业务函数只有 `bedtimeNight`。请求为 `{ action, ...fields }`，成功 `{ code: 'OK', data }`，失败 `{ code, message, data? }`；成功 data 均含 `serverNow`。运行配置与已部署证据见 [云部署](../docs/cloud-deployment.md)。
+核心业务函数为 `bedtimeNight`，M2 独立使用 `bedtimeGrowth`。请求为 `{ action, ...fields }`，成功 `{ code: 'OK', data }`，失败 `{ code, message, data? }`；成功 data 均含 `serverNow`。运行配置与已部署证据见 [云部署](../docs/cloud-deployment.md)。
 
 ## M1 核心动作与提醒增量
 
@@ -32,7 +32,7 @@
 
 `night-transaction.js` 处理实际 SDK 包装的明确事务冲突，最多 4 次外层尝试，40 / 80 / 160ms 加抖动退避。每次执行完整事务并重新读取，不重试普通资源故障、超时或未知提交。
 
-客户端对四个集合均不可直读 / 直写，见 [规则文件](night-database-rules.json)；规则须在云控制台应用，函数部署不会自动设置。索引见 [索引文件](night-database-indexes.json)：n_nights 的 uid ASC + nightId DESC、nightId ASC，以及 n_events 的 receivedDateKey ASC。
+客户端对 M1 原四集合与 M2 新四集合均不可直读 / 直写，见 [规则文件](night-database-rules.json)；规则须在云控制台应用，函数部署不会自动设置。索引见 [索引文件](night-database-indexes.json)：原有关灯、事件、提醒索引之外，M2 增加 n_nights 的 nightId ASC + _id ASC，以及 n_cards / n_card_keys 的 uid ASC。
 
 ## 事件与维护
 
@@ -43,6 +43,12 @@
 30 句固定轮换，锚点 20261107，版本 1。历史句子不回算；池更新须增加未来生效版本，不修改冻结文档。来源与审阅见 [内容记录](../docs/night-content-review.md)。
 
 导出、3/7 汇总、30 天事件清理与本人删除见 [维护指南](../docs/night-operations.md)。M1 没有定时统计云函数、公开记录或分享归因。
+
+## M2 扩展
+
+`bedtimeGrowth` 提供 getLights、getOwnedCard、createPublicCard、getPublicCard、revokePublicCard、captureEntry、getGrowthAccess、getChannels、saveChannel、getDashboard。完整输入与语义见 [M2 契约](../docs/m2-development.md#接口与数据)。不把私人记录读取接口改为公开接口，不在 closeLight 中追加统计、分享或来源写入。
+
+`n_cards / n_card_keys` 同事务创建唯一公开卡；`n_attributions/{uid}` 首次写入后来源冻结；`n_channels/{code}` 仅管理员修改。八集合客户端均禁读写。管理权来自服务端 SHA-256 白名单，默认无人获权；配置异常不能退化为允许所有人。部署专用 `bedtimeGrowth/private-config.json` 不入库，环境变量优先。看板不返回逐人数据，扫描不完整拒绝返回部分统计。
 
 ## 已停用入口
 

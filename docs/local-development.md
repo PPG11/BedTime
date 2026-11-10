@@ -16,6 +16,8 @@
 
 ## 工具链与安装
 
+M2 新增 lights / public-card / dashboard / channels 页面，云函数为 bedtimeGrowth。页面联调先在今晚注入 `night-simulator.js`，再注入 `growth-simulator.js`；fixture 截断关灯、事件和 M2 调用。通过 `getApp().__growthFixture` 可切换 empty、suppressed、isAdmin、mode 和 status，覆盖空样本、隐私抑制、权限、网络错误、未知回执和失效。结束重新编译，恢复真实服务。部署前运行 `yarn cloud:prepare bedtimeGrowth`；配置和边界见 [M2 记录](m2-development.md)。
+
 使用 Node.js 22、Yarn Classic 1.22.22 和微信开发者工具。`.nvmrc` 记录 Node 主版本，`package.json` 记录 Yarn 版本，根目录 `yarn.lock` 统一锁定开发工具和云函数工作区依赖。
 
 ```sh

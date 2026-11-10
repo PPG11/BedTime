@@ -4,6 +4,8 @@
 
 已完成的后续增量为[一次性订阅提醒](docs/reminder-development.md)：独立 reminder 页面、bedtimeNight 的三个提醒动作、bedtimeReminderDispatch 定时发送。预约留在 n_users，无新集合。仅用户主动订阅后安排一次，未知发送不重试；实际启用与验证状态见增量记录。
 
+2026-11-10 作者授权开发全部四项 M2，范围和证据见 [M2 补充规格](docs/m2-development.md)：公共灯迹、公开句子卡、渠道归因与管理员看板。新函数 bedtimeGrowth、新增 lights/public-card/dashboard/channels 四页和 n_cards/n_card_keys/n_attributions/n_channels 四集合；沉浸完成态不增加入口。八集合客户端禁读写，管理员由服务端私有白名单确定；个人删除已扩展六集合，必须重新导出和预演 version 2 清单，不能擅自扩大旧三集合计划。
+
 ## 从哪里开始
 
 - [README](README.md)、[架构](docs/architecture.md)、[产品规格](docs/product-plan-tonight-lights-out-v1.1.md)。
@@ -14,14 +16,15 @@
 
 | 范围 | 入口 |
 | --- | --- |
-| 页面和路由 | `miniprogram/pages/{night,me,archive,receipt,about,reminder}/`、`app.json` |
+| 页面和路由 | `miniprogram/pages/{night,me,archive,receipt,about,reminder,lights,public-card,dashboard,channels}/`、`app.json` |
 | 品牌名称和图标 | `config/brand.ts`、`assets/brand/`、`miniprogram/assets/brand/` |
 | 唯一体验参数 | `config/night-experience.ts` |
 | 手势、仪式、平台恢复 | `components/`、`utils/hold-gesture.ts`、`pages/night/{night-controller,ceremony}.ts`、`utils/night-platform.ts` |
 | 共享状态和事件队列 | `state/{create-night-store,night-store,night-events}.ts` |
-| 云调用与校验 | `services/{night,cloud}.ts`、`types/night.ts` |
+| 云调用与校验 | `services/{night,reminder,growth,cloud}.ts`、`types/{night,reminder,growth}.ts` |
 | 图片 | `utils/night-card.ts`、`pages/receipt/` |
 | 云业务 | `cloudfunctions/bedtimeNight/`、`common/{nights,night-time,night-phrases,night-events,night-transaction}.js` |
+| M2 公共功能与汇总 | `cloudfunctions/bedtimeGrowth/`、`common/{night-public,night-growth-analytics,night-growth-query,night-growth-config}.js`、`utils/growth-entry.ts` |
 | 构建、环境、部署 | `scripts/build.mjs`、`scripts/cloud-env.cjs`、`cloudfunctions/deploy.js` |
 | 私有维护 | `scripts/night-{export,report,maintenance}.mjs` |
 
@@ -37,11 +40,13 @@
 
 - 页面负责交互与生命周期，服务负责调用与校验，store 负责共享状态，纯工具负责规则。Page data 只放可序列化字段；隐藏停止定时器 / 音频，卸载取消订阅；异步结果检查身份与代际。
 - 修改 `miniprogram/`，不直接修改生成的 `dist/`。不引入 Taro、React、H5 或未说明打包方式的运行时依赖。原生 v2 按钮显式宽度 / 外边距 / border-box；窄屏断点用 px。
-- 服务端只从微信上下文鉴权。微信附加的 userInfo / tcbContext 可接受但不可用作身份；其它额外业务字段拒绝。四集合禁止客户端直读直写。
+- 服务端只从微信上下文鉴权。微信附加的 userInfo / tcbContext 可接受但不可用作身份；其它额外业务字段拒绝。M1 与 M2 共八集合禁止客户端直读直写；公开功能也只由云函数返回批准的投影。
 - 北京时间 20:00—06:00，正午翻夜。closeLight 先读原记录，非事务读空后事务再读，已有记录优先，只有新建才查窗口；每次重试重新取时。发布稿、私人记录、首末摘要同事务。
 - 只有明确事务冲突可有限重试；未知提交必须查原记录。记录的句子、时间、方式不可被重试修改。客户端超时不是业务失败，恢复查原夜，只有本次新建且前台有效才播放仪式。
 - 新句池必须通过未来生效版本接续，不能修改已冻结记录。事件仅固定枚举 / 布尔属性，禁止原句、自由文本和精确客户端时间；事件失败不能影响业务。
-- 私有导出、OPENID 排除名单、维护清单只存仓库外，权限 600；默认维护仅预演。个人删除先核对本人并暂停使用，明确三集合范围，结束回读验证。公共夜句不随个人删除。
+- 私有导出、OPENID 排除名单、维护清单只存仓库外，权限 600；默认维护仅预演。个人删除先核对本人并暂停使用，当前范围为 n_users / n_nights / n_events / n_cards / n_card_keys / n_attributions 六集合，结束逐集合回读验证。公共夜句与渠道登记不随个人删除；旧三集合清单必须重新导出、预演后才可扩展。
+- M2 首次到达只保存已启用渠道或 unknown，使用服务端时间且不覆盖来源，24 小时窗口不含结束点；历史已激活用户不计渠道新激活。管理员权限只取经核验账号的服务端 SHA-256 白名单，默认拒绝；环境变量优先于部署私有 JSON，禁止首次进入自动授予管理员。
+- 管理员配置的原件保存在仓库外，权限 600；上传副本 `cloudfunctions/bedtimeGrowth/private-config.json` 也为 600，并由 Git 忽略。准备依赖不生成或变更授权，每次上传核对配置存在、当前授权及 common；不得把私有配置放入 miniprogram、日志或提交。
 
 ## 验证与交付
 
