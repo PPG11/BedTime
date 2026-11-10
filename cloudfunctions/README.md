@@ -40,7 +40,7 @@
 
 仅接收 night_view、ceremony_start、ceremony_done_view、exit_tap、receipt_view、card_export_result，具体属性白名单见 common/night-events.js。按 uid + eventId 去重，单人每夜最多 100 条新事件；超过额度整批拒绝，重复事件不消耗新额度。业务记录不依赖事件成功。
 
-30 句固定轮换，锚点 20261107，版本 1。历史句子不回算；池更新须增加未来生效版本，不修改冻结文档。来源与审阅见 [内容记录](../docs/night-content-review.md)。
+夜句统一维护在 `common/night-phrases.js` 的单份 ID→正文目录，版本排期只引用 ID。版本 1 保留原 30 句顺序与 20261107 锚点；版本 2 从 20261111 夜起按 90 句轮换，另有 6 条特殊日期句覆盖当夜槽位。历史句子不回算；池更新须增加未来生效版本，不修改冻结文档。来源与审阅见 [内容记录](../docs/night-content-review.md)。
 
 导出、3/7 汇总、30 天事件清理与本人删除见 [维护指南](../docs/night-operations.md)。M1 没有定时统计云函数、公开记录或分享归因。
 

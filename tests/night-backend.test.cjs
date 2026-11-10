@@ -4,7 +4,7 @@ const path = require('node:path')
 const Module = require('node:module')
 const { createNightDatabase } = require('./helpers/night-db.cjs')
 const { createNightActions, validateNightRequest } = require('../cloudfunctions/common/nights')
-const { phraseForNight } = require('../cloudfunctions/common/night-phrases')
+const { phraseForNight, PHRASE_SEGMENTS, PHRASE_CATALOG } = require('../cloudfunctions/common/night-phrases')
 const serverTime = require('../cloudfunctions/common/night-time')
 const clientTime = require(path.join(process.env.BEDTIME_TEST_OUTPUT, 'utils/night-time.js'))
 const cases = require('./fixtures/night-time.json')
@@ -132,17 +132,103 @@ test('同夜句子共享冻结稿，私人记录不因发布稿后续变化而�
   assert.equal((await call('getNight', { nightId: '20261107' })).data.record.phraseText, '已经冻结的句子。')
 })
 
-test('30 句轮换锚点、负余数、跨年和 30 夜重复周期正确', () => {
+test('池 1 的 30 句轮换：锚点、负余数与切换前的周期保持不变', () => {
   assert.equal(phraseForNight('20261107', 1).phraseId, 'p001')
   assert.equal(phraseForNight('20261106', 1).phraseId, 'p030')
-  assert.equal(phraseForNight('20261207', 1).phraseId, 'p001')
+  assert.equal(phraseForNight('20261110', 1).phraseId, 'p004')
   const ids = new Set()
   for (let i = 0; i < 30; i++) {
-    const date = new Date(Date.UTC(2026, 10, 7 + i)).toISOString().slice(0, 10).replaceAll('-', '')
-    const phrase = phraseForNight(date, 1)
-    assert.ok(phrase.text.length <= 40); ids.add(phrase.phraseId)
+    const phrase = phraseForNight(nightAfter('20261008', i), 1)
+    assert.equal(phrase.poolVersion, 1); assert.equal(phrase.phraseVersion, 1)
+    assert.equal(phrase.phraseId, `p${String(i + 1).padStart(3, '0')}`)
+    const previousCycle = phraseForNight(nightAfter('20261008', i - 30), 1)
+    assert.equal(phrase.phraseId, previousCycle.phraseId)
+    assert.equal(phrase.text, previousCycle.text)
+    ids.add(phrase.phraseId)
   }
   assert.equal(ids.size, 30)
+})
+
+function nightAfter(nightId, days) {
+  const at = Date.UTC(Number(nightId.slice(0, 4)), Number(nightId.slice(4, 6)) - 1, Number(nightId.slice(6, 8)) + days)
+  return new Date(at).toISOString().slice(0, 10).replaceAll('-', '')
+}
+
+test('句池按未来生效版本接续：切换夜之前沿用池 1，之后使用池 2，并支持特殊日期', () => {
+  const [one, two] = PHRASE_SEGMENTS
+  assert.equal(two.poolVersion, 2); assert.equal(two.effectiveNightId, '20261111')
+  assert.equal(phraseForNight('20261110', 1).poolVersion, 1)
+  const first = phraseForNight(two.effectiveNightId, 1)
+  assert.deepEqual([first.poolVersion, first.phraseVersion, first.source, first.phraseId], [2, 2, 'rotation', two.pool[0].id])
+  assert.equal(phraseForNight(nightAfter(two.effectiveNightId, two.pool.length), 1).phraseId, two.pool[0].id)
+  assert.equal(phraseForNight('20261231', 1).source, 'special')
+  assert.equal(phraseForNight('20261231', 1).text, two.specials['20261231'].text)
+  assert.ok(one.pool.length === 30)
+})
+
+test('版本切换后优先使用已冻结的旧版发布稿，历史记录与后续新夜互不改写', async () => {
+  const { db, clock, close, call } = setup()
+  clock.now = at('2026-11-10T22:30:00')
+  const history = (await close('20261110')).data.record
+  assert.equal(history.phraseVersion, 1)
+  assert.equal(history.phraseText, '不用替今天再补一个结尾。')
+
+  // A prior deployment may already have frozen this night using v1. The new
+  // selector would choose q001, but new users must still receive the shared row.
+  const frozen = {
+    nightId: '20261111', phraseId: 'p005', text: '待办清单翻到背面，也是一张白纸。',
+    phraseVersion: 1, poolVersion: 1, source: 'rotation', frozenAt: at('2026-11-11T20:00:00')
+  }
+  db.seed('n_phrases', '20261111', frozen)
+  clock.now = at('2026-11-11T22:30:00')
+  assert.equal(phraseForNight('20261111', clock.now).phraseVersion, 2)
+  const [a, b] = await Promise.all([close('20261111'), close('20261111', 'tap', 'bob')])
+  for (const reply of [a, b]) {
+    assert.equal(reply.code, 'OK')
+    assert.equal(reply.data.record.phraseText, frozen.text)
+    assert.equal(reply.data.record.phraseId, frozen.phraseId)
+    assert.equal(reply.data.record.phraseVersion, 1)
+  }
+  assert.deepEqual(db.inspect('n_phrases', '20261111'), frozen)
+
+  clock.now = at('2026-11-12T22:30:00')
+  const next = (await close('20261112')).data.record
+  assert.equal(next.phraseVersion, 2)
+  assert.equal(next.phraseId, 'q002')
+  assert.equal(db.inspect('n_phrases', '20261112').poolVersion, 2)
+  assert.deepEqual((await call('getNight', { nightId: '20261110' })).data.record, history)
+  assert.deepEqual((await close('20261110', 'tap')).data.record, history)
+  assert.deepEqual((await call('getNight', { nightId: '20261111' })).data.record, a.data.record)
+  assert.deepEqual(db.inspect('n_phrases', '20261111'), frozen)
+})
+
+test('句池质量约束：长度、唯一 id、任意连续 30 夜不重复句子，含切换边界与特殊日期', () => {
+  const [one, two] = PHRASE_SEGMENTS
+  assert.equal(Object.keys(PHRASE_CATALOG).length, 106)
+  assert.equal(new Set(Object.values(PHRASE_CATALOG)).size, 106)
+  for (const segment of PHRASE_SEGMENTS) {
+    const ids = new Set(), texts = new Set()
+    for (const entry of [...segment.pool, ...Object.values(segment.specials)]) {
+      assert.ok(entry.text.length > 0 && entry.text.length <= 40, entry.text)
+      assert.equal(entry.text, entry.text.trim())
+      assert.ok(!ids.has(entry.id) && !texts.has(entry.text), `重复 ${entry.id}`)
+      ids.add(entry.id); texts.add(entry.text)
+    }
+  }
+  // Ids that exist in both pools must carry the same text (pool 2 reuses pool 1 lines).
+  const oneById = new Map(one.pool.map(entry => [entry.id, entry.text]))
+  for (const entry of two.pool) if (oneById.has(entry.id)) assert.equal(entry.text, oneById.get(entry.id))
+  for (const entry of Object.values(two.specials)) assert.ok(!two.pool.some(item => item.text === entry.text))
+  const nights = Array.from({ length: 800 }, (_, i) => phraseForNight(nightAfter(two.effectiveNightId, i - 30), 1))
+  for (let i = 0; i < nights.length; i++) {
+    for (let j = i + 1; j < Math.min(nights.length, i + 30); j++) {
+      assert.notEqual(nights[i].phraseId, nights[j].phraseId, `${nights[i].nightId} 与 ${nights[j].nightId}`)
+      assert.notEqual(nights[i].text, nights[j].text)
+    }
+  }
+  for (const night of Object.keys(two.specials)) assert.ok(night >= two.effectiveNightId)
+  const newCount = two.pool.filter(entry => entry.id.startsWith('q')).length
+  assert.ok(newCount >= 60, '池 2 应以新句为主')
 })
 
 test('鉴权与允许字段：不同用户不可读，伪造身份、日期、类型和超长请求被拒绝', async () => {
