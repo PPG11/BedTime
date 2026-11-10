@@ -1,7 +1,7 @@
 # Taro → 微信原生迁移
 
-> 历史记录：以下描述旧产品；2026-11-08 已移除旧前端与业务规则，四个旧领域函数已改为停用入口。当前实现见 [M1 交付记录](refactor-m1-delivery.md)。
-本文记录原生前端迁移范围与历史验证，当前业务和云端契约以 [业务链路](checkin-and-friends-backend.md) 和 [云函数说明](../cloudfunctions/README.md) 为准。
+> 历史记录：以下描述旧产品；2026-11-08 已移除旧前端与业务规则，四个旧领域函数已改为停用入口。当前实现见 [M1 交付记录](../refactor-m1-delivery.md)。
+本文记录原生前端迁移范围与历史验证，当前业务和云端契约以 [业务链路](checkin-and-friends-backend.md) 和 [云函数说明](../../cloudfunctions/README.md) 为准。
 
 开发基线已调整为微信原生小程序 + TypeScript + CloudBase，后续前端开发在 `miniprogram/` 进行。最初的前端迁移沿用旧云端；后续已改为四个业务云函数与每日打卡文档，旧代理接口、旧汇总打卡和旧定时任务不再属于当前代码架构。
 

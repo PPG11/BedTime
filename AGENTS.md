@@ -8,7 +8,7 @@
 
 ## 从哪里开始
 
-- [README](README.md)、[架构](docs/architecture.md)、[产品规格](docs/product-plan-tonight-lights-out-v1.1.md)。
+- [README](README.md)、[架构](docs/architecture.md)、[产品规格](docs/product-plan.md)。
 - [本地开发](docs/local-development.md)、[云部署](docs/cloud-deployment.md)、[云契约](cloudfunctions/README.md)、[维护指南](docs/night-operations.md)。
 - 功能开发和联调使用 [.agents/skills/bedtime-development/SKILL.md](.agents/skills/bedtime-development/SKILL.md)。M0 与 M1 第一段记录为历史材料，不将当时未部署状态当作当前状态。
 

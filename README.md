@@ -47,7 +47,7 @@ yarn dev:weapp
 - 品牌：`miniprogram/config/brand.ts`、`assets/brand/` 与 `miniprogram/assets/brand/`。
 - 交互与状态：`pages/night/night-controller.ts`、`state/create-night-store.ts`、`state/night-events.ts`。
 - 云契约：`services/night.ts` → `bedtimeNight` → `common/nights.js`；时间、句子、事件和冲突重试各有独立模块。
-- [产品规格](docs/product-plan-tonight-lights-out-v1.1.md) · [架构](docs/architecture.md) · [开发](docs/local-development.md) · [云部署](docs/cloud-deployment.md) · [接口](cloudfunctions/README.md)
+- [产品规格](docs/product-plan.md) · [架构](docs/architecture.md) · [开发](docs/local-development.md) · [云部署](docs/cloud-deployment.md) · [接口](cloudfunctions/README.md)
 - [交付与验收](docs/refactor-m1-delivery.md) · [数据维护](docs/night-operations.md) · [句子与素材审阅](docs/night-content-review.md) · [仓库指南](AGENTS.md)
 - [M0 体验记录](docs/refactor-m0-review.md)与 [M1 第一段记录](docs/refactor-m1-core.md)保留历史证据。
 

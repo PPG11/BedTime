@@ -21,7 +21,7 @@ description: 在 BedTime 仓库开发今晚关灯原生微信小程序，维护�
 
 ## 当前范围
 
-先读根目录 AGENTS.md、docs/refactor-m1-delivery.md、docs/product-plan-tonight-lights-out-v1.1.md 和 docs/m2-development.md。M0、M1 第一段材料保留历史证据，不能用当时的未部署状态覆盖当前交付。M1 原有五页 night / me / archive / receipt / about；订阅提醒增加 reminder 页，bedtimeNight 增至九个动作，另有仅定时调用的 bedtimeReminderDispatch。M1 与提醒使用原四集合，M2 新增四集合后当前共八集合。提醒规格与实测状态见 docs/reminder-development.md。旧前端 / 业务已清理；四个旧领域入口仅返回 RETIRED，不做兼容或双写。
+先读根目录 AGENTS.md、docs/refactor-m1-delivery.md、docs/product-plan.md 和 docs/m2-development.md。M0、M1 第一段材料保留历史证据，不能用当时的未部署状态覆盖当前交付。M1 原有五页 night / me / archive / receipt / about；订阅提醒增加 reminder 页，bedtimeNight 增至九个动作，另有仅定时调用的 bedtimeReminderDispatch。M1 与提醒使用原四集合，M2 新增四集合后当前共八集合。提醒规格与实测状态见 docs/reminder-development.md。旧前端 / 业务已清理；四个旧领域入口仅返回 RETIRED，不做兼容或双写。
 
 作者在 iPhone 体验和 Android 简测后已放行 M1：长按 800ms、暗屏 400ms、留白 800ms、出句 400ms；减少动效 800ms 黑色零过渡。常规字号、系统无衬线、正常动效；声音默认关闭，震动默认开启。250ms 是结束的原型模拟响应。演示标注、无记录 / 事件 / 震动，结束返回普通页；真实退出才调用退出 API。主流 iPhone / Android 竖屏优先，窄屏基本检查，极短屏不深入优化。
 
